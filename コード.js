@@ -2408,38 +2408,37 @@ function normalizeAccountName(accountName) {
 }
 
 function getBudget(yearMonth, itemName) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("budgets");
-
-  if (!sheet) {
-    throw new Error("budgets シートがありません");
-  }
-
+  const sheet = getRequiredSheet("budgets");
   const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return 0;
 
-  const headers = values[0];
-  const idx = {};
-  headers.forEach((h, i) => {
-    idx[String(h).trim()] = i;
-  });
-
-  const required = ["year_month", "item", "value"];
-  for (const col of required) {
-    if (idx[col] === undefined) {
-      throw new Error(`budgets に ${col} 列がありません`);
-    }
+  if (values.length < 2) {
+    return 0;
   }
+
+  const index = createHeaderIndex(values[0]);
+
+  assertRequiredColumns(
+    index,
+    ["year_month", "item", "value"],
+    "budgets"
+  );
 
   const targetMonth = normalizeBudgetYearMonth(yearMonth);
   const targetItem = String(itemName || "").trim();
 
   for (const row of values.slice(1)) {
-    const ym = normalizeBudgetYearMonth(row[idx["year_month"]]);
-    const item = String(row[idx["item"]] || "").trim();
+    const month = normalizeBudgetYearMonth(
+      row[index["year_month"]]
+    );
 
-    if (ym === targetMonth && item === targetItem) {
-      return Number(row[idx["value"]] || 0);
+    const item = String(
+      row[index["item"]] || ""
+    ).trim();
+
+    if (month === targetMonth && item === targetItem) {
+      return Number(
+        String(row[index["value"]] || "0").replace(/,/g, "")
+      );
     }
   }
 
