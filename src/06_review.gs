@@ -403,3 +403,362 @@ function rebuildBulkReview() {
     rows
   );
 }
+
+/**
+ * rulesに登録されている最大priorityの次の値を取得する。
+ *
+ * @param {Array<Array<*>>} rows
+ * @param {Object<string, number>} index
+ * @return {number}
+ */
+function getNextRulePriority_(rows, index) {
+  const priorities = rows
+    .map(row =>
+      Number(row[index["priority"]] || 0)
+    )
+    .filter(priority =>
+      !isNaN(priority)
+    );
+
+  return priorities.length > 0
+    ? Math.max(...priorities) + 10
+    : 100;
+}
+
+/**
+ * rulesのヘッダー順に、新規ルール1行を作る。
+ *
+ * 将来rulesに列が増えても、列順のズレを防げる。
+ *
+ * @param {Array<*>} headers
+ * @param {Object<string, *>} rule
+ * @return {Array<*>}
+ */
+function buildRuleRow_(headers, rule) {
+  return headers.map(header => {
+    const columnName = String(header || "").trim();
+
+    return rule[columnName] !== undefined
+      ? rule[columnName]
+      : "";
+  });
+}
+
+/**
+ * rulesへルールをまとめて追加する。
+ *
+ * @param {Array<Object<string, *>>} rules
+ * @return {number}
+ */
+function appendRules_(rules) {
+  if (!Array.isArray(rules) || rules.length === 0) {
+    return 0;
+  }
+
+  const sheet = getRequiredSheet("rules");
+  const table = loadTable("rules");
+
+  if (table.headers.length === 0) {
+    throw new Error("rules にヘッダーがありません");
+  }
+
+  assertRequiredColumns(
+    table.index,
+    [
+      "priority",
+      "match_target",
+      "keyword",
+      "rule_type",
+      "type_result",
+      "major_category",
+      "sub_category",
+      "purpose_type",
+      "expense_ratio",
+      "status_result"
+    ],
+    "rules"
+  );
+
+  const rows = rules.map(rule =>
+    buildRuleRow_(table.headers, rule)
+  );
+
+  sheet
+    .getRange(
+      sheet.getLastRow() + 1,
+      1,
+      rows.length,
+      table.headers.length
+    )
+    .setValues(rows);
+
+  return rows.length;
+}
+
+function learnRulesFromReviewQueue() {
+  const reviewTable = loadTable("review_queue");
+  const ruleTable = loadTable("rules");
+
+  if (reviewTable.rows.length === 0) {
+    Logger.log("rules追加: 0件");
+    return;
+  }
+
+  assertRequiredColumns(
+    reviewTable.index,
+    [
+      "merchant",
+      "type_manual",
+      "major_manual",
+      "sub_manual",
+      "purpose_manual",
+      "expense_ratio_manual",
+      "rule_keyword",
+      "rule_target",
+      "learn"
+    ],
+    "review_queue"
+  );
+
+  assertRequiredColumns(
+    ruleTable.index,
+    ["priority"],
+    "rules"
+  );
+
+  let nextPriority = getNextRulePriority_(
+    ruleTable.rows,
+    ruleTable.index
+  );
+
+  const newRules = [];
+
+  for (const row of reviewTable.rows) {
+    const learnValue = getString(
+      row,
+      reviewTable.index,
+      "learn"
+    ).toUpperCase();
+
+    if (
+      !["TRUE", "1", "YES"].includes(learnValue)
+    ) {
+      continue;
+    }
+
+    const merchant = getString(
+      row,
+      reviewTable.index,
+      "merchant"
+    );
+
+    const keyword =
+      getString(
+        row,
+        reviewTable.index,
+        "rule_keyword"
+      ) || merchant;
+
+    const matchTarget =
+      getString(
+        row,
+        reviewTable.index,
+        "rule_target"
+      ) || "merchant";
+
+    const type = getString(
+      row,
+      reviewTable.index,
+      "type_manual"
+    );
+
+    const major = getString(
+      row,
+      reviewTable.index,
+      "major_manual"
+    );
+
+    const sub = getString(
+      row,
+      reviewTable.index,
+      "sub_manual"
+    );
+
+    if (!keyword || !type || !major || !sub) {
+      continue;
+    }
+
+    const purpose =
+      getString(
+        row,
+        reviewTable.index,
+        "purpose_manual"
+      ) || "私用";
+
+    newRules.push({
+      priority: nextPriority,
+      match_target: matchTarget,
+      keyword,
+      rule_type: "contains",
+      type_result: type,
+      major_category: major,
+      sub_category: sub,
+      purpose_type: purpose,
+      expense_ratio: getNumber(
+        row,
+        reviewTable.index,
+        "expense_ratio_manual"
+      ),
+      status_result: "確定",
+      wallet_result:
+        purpose === "経費" ? "事業" : "生活",
+      intent_result: guessIntent(sub),
+      note: "review_queueから追加"
+    });
+
+    nextPriority += 10;
+  }
+
+  const addedCount = appendRules_(newRules);
+
+  Logger.log(`rules追加: ${addedCount}件`);
+}
+
+function learnRulesFromBulkReview() {
+  const bulkTable = loadTable("bulk_review");
+  const ruleTable = loadTable("rules");
+
+  if (bulkTable.rows.length === 0) {
+    Logger.log("bulk rules追加: 0件");
+    return;
+  }
+
+  assertRequiredColumns(
+    bulkTable.index,
+    [
+      "merchant",
+      "bulk_safe",
+      "type_manual",
+      "major_manual",
+      "sub_manual",
+      "purpose_manual",
+      "expense_ratio_manual",
+      "rule_keyword",
+      "rule_target",
+      "note"
+    ],
+    "bulk_review"
+  );
+
+  assertRequiredColumns(
+    ruleTable.index,
+    ["priority"],
+    "rules"
+  );
+
+  let nextPriority = getNextRulePriority_(
+    ruleTable.rows,
+    ruleTable.index
+  );
+
+  const newRules = [];
+
+  for (const row of bulkTable.rows) {
+    const bulkSafe = getString(
+      row,
+      bulkTable.index,
+      "bulk_safe"
+    ).toUpperCase();
+
+    if (
+      !["TRUE", "1", "YES"].includes(bulkSafe)
+    ) {
+      continue;
+    }
+
+    const merchant = getString(
+      row,
+      bulkTable.index,
+      "merchant"
+    );
+
+    const keyword =
+      getString(
+        row,
+        bulkTable.index,
+        "rule_keyword"
+      ) || merchant;
+
+    const matchTarget =
+      getString(
+        row,
+        bulkTable.index,
+        "rule_target"
+      ) || "merchant";
+
+    const type = getString(
+      row,
+      bulkTable.index,
+      "type_manual"
+    );
+
+    const major = getString(
+      row,
+      bulkTable.index,
+      "major_manual"
+    );
+
+    const sub = getString(
+      row,
+      bulkTable.index,
+      "sub_manual"
+    );
+
+    if (!keyword || !type || !major || !sub) {
+      continue;
+    }
+
+    const purpose =
+      getString(
+        row,
+        bulkTable.index,
+        "purpose_manual"
+      ) || "私用";
+
+    const note =
+      getString(
+        row,
+        bulkTable.index,
+        "note"
+      ) || "bulk_reviewから追加";
+
+    newRules.push({
+      priority: nextPriority,
+      match_target: matchTarget,
+      keyword,
+      rule_type: "equals",
+      type_result: type,
+      major_category: major,
+      sub_category: sub,
+      purpose_type: purpose,
+      expense_ratio: getNumber(
+        row,
+        bulkTable.index,
+        "expense_ratio_manual"
+      ),
+      status_result: "確定",
+      wallet_result:
+        purpose === "経費" ? "事業" : "生活",
+      intent_result: guessIntent(sub),
+      note
+    });
+
+    nextPriority += 10;
+  }
+
+  const addedCount = appendRules_(newRules);
+
+  Logger.log(
+    `bulk rules追加: ${addedCount}件`
+  );
+}
