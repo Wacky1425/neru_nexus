@@ -49,10 +49,11 @@ function addTransaction(tx) {
 function summarizeTransactionsByField(
   yearMonth,
   groupColumn,
-  options
+  options,
+  transactionTable
     ) {
-  const settings = options || {};
-  table = table || loadTransactions();
+    const table = transactionTable || loadTransactions();
+    const settings = options || {};
 
   if (table.rows.length === 0) {
     return [];
@@ -198,13 +199,18 @@ function filterTransactions(options) {
  *   wallet?: string,
  *   intent?: string
  * }=} options
+ * @param {{
+ *   rows: Array<Array<*>>,
+ *   index: Object<string, number>
+ * }=} transactionTable
  * @return {{
  *   rows: Array<Array<*>>,
  *   index: Object<string, number>
  * }}
  */
-function filterTransactionRows(options) {
-  table = table || loadTransactions();
+function filterTransactionRows(options, transactionTable) {
+  const table = transactionTable || loadTransactions();
+  const settings = options || {};
 
   if (table.rows.length === 0) {
     return {
@@ -212,8 +218,6 @@ function filterTransactionRows(options) {
       index: table.index
     };
   }
-
-  const settings = options || {};
 
   assertRequiredColumns(
     table.index,
@@ -262,9 +266,11 @@ function filterTransactionRows(options) {
     }
 
     if (targetType) {
-      const rowType = String(
-        row[table.index["type"]] || ""
-      ).trim();
+      const rowType = getString(
+        row,
+        table.index,
+        "type"
+      );
 
       if (rowType !== targetType) {
         return false;
@@ -272,9 +278,11 @@ function filterTransactionRows(options) {
     }
 
     if (targetWallet) {
-      const rowWallet = String(
-        row[table.index["wallet"]] || ""
-      ).trim();
+      const rowWallet = getString(
+        row,
+        table.index,
+        "wallet"
+      );
 
       if (rowWallet !== targetWallet) {
         return false;
@@ -282,9 +290,11 @@ function filterTransactionRows(options) {
     }
 
     if (targetIntent) {
-      const rowIntent = String(
-        row[table.index["intent"]] || ""
-      ).trim();
+      const rowIntent = getString(
+        row,
+        table.index,
+        "intent"
+      );
 
       if (rowIntent !== targetIntent) {
         return false;

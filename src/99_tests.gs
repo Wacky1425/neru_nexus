@@ -234,3 +234,20 @@ function testCategorySummary(){
   );
 
 }
+
+function debugCsvHeader() {
+  const folderId = "YOUR_FOLDER_ID";
+  const folder = DriveApp.getFolderById(folderId);
+  const files = folder.getFiles();
+
+  while (files.hasNext()) {
+    const file = files.next();
+    if (!file.getName().endsWith(".csv")) continue;
+
+    const values = parseCsvFile(file);
+    const row = values[0].map(v => String(v).trim());
+
+    Logger.log(file.getName());
+    Logger.log(JSON.stringify(row));
+  }
+}
