@@ -1,3 +1,34 @@
+function normalizeTextForRule(value) {
+  let text = String(value || "")
+    .toLowerCase()
+    .trim();
+
+  // 全角英数字を半角へ
+  text = text.replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(s) {
+    return String.fromCharCode(s.charCodeAt(0) - 65248);
+  });
+
+  // スペース類を統一
+  text = text.replace(/\s+/g, " ");
+
+  // 表記ゆれ統一
+  text = text.replace(/ﾍﾟｲﾍﾟｲ/g, "paypay");
+  text = text.replace(/ｐａｙｐａｙ/g, "paypay");
+  text = text.replace(/paypay/g, "paypay");
+
+  text = text.replace(/ｶｰﾄﾞ/g, "card");
+  text = text.replace(/カード/g, "card");
+
+  text = text.replace(/ｸﾚｼﾞｯﾄ/g, "credit");
+  text = text.replace(/クレジット/g, "credit");
+
+  text = text.replace(/ﾗｸﾃﾝ/g, "楽天");
+  text = text.replace(/ﾐﾂｲｽﾐﾄﾓ/g, "三井住友");
+
+  return text;
+}
+
+
 function getRules() {
   const rules = loadObjects("rules")
     .filter(rule =>
