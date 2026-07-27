@@ -477,20 +477,31 @@ function normalizeCsvRowByHeader(row, config) {
   };
 }
 
-function importLatestCsvFromDrive(folderId, configName) {
+function importLatestCsvFromDrive(
+  folderId,
+  configName
+    ) {
   const config = getImportConfig(configName);
   const rows = readCsvRowsFromDrive(folderId);
   const rules = getRules();
 
-  let addedCount = 0;
-  let skippedCount = 0;
+  const transactions = [];
 
   for (const row of rows) {
-    const txBase = normalizeCsvRowByHeader(row, config);
+    const txBase = normalizeCsvRowByHeader(
+      row,
+      config
+    );
 
-    txBase.merchant = normalizeMerchant(txBase.merchant);
+    txBase.merchant = normalizeMerchant(
+      txBase.merchant
+    );
 
-    if (!txBase.transaction_date || !txBase.merchant || Number(txBase.amount) === 0) {
+    if (
+      !txBase.transaction_date ||
+      !txBase.merchant ||
+      Number(txBase.amount) === 0
+    ) {
       continue;
     }
 
@@ -501,42 +512,62 @@ function importLatestCsvFromDrive(folderId, configName) {
       config.config_name === "smbc_bank_v1" ||
       config.config_name === "paypay_v1"
     ) {
-      classified = classifyMoneyTransaction(row, txBase, rules, config.config_name);
+      classified = classifyMoneyTransaction(
+        row,
+        txBase,
+        rules,
+        config.config_name
+      );
     } else {
-      classified = classifyTransaction(txBase, rules);
+      classified = classifyTransaction(
+        txBase,
+        rules
+      );
     }
 
-    const tx = {
+    transactions.push({
       ...txBase,
-      ...classified,
-    };
-
-    const added = addTransaction(tx);
-
-    if (added) {
-      addedCount++;
-    } else {
-      skippedCount++;
-    }
+      ...classified
+    });
   }
 
-  Logger.log(`追加: ${addedCount}件 / 重複スキップ: ${skippedCount}件`);
+  const result = addTransactions(transactions);
+
+  Logger.log(
+    `追加: ${result.addedCount}件 / ` +
+    `重複スキップ: ${result.skippedCount}件`
+  );
+
+  return result;
 }
 
 function importCsvFileAuto(file) {
   const parsed = readCsvRowsFromFile(file);
-  const configName = getConfigNameByCsvType(parsed.csvType);
+
+  const configName = getConfigNameByCsvType(
+    parsed.csvType
+  );
+
   const config = getImportConfig(configName);
   const rules = getRules();
 
-  let addedCount = 0;
-  let skippedCount = 0;
+  const transactions = [];
 
   for (const row of parsed.rows) {
-    const txBase = normalizeCsvRowByHeader(row, config);
-    txBase.merchant = normalizeMerchant(txBase.merchant);
+    const txBase = normalizeCsvRowByHeader(
+      row,
+      config
+    );
 
-    if (!txBase.transaction_date || !txBase.merchant || Number(txBase.amount) === 0) {
+    txBase.merchant = normalizeMerchant(
+      txBase.merchant
+    );
+
+    if (
+      !txBase.transaction_date ||
+      !txBase.merchant ||
+      Number(txBase.amount) === 0
+    ) {
       continue;
     }
 
@@ -544,27 +575,40 @@ function importCsvFileAuto(file) {
 
     if (
       config.config_name === "smbc_bank_v1" ||
-      config.config_name === "paypay_v1"
+      config.config_name === "paypay_v1" ||
+      config.config_name === "jpbank_v1"
     ) {
-      classified = classifyMoneyTransaction(row, txBase, rules, config.config_name);
+      classified = classifyMoneyTransaction(
+        row,
+        txBase,
+        rules,
+        config.config_name
+      );
     } else {
-      classified = classifyTransaction(txBase, rules);
+      classified = classifyTransaction(
+        txBase,
+        rules
+      );
     }
 
-    const tx = {
+    transactions.push({
       ...txBase,
-      ...classified,
-    };
-
-    const added = addTransaction(tx);
-
-    if (added) addedCount++;
-    else skippedCount++;
+      ...classified
+    });
   }
 
+  const result = addTransactions(transactions);
+
   Logger.log(
-    `${file.getName()} / ${parsed.csvType} / 追加: ${addedCount}件 / 重複スキップ: ${skippedCount}件`
+    [
+      file.getName(),
+      parsed.csvType,
+      `追加: ${result.addedCount}件`,
+      `重複スキップ: ${result.skippedCount}件`
+    ].join(" / ")
   );
+
+  return result;
 }
 
 function runImportTest() {

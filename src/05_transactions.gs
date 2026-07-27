@@ -1,37 +1,7 @@
 function addTransaction(tx) {
-  tx.account_name = normalizeAccountName(
-    tx.account_name
-  );
+  const result = addTransactions([tx]);
 
-  const duplicateKey = buildDuplicateKey(tx);
-  const existingKeys = getExistingDuplicateKeys();
-
-  if (existingKeys.has(duplicateKey)) {
-    Logger.log(
-      "重複のためスキップ: " + duplicateKey
-    );
-
-    return false;
-  }
-
-  const createdAt = new Date();
-
-  const yearMonth = resolveTransactionYearMonth(
-    tx.transaction_date,
-    createdAt
-  );
-
-  const row = buildTransactionRow(
-    tx,
-    Utilities.getUuid(),
-    createdAt,
-    yearMonth,
-    duplicateKey
-  );
-
-  appendTransactionRow(row);
-
-  return true;
+  return result.addedCount === 1;
 }
 
 /**
@@ -877,4 +847,89 @@ function normalizeAccountName(accountName) {
   }
 
   return raw;
+}
+
+function appendTransactionRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return 0;
+  }
+
+  const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
+
+  sheet
+    .getRange(
+      sheet.getLastRow() + 1,
+      1,
+      rows.length,
+      rows[0].length
+    )
+    .setValues(rows);
+
+  clearTableCache(SHEETS.TRANSACTIONS);
+
+  return rows.length;
+}
+
+function addTransactions(transactions) {
+  if (
+    !Array.isArray(transactions) ||
+    transactions.length === 0
+  ) {
+    return {
+      addedCount: 0,
+      skippedCount: 0
+    };
+  }
+
+  const existingKeys = getExistingDuplicateKeys();
+  const rows = [];
+
+  let skippedCount = 0;
+
+  for (const originalTransaction of transactions) {
+    const tx = {
+      ...originalTransaction,
+      account_name: normalizeAccountName(
+        originalTransaction.account_name
+      )
+    };
+
+    const duplicateKey = buildDuplicateKey(tx);
+
+    if (existingKeys.has(duplicateKey)) {
+      Logger.log(
+        "重複のためスキップ: " + duplicateKey
+      );
+
+      skippedCount++;
+      continue;
+    }
+
+    // 同じ取込データ内での重複も防ぐ
+    existingKeys.add(duplicateKey);
+
+    const createdAt = new Date();
+
+    const yearMonth = resolveTransactionYearMonth(
+      tx.transaction_date,
+      createdAt
+    );
+
+    rows.push(
+      buildTransactionRow(
+        tx,
+        Utilities.getUuid(),
+        createdAt,
+        yearMonth,
+        duplicateKey
+      )
+    );
+  }
+
+  const addedCount = appendTransactionRows(rows);
+
+  return {
+    addedCount,
+    skippedCount
+  };
 }
