@@ -2473,28 +2473,10 @@ function normalizeBudgetYearMonth(value) {
 }
 
 function getLatestBudget(itemName) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("budgets");
+  const latestMonth = getLatestBudgetMonth();
 
-  if (!sheet) {
-    throw new Error("budgets シートがありません");
-  }
-
-  const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return 0;
-
-  const headers = values[0];
-  const idx = {};
-  headers.forEach((h, i) => idx[h] = i);
-
-  let latestMonth = "";
-
-  for (const row of values.slice(1)) {
-    const ym = normalizeBudgetYearMonth(row[idx["year_month"]]);
-
-    if (ym > latestMonth) {
-      latestMonth = ym;
-    }
+  if (!latestMonth) {
+    return 0;
   }
 
   return getBudget(latestMonth, itemName);
@@ -2636,32 +2618,30 @@ function initializeRuleIntent() {
 }
 
 function getLatestBudgetMonth() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("budgets");
-
-  if (!sheet) {
-    throw new Error("budgets シートがありません");
-  }
-
+  const sheet = getRequiredSheet("budgets");
   const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return "";
 
-  const headers = values[0];
-  const idx = {};
-  headers.forEach((h, i) => {
-    idx[String(h).trim()] = i;
-  });
-
-  if (idx["year_month"] === undefined) {
-    throw new Error("budgets に year_month 列がありません");
+  if (values.length < 2) {
+    return "";
   }
+
+  const index = createHeaderIndex(values[0]);
+
+  assertRequiredColumns(
+    index,
+    ["year_month"],
+    "budgets"
+  );
 
   let latestMonth = "";
 
   for (const row of values.slice(1)) {
-    const ym = normalizeBudgetYearMonth(row[idx["year_month"]]);
-    if (ym && ym > latestMonth) {
-      latestMonth = ym;
+    const month = normalizeBudgetYearMonth(
+      row[index["year_month"]]
+    );
+
+    if (month && month > latestMonth) {
+      latestMonth = month;
     }
   }
 
