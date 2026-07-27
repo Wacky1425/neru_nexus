@@ -19,7 +19,7 @@ function aggregateTransactionSummaries_(transactionTable) {
       "amount",
       "expense_amount"
     ],
-    "transactions"
+    SHEETS.TRANSACTIONS
   );
 
   const monthlyMap = new Map();
@@ -186,10 +186,10 @@ function rebuildSummaries() {
     buildCategorySummaryRows_(categoryMap);
 
   const monthlySheet =
-    getRequiredSheet("monthly_summary");
+    getRequiredSheet(SHEETS.MONTHLY_SUMMARY);
 
   const categorySheet =
-    getRequiredSheet("category_summary");
+    getRequiredSheet(SHEETS.CATEGORY_SUMMARY);
 
   writeTable(
     monthlySheet,
@@ -248,7 +248,7 @@ function rebuildSummaries() {
 function getCategorySummary(yearMonth){
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("category_summary");
+  const sheet = ss.getSheetByName(SHEETS.CATEGORY_SUMMARY);
 
   const values = sheet.getDataRange().getValues();
 

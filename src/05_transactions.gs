@@ -70,7 +70,7 @@ function summarizeTransactionsByField(
   assertRequiredColumns(
     table.index,
     requiredColumns,
-    "transactions"
+    SHEETS.TRANSACTIONS
   );
 
   const targetMonth =
@@ -140,7 +140,7 @@ function summarizeTransactionsByField(
 
 function filterTransactions(options) {
 
-  const table = loadTable("transactions");
+  const table = loadTable(SHEETS.TRANSACTIONS);
 
   if (table.rows.length === 0) {
     return [];
@@ -226,7 +226,7 @@ function filterTransactionRows(options, transactionTable) {
       "type",
       "wallet"
     ],
-    "transactions"
+    SHEETS.TRANSACTIONS
   );
 
   const targetMonth = settings.yearMonth
@@ -322,7 +322,7 @@ function getMonthlyLivingExpense(yearMonth,table) {
   assertRequiredColumns(
     filtered.index,
     ["amount"],
-    "transactions"
+    SHEETS.TRANSACTIONS
   );
 
   return filtered.rows.reduce(
@@ -360,7 +360,7 @@ function getMonthlyLivingExpenseBreakdown(yearMonth) {
       "sub_category",
       "amount"
     ],
-    "transactions"
+    SHEETS.TRANSACTIONS
   );
 
   for (const row of filtered.rows) {
@@ -407,7 +407,7 @@ function getSideBusinessProfit(yearMonth) {
   assertRequiredColumns(
     filtered.index,
     ["type", "amount"],
-    "transactions"
+    SHEETS.TRANSACTIONS
   );
 
   let income = 0;
@@ -437,7 +437,7 @@ function getSideBusinessProfit(yearMonth) {
 }
 
 function loadTransactions() {
-  return loadTable("transactions");
+  return loadTable(SHEETS.TRANSACTIONS);
 }
 
 function buildTransactionRow(
@@ -479,7 +479,7 @@ function buildTransactionRow(
 }
 
 function appendTransactionRow(row) {
-  getRequiredSheet("transactions")
+  getRequiredSheet(SHEETS.TRANSACTIONS)
     .appendRow(row);
 }
 
@@ -527,7 +527,7 @@ function buildDuplicateKey(tx) {
 }
 
 function getExistingDuplicateKeys() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("transactions");
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.TRANSACTIONS);
   const values = sheet.getDataRange().getValues();
 
   if (values.length < 2) return new Set();
@@ -551,7 +551,7 @@ function getExistingDuplicateKeys() {
 }
 
 function reclassifyAllTransactions() {
-  const txSheet = getRequiredSheet("transactions");
+  const txSheet = getRequiredSheet(SHEETS.TRANSACTIONS);
   const rules = getRules();
 
   const values = txSheet.getDataRange().getValues();
@@ -579,7 +579,7 @@ function reclassifyAllTransactions() {
       "wallet",
       "intent"
     ],
-    "transactions"
+    SHEETS.TRANSACTIONS
   );
 
   let updatedCount = 0;
@@ -646,7 +646,7 @@ function normalizeMerchant(merchant) {
 
 function normalizeAllTransactions() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("transactions");
+  const sheet = ss.getSheetByName(SHEETS.TRANSACTIONS);
 
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) return;
@@ -674,7 +674,7 @@ function normalizeTextBase(value) {
 
 function loadMerchantAliases() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("merchant_alias");
+  const sheet = ss.getSheetByName(SHEETS.MERCHANT_ALIAS);
 
   if (!sheet) return new Map();
 
@@ -711,7 +711,7 @@ function applyMerchantAlias(merchant, aliasMap) {
 
 function normalizeAllTransactionsWithAlias() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("transactions");
+  const sheet = ss.getSheetByName(SHEETS.TRANSACTIONS);
   const aliasMap = loadMerchantAliases();
 
   const values = sheet.getDataRange().getValues();
@@ -736,7 +736,7 @@ function normalizeAllTransactionsWithAlias() {
 
 function buildMerchantFrequencyMap() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("transactions");
+  const sheet = ss.getSheetByName(SHEETS.TRANSACTIONS);
 
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) return {};
@@ -759,8 +759,8 @@ function buildMerchantFrequencyMap() {
 
 function validateTransactionAccounts() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const txSheet = ss.getSheetByName("transactions");
-  const accountSheet = ss.getSheetByName("accounts");
+  const txSheet = ss.getSheetByName(SHEETS.TRANSACTIONS);
+  const accountSheet = ss.getSheetByName(SHEETS.ACCOUNTS);
 
   if (!txSheet) {
     throw new Error("transactions シートがありません");
@@ -858,7 +858,7 @@ function normalizeAccountName(accountName) {
   if (!raw) return "";
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("account_alias");
+  const sheet = ss.getSheetByName(SHEETS.ACCOUNT_ALIAS);
 
   if (!sheet) return raw;
 
