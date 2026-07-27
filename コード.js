@@ -3525,120 +3525,61 @@ function rebuildMonthlyTable() {
 }
 
 function rebuildWalletTable() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const analytics = ss.getSheetByName("analytics");
-  const tx = ss.getSheetByName("transactions");
+  const analytics = getRequiredSheet("analytics");
 
-  const values = tx.getDataRange().getValues();
+  analytics
+    .getRange("G3:H1000")
+    .clearContent();
 
-  analytics.getRange("G3:H1000").clearContent();
-  analytics.getRange("G3").setValue("Wallet");
-  analytics.getRange("H3").setValue("金額");
+  analytics
+    .getRange("G3:H3")
+    .setValues([["Wallet", "金額"]]);
 
-  if (values.length < 2) return;
-
-  const headers = values[0];
-  const idx = {};
-  headers.forEach((h, i) => idx[String(h).trim()] = i);
-
-  const targetMonth = getLatestBudgetMonth();
-  const map = new Map();
-
-  for (const row of values.slice(1)) {
-    const transactionMonth = normalizeYearMonth(
-      row[idx["transaction_date"]]
-    );
-
-    const type = String(row[idx["type"]] || "").trim();
-    const wallet = String(row[idx["wallet"]] || "").trim();
-    const amount = Number(row[idx["amount"]] || 0);
-
-    if (
-      transactionMonth !== targetMonth ||
-      type !== "支出" ||
-      !wallet ||
-      amount === 0
-    ) {
-      continue;
+  const result = summarizeTransactionsByField(
+    getLatestBudgetMonth(),
+    "wallet",
+    {
+      type: "支出",
+      skipBlank: true
     }
+  );
 
-    map.set(wallet, (map.get(wallet) || 0) + amount);
-  }
-
-  const result = Array.from(map.entries())
-    .map(([wallet, amount]) => [wallet, amount])
-    .sort((a, b) => b[1] - a[1]);
-
-  if (result.length > 0) {
-    analytics
-      .getRange(4, 7, result.length, 2)
-      .setValues(result);
-  }
-}
-
-function rebuildIntentTable(){
-
-  const ss=SpreadsheetApp.getActiveSpreadsheet();
-
-  const analytics=ss.getSheetByName("analytics");
-  const tx=ss.getSheetByName("transactions");
-
-  const values=tx.getDataRange().getValues();
-
-  analytics.getRange("J3:K1000").clearContent();
-
-  analytics.getRange("J3").setValue("Intent");
-  analytics.getRange("K3").setValue("金額");
-
-  if(values.length<2){
+  if (result.length === 0) {
     return;
   }
 
-  const headers=values[0];
-  const idx={};
+  analytics
+    .getRange(4, 7, result.length, 2)
+    .setValues(result);
+}
 
-  headers.forEach((h,i)=>idx[h]=i);
+function rebuildIntentTable() {
+  const analytics = getRequiredSheet("analytics");
 
-  const targetMonth=getLatestBudgetMonth();
+  analytics
+    .getRange("J3:K1000")
+    .clearContent();
 
-  const map=new Map();
+  analytics
+    .getRange("J3:K3")
+    .setValues([["Intent", "金額"]]);
 
-  for(const row of values.slice(1)){
-
-    if(normalizeYearMonth(row[idx["transaction_date"]])!==targetMonth){
-      continue;
+  const result = summarizeTransactionsByField(
+    getLatestBudgetMonth(),
+    "intent",
+    {
+      type: "支出",
+      skipBlank: false
     }
+  );
 
-    if(String(row[idx["type"]])!=="支出"){
-      continue;
-    }
-
-    const intent=String(row[idx["intent"]]||"");
-    const amount=Number(row[idx["amount"]]||0);
-
-    map.set(
-      intent,
-      (map.get(intent)||0)+amount
-    );
-
+  if (result.length === 0) {
+    return;
   }
 
-  const result=[];
-
-  for(const [intent,amount] of map){
-
-    result.push([
-      intent,
-      amount
-    ]);
-
-  }
-
-  if (result.length > 0) {
-    analytics
-      .getRange(4, 10, result.length, 2)
-      .setValues(result);
-  }
+  analytics
+    .getRange(4, 10, result.length, 2)
+    .setValues(result);
 }
 
 function testLoadTable() {
