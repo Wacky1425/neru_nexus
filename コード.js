@@ -2477,101 +2477,29 @@ function normalizeAccountName(accountName) {
   return raw;
 }
 
-function getBudget(yearMonth, itemName) {
-  const sheet = getRequiredSheet("budgets");
-  const values = sheet.getDataRange().getValues();
 
-  if (values.length < 2) {
-    return 0;
-  }
 
-  const index = createHeaderIndex(values[0]);
 
-  assertRequiredColumns(
-    index,
-    ["year_month", "item", "value"],
-    "budgets"
-  );
 
-  const targetMonth = normalizeBudgetYearMonth(yearMonth);
-  const targetItem = String(itemName || "").trim();
 
-  for (const row of values.slice(1)) {
-    const month = normalizeBudgetYearMonth(
-      row[index["year_month"]]
-    );
 
-    const item = String(
-      row[index["item"]] || ""
-    ).trim();
 
-    if (month === targetMonth && item === targetItem) {
-      return Number(
-        String(row[index["value"]] || "0").replace(/,/g, "")
-      );
-    }
-  }
 
-  return 0;
-}
-
-function testGetBudget() {
-  const value = getBudget("2026-08", "貯金目標");
-  Logger.log(`貯金目標: ${value}`);
-}
-
-function normalizeBudgetYearMonth(value) {
-  if (!value) return "";
-
-  if (value instanceof Date && !isNaN(value.getTime())) {
-    return Utilities.formatDate(value, "Asia/Tokyo", "yyyy-MM");
-  }
-
-  const text = String(value).trim();
-
-  const match = text.match(/^(\d{4})[-\/](\d{1,2})$/);
-  if (match) {
-    return `${match[1]}-${String(match[2]).padStart(2, "0")}`;
-  }
-
-  const parsed = new Date(text.replace(/\./g, "/"));
-  if (!isNaN(parsed.getTime())) {
-    return Utilities.formatDate(parsed, "Asia/Tokyo", "yyyy-MM");
-  }
-
-  return text;
-}
-
-function getLatestBudget(itemName) {
-  const latestMonth = getLatestBudgetMonth();
-
-  if (!latestMonth) {
-    return 0;
-  }
-
-  return getBudget(latestMonth, itemName);
-}
-
-function testGetLatestBudget() {
-  Logger.log(getLatestBudget("貯金目標"));
-}
 
 function getAvailableMoney(yearMonth) {
-  const salary = getBudget(yearMonth, "給与予定");
-  const fixedCostBudget = getBudget(yearMonth, "固定費予算");
-  const investmentTarget = getBudget(yearMonth, "NISA積立");
-  const savingTarget = getBudget(yearMonth, "貯金目標");
-
-  const expenses = getMonthlyLivingExpenseBreakdown(yearMonth);
+  const budgets = getBudgetsForMonth(yearMonth);
+  const expenses =
+    getMonthlyLivingExpenseBreakdown(yearMonth);
 
   return (
-    salary
-    - fixedCostBudget
-    - investmentTarget
-    - savingTarget
+    Number(budgets["給与予定"] || 0)
+    - Number(budgets["固定費予算"] || 0)
+    - Number(budgets["NISA積立"] || 0)
+    - Number(budgets["貯金目標"] || 0)
     - expenses.variableExpense
   );
 }
+
 
 function getMonthlyLivingExpense(yearMonth) {
   const sheet = getRequiredSheet("transactions");
@@ -2682,36 +2610,7 @@ function initializeRuleIntent() {
   Logger.log(updated + "件更新");
 }
 
-function getLatestBudgetMonth() {
-  const sheet = getRequiredSheet("budgets");
-  const values = sheet.getDataRange().getValues();
 
-  if (values.length < 2) {
-    return "";
-  }
-
-  const index = createHeaderIndex(values[0]);
-
-  assertRequiredColumns(
-    index,
-    ["year_month"],
-    "budgets"
-  );
-
-  let latestMonth = "";
-
-  for (const row of values.slice(1)) {
-    const month = normalizeBudgetYearMonth(
-      row[index["year_month"]]
-    );
-
-    if (month && month > latestMonth) {
-      latestMonth = month;
-    }
-  }
-
-  return latestMonth;
-}
 
 function rebuildHomeDashboard() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -3113,15 +3012,28 @@ function getMonthlyLivingExpenseBreakdown(yearMonth) {
 }
 
 function getSavingForecast(yearMonth) {
-  const salary = getBudget(yearMonth, "給与予定");
-  const fixedCostBudget = getBudget(yearMonth, "固定費予算");
-  const variableBudget = getBudget(yearMonth, "変動費予算");
-  const investmentTarget = getBudget(yearMonth, "NISA積立");
+  const budgets = getBudgetsForMonth(yearMonth);
 
-  const expenses = getMonthlyLivingExpenseBreakdown(yearMonth);
-  const targetMonth = normalizeBudgetYearMonth(yearMonth);
+  const salary =
+    Number(budgets["給与予定"] || 0);
+
+  const fixedCostBudget =
+    Number(budgets["固定費予算"] || 0);
+
+  const variableBudget =
+    Number(budgets["変動費予算"] || 0);
+
+  const investmentTarget =
+    Number(budgets["NISA積立"] || 0);
+
+  const expenses =
+    getMonthlyLivingExpenseBreakdown(yearMonth);
+
+  const targetMonth =
+    normalizeBudgetYearMonth(yearMonth);
 
   const now = new Date();
+
   const currentMonth = Utilities.formatDate(
     now,
     "Asia/Tokyo",
@@ -3132,20 +3044,33 @@ function getSavingForecast(yearMonth) {
 
   if (targetMonth === currentMonth) {
     const elapsedDays = Number(
-      Utilities.formatDate(now, "Asia/Tokyo", "d")
+      Utilities.formatDate(
+        now,
+        "Asia/Tokyo",
+        "d"
+      )
     );
 
-    const [year, month] = targetMonth.split("-").map(Number);
-    const daysInMonth = new Date(year, month, 0).getDate();
+    const [year, month] = targetMonth
+      .split("-")
+      .map(Number);
 
-    if (elapsedDays > 0 && expenses.variableExpense > 0) {
+    const daysInMonth =
+      new Date(year, month, 0).getDate();
+
+    if (
+      elapsedDays > 0 &&
+      expenses.variableExpense > 0
+    ) {
       projectedVariableExpense = Math.round(
-        expenses.variableExpense / elapsedDays * daysInMonth
+        expenses.variableExpense /
+        elapsedDays *
+        daysInMonth
       );
     }
   } else if (targetMonth < currentMonth) {
-    // 過去月は実績を使用
-    projectedVariableExpense = expenses.variableExpense;
+    projectedVariableExpense =
+      expenses.variableExpense;
   }
 
   return (
