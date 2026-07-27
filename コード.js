@@ -2504,17 +2504,12 @@ function getAvailableMoney(yearMonth) {
 }
 
 function getMonthlyLivingExpense(yearMonth) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("transactions");
+  const sheet = getRequiredSheet("transactions");
 
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) return 0;
 
-  const headers = values[0];
-  const idx = {};
-  headers.forEach((h, i) => {
-    idx[String(h).trim()] = i;
-  });
+  const idx = createHeaderIndex(values[0]);
 
   let total = 0;
   const targetMonth = normalizeBudgetYearMonth(yearMonth);
@@ -3002,8 +2997,7 @@ function isFixedExpenseCategory(majorCategory, subCategory) {
 }
 
 function getMonthlyLivingExpenseBreakdown(yearMonth) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("transactions");
+  const sheet = getRequiredSheet("transactions");
 
   const result = {
     fixedExpense: 0,
@@ -3014,12 +3008,7 @@ function getMonthlyLivingExpenseBreakdown(yearMonth) {
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) return result;
 
-  const headers = values[0];
-  const idx = {};
-  headers.forEach((h, i) => {
-    idx[String(h).trim()] = i;
-  });
-
+  const idx = createHeaderIndex(values[0]);
   const targetMonth = normalizeBudgetYearMonth(yearMonth);
 
   for (const row of values.slice(1)) {
@@ -3107,8 +3096,7 @@ function testHomeMetrics() {
 
 function getSideBusinessProfit(yearMonth) {
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("transactions");
+  const sheet = getRequiredSheet("transactions");
 
   const values = sheet.getDataRange().getValues();
 
@@ -3116,9 +3104,7 @@ function getSideBusinessProfit(yearMonth) {
     return 0;
   }
 
-  const headers = values[0];
-  const idx = {};
-  headers.forEach((h,i)=>idx[h]=i);
+  const idx = createHeaderIndex(values[0]);
 
   let income = 0;
   let expense = 0;
