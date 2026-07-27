@@ -704,66 +704,6 @@ function buildMerchantFrequencyMap() {
   return map;
 }
 
-function rebuildBulkReview() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const summarySheet = ss.getSheetByName("review_summary");
-  const bulkSheet = ss.getSheetByName("bulk_review");
-
-  const values = summarySheet.getDataRange().getValues();
-  if (values.length < 2) return;
-
-  const headers = values[0];
-  const rows = values.slice(1);
-
-  const idx = {};
-  headers.forEach((h, i) => idx[h] = i);
-
-  bulkSheet.clearContents();
-
-  bulkSheet.appendRow([
-    "merchant",
-    "count",
-    "total_amount",
-    "current_category",
-    "bulk_safe",
-    "type_manual",
-    "major_manual",
-    "sub_manual",
-    "purpose_manual",
-    "expense_ratio_manual",
-    "rule_keyword",
-    "rule_target",
-    "note"
-  ]);
-
-  const out = rows.map(row => {
-    const merchant = String(row[idx["merchant"]] || "").trim();
-    const count = row[idx["count"]];
-    const total = row[idx["total_amount"]];
-    const currentCategory = row[idx["sample_category"]];
-
-    return [
-      merchant,
-      count,
-      total,
-      currentCategory,
-      "",
-      "",
-      "",
-      "",
-      "私用",
-      0,
-      merchant,
-      "merchant",
-      ""
-    ];
-  });
-
-  if (out.length > 0) {
-    bulkSheet.getRange(2, 1, out.length, out[0].length).setValues(out);
-  }
-}
-
 function learnRulesFromBulkReview() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const bulkSheet = ss.getSheetByName("bulk_review");

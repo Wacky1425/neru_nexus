@@ -133,61 +133,179 @@ function rebuildReviewQueue() {
 }
 
 function rebuildReviewSummary() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const reviewSheet = ss.getSheetByName("review_queue");
-  const summarySheet = ss.getSheetByName("review_summary");
+  const table = loadTable("review_queue");
+  const summarySheet = getRequiredSheet("review_summary");
 
-  const values = reviewSheet.getDataRange().getValues();
-  if (values.length < 2) return;
+  if (table.rows.length === 0) {
+    writeTable(
+      summarySheet,
+      1,
+      1,
+      [
+        "merchant",
+        "count",
+        "total_amount",
+        "sample_category"
+      ],
+      []
+    );
 
-  const headers = values[0];
-  const rows = values.slice(1);
+    return;
+  }
 
-  const idx = {};
-  headers.forEach((h, i) => idx[h] = i);
+  assertRequiredColumns(
+    table.index,
+    [
+      "merchant",
+      "amount",
+      "major_category",
+      "sub_category"
+    ],
+    "review_queue"
+  );
 
-  const map = new Map();
+  const summaryMap = new Map();
 
-  for (const row of rows) {
-    const merchant = String(row[idx["merchant"]] || "").trim();
-    const amount = Number(row[idx["amount"]] || 0);
-    const major = String(row[idx["major_category"]] || "").trim();
-    const sub = String(row[idx["sub_category"]] || "").trim();
+  for (const row of table.rows) {
+    const merchant = getString(
+      row,
+      table.index,
+      "merchant"
+    );
 
-    if (!merchant) continue;
+    if (!merchant) {
+      continue;
+    }
 
-    if (!map.has(merchant)) {
-      map.set(merchant, {
+    const amount = getNumber(
+      row,
+      table.index,
+      "amount"
+    );
+
+    const major = getString(
+      row,
+      table.index,
+      "major_category"
+    );
+
+    const sub = getString(
+      row,
+      table.index,
+      "sub_category"
+    );
+
+    if (!summaryMap.has(merchant)) {
+      summaryMap.set(merchant, {
         merchant,
         count: 0,
-        total_amount: 0,
-        sample_category: `${major} / ${sub}`,
+        totalAmount: 0,
+        sampleCategory: `${major} / ${sub}`
       });
     }
 
-    const item = map.get(merchant);
-    item.count += 1;
-    item.total_amount += amount;
+    const summary = summaryMap.get(merchant);
+
+    summary.count += 1;
+    summary.totalAmount += amount;
   }
 
-  const output = Array.from(map.values())
+  const rows = Array
+    .from(summaryMap.values())
     .sort((a, b) => b.count - a.count)
-    .map(item => [
-      item.merchant,
-      item.count,
-      item.total_amount,
-      item.sample_category
+    .map(summary => [
+      summary.merchant,
+      summary.count,
+      summary.totalAmount,
+      summary.sampleCategory
     ]);
 
-  summarySheet.clearContents();
-  summarySheet.appendRow([
+  writeTable(
+    summarySheet,
+    1,
+    1,
+    [
+      "merchant",
+      "count",
+      "total_amount",
+      "sample_category"
+    ],
+    rows
+  );
+}
+
+function rebuildBulkReview() {
+  const table = loadTable("review_summary");
+  const bulkSheet = getRequiredSheet("bulk_review");
+
+  const headers = [
     "merchant",
     "count",
     "total_amount",
-    "sample_category"
-  ]);
+    "current_category",
+    "bulk_safe",
+    "type_manual",
+    "major_manual",
+    "sub_manual",
+    "purpose_manual",
+    "expense_ratio_manual",
+    "rule_keyword",
+    "rule_target",
+    "note"
+  ];
 
-  if (output.length > 0) {
-    summarySheet.getRange(2, 1, output.length, output[0].length).setValues(output);
+  if (table.rows.length === 0) {
+    writeTable(
+      bulkSheet,
+      1,
+      1,
+      headers,
+      []
+    );
+
+    return;
   }
+
+  assertRequiredColumns(
+    table.index,
+    [
+      "merchant",
+      "count",
+      "total_amount",
+      "sample_category"
+    ],
+    "review_summary"
+  );
+
+  const rows = table.rows.map(row => {
+    const merchant = getString(
+      row,
+      table.index,
+      "merchant"
+    );
+
+    return [
+      merchant,
+      getNumber(row, table.index, "count"),
+      getNumber(row, table.index, "total_amount"),
+      getString(row, table.index, "sample_category"),
+      "",
+      "",
+      "",
+      "",
+      "私用",
+      0,
+      merchant,
+      "merchant",
+      ""
+    ];
+  });
+
+  writeTable(
+    bulkSheet,
+    1,
+    1,
+    headers,
+    rows
+  );
 }
