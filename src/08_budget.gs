@@ -7,7 +7,7 @@
  * }}
  */
 function loadBudgetTable_() {
-  const sheet = getRequiredSheet("budgets");
+  const sheet = getRequiredSheet(SHEETS.BUDGETS);
   const values = sheet.getDataRange().getValues();
 
   if (values.length < 2) {
@@ -22,7 +22,7 @@ function loadBudgetTable_() {
   assertRequiredColumns(
     index,
     ["year_month", "item", "value"],
-    "budgets"
+    SHEETS.BUDGETS
   );
 
   return {

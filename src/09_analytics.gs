@@ -11,7 +11,7 @@ function rebuildAnalytics() {
 }
 
 function rebuildWalletTable() {
-  const analytics = getRequiredSheet("analytics");
+  const analytics = getRequiredSheet(SHEETS.ANALYTICS);
 
   const rows = summarizeTransactionsByField(
     getLatestBudgetMonth(),
@@ -32,7 +32,7 @@ function rebuildWalletTable() {
 }
 
 function rebuildIntentTable() {
-  const analytics = getRequiredSheet("analytics");
+  const analytics = getRequiredSheet(SHEETS.ANALYTICS);
 
   const rows = summarizeTransactionsByField(
     getLatestBudgetMonth(),
@@ -53,7 +53,7 @@ function rebuildIntentTable() {
 }
 
 function rebuildCategoryTable() {
-  const analytics = getRequiredSheet("analytics");
+  const analytics = getRequiredSheet(SHEETS.ANALYTICS);
   const yearMonth = getLatestBudgetMonth();
 
   const rows = getCategorySummary(yearMonth)
@@ -72,8 +72,8 @@ function rebuildCategoryTable() {
 }
 
 function rebuildMonthlyTable() {
-  const analytics = getRequiredSheet("analytics");
-  const table = loadTable("monthly_summary");
+  const analytics = getRequiredSheet(SHEETS.ANALYTICS);
+  const table = loadTable(SHEETS.MONTHLY_SUMMARY);
 
   if (table.rows.length === 0) {
     writeTable(
@@ -93,7 +93,7 @@ function rebuildMonthlyTable() {
       "year_month",
       "net_expense"
     ],
-    "monthly_summary"
+    SHEETS.MONTHLY_SUMMARY
   );
 
   const rows = table.rows.map(row => [
