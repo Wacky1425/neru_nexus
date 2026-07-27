@@ -2502,24 +2502,45 @@ function getAvailableMoney(yearMonth) {
 
 
 function getMonthlyLivingExpense(yearMonth) {
-  const sheet = getRequiredSheet("transactions");
+  const table = loadTable("transactions");
 
-  const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return 0;
+  if (table.rows.length === 0) {
+    return 0;
+  }
 
-  const idx = createHeaderIndex(values[0]);
+  const index = table.index;
 
-  let total = 0;
+  assertRequiredColumns(
+    index,
+    [
+      "transaction_date",
+      "type",
+      "wallet",
+      "amount"
+    ],
+    "transactions"
+  );
+
   const targetMonth = normalizeBudgetYearMonth(yearMonth);
 
-  for (const row of values.slice(1)) {
+  let total = 0;
+
+  for (const row of table.rows) {
     const transactionMonth = normalizeYearMonth(
-      row[idx["transaction_date"]]
+      row[index["transaction_date"]]
     );
 
-    const type = String(row[idx["type"]] || "").trim();
-    const wallet = String(row[idx["wallet"]] || "生活").trim();
-    const amount = Number(row[idx["amount"]] || 0);
+    const type = String(
+      row[index["type"]] || ""
+    ).trim();
+
+    const wallet = String(
+      row[index["wallet"]] || "生活"
+    ).trim();
+
+    const amount = Number(
+      row[index["amount"]] || 0
+    );
 
     if (
       transactionMonth === targetMonth &&
@@ -2966,7 +2987,7 @@ function isFixedExpenseCategory(majorCategory, subCategory) {
 }
 
 function getMonthlyLivingExpenseBreakdown(yearMonth) {
-  const sheet = getRequiredSheet("transactions");
+  const table = loadTable("transactions");
 
   const result = {
     fixedExpense: 0,
@@ -2974,22 +2995,51 @@ function getMonthlyLivingExpenseBreakdown(yearMonth) {
     totalExpense: 0
   };
 
-  const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return result;
+  if (table.rows.length === 0) {
+    return result;
+  }
 
-  const idx = createHeaderIndex(values[0]);
+  const index = table.index;
+
+  assertRequiredColumns(
+    index,
+    [
+      "transaction_date",
+      "type",
+      "wallet",
+      "major_category",
+      "sub_category",
+      "amount"
+    ],
+    "transactions"
+  );
+
   const targetMonth = normalizeBudgetYearMonth(yearMonth);
 
-  for (const row of values.slice(1)) {
+  for (const row of table.rows) {
     const transactionMonth = normalizeYearMonth(
-      row[idx["transaction_date"]]
+      row[index["transaction_date"]]
     );
 
-    const type = String(row[idx["type"]] || "").trim();
-    const wallet = String(row[idx["wallet"]] || "生活").trim();
-    const major = String(row[idx["major_category"]] || "").trim();
-    const sub = String(row[idx["sub_category"]] || "").trim();
-    const amount = Number(row[idx["amount"]] || 0);
+    const type = String(
+      row[index["type"]] || ""
+    ).trim();
+
+    const wallet = String(
+      row[index["wallet"]] || "生活"
+    ).trim();
+
+    const major = String(
+      row[index["major_category"]] || ""
+    ).trim();
+
+    const sub = String(
+      row[index["sub_category"]] || ""
+    ).trim();
+
+    const amount = Number(
+      row[index["amount"]] || 0
+    );
 
     if (
       transactionMonth !== targetMonth ||
@@ -3090,44 +3140,63 @@ function testHomeMetrics() {
 }
 
 function getSideBusinessProfit(yearMonth) {
+  const table = loadTable("transactions");
 
-  const sheet = getRequiredSheet("transactions");
-
-  const values = sheet.getDataRange().getValues();
-
-  if(values.length < 2){
+  if (table.rows.length === 0) {
     return 0;
   }
 
-  const idx = createHeaderIndex(values[0]);
+  const index = table.index;
+
+  assertRequiredColumns(
+    index,
+    [
+      "transaction_date",
+      "wallet",
+      "type",
+      "amount"
+    ],
+    "transactions"
+  );
+
+  const targetMonth = normalizeBudgetYearMonth(yearMonth);
 
   let income = 0;
   let expense = 0;
 
-  for(const row of values.slice(1)){
+  for (const row of table.rows) {
+    const transactionMonth = normalizeYearMonth(
+      row[index["transaction_date"]]
+    );
 
-    const ym = normalizeYearMonth(row[idx["transaction_date"]]);
-
-    if(ym !== yearMonth) continue;
-
-    const wallet = String(row[idx["wallet"]]||"");
-    const type = String(row[idx["type"]]||"");
-    const amount = Number(row[idx["amount"]]||0);
-
-    if(wallet !== "事業") continue;
-
-    if(type==="収入"){
-      income += amount;
+    if (transactionMonth !== targetMonth) {
+      continue;
     }
 
-    if(type==="支出"){
+    const wallet = String(
+      row[index["wallet"]] || ""
+    ).trim();
+
+    if (wallet !== "事業") {
+      continue;
+    }
+
+    const type = String(
+      row[index["type"]] || ""
+    ).trim();
+
+    const amount = Number(
+      row[index["amount"]] || 0
+    );
+
+    if (type === "収入") {
+      income += amount;
+    } else if (type === "支出") {
       expense += amount;
     }
-
   }
 
   return income - expense;
-
 }
 
 function testHomeDashboard(){
@@ -3570,4 +3639,13 @@ function rebuildIntentTable(){
       .getRange(4, 10, result.length, 2)
       .setValues(result);
   }
+}
+
+function testLoadTable() {
+  const table = loadTable("transactions");
+
+  Logger.log(`values: ${table.values.length}`);
+  Logger.log(`rows: ${table.rows.length}`);
+  Logger.log(`headers: ${table.headers.join(", ")}`);
+  Logger.log(`merchant列: ${table.index["merchant"]}`);
 }
