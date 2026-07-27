@@ -2502,56 +2502,24 @@ function getAvailableMoney(yearMonth) {
 
 
 function getMonthlyLivingExpense(yearMonth) {
-  const table = loadTable("transactions");
-
-  if (table.rows.length === 0) {
-    return 0;
-  }
-
-  const index = table.index;
+  const result = filterTransactionRows({
+    yearMonth,
+    type: "支出",
+    wallet: "生活"
+  });
 
   assertRequiredColumns(
-    index,
-    [
-      "transaction_date",
-      "type",
-      "wallet",
-      "amount"
-    ],
+    result.index,
+    ["amount"],
     "transactions"
   );
 
-  const targetMonth = normalizeBudgetYearMonth(yearMonth);
-
-  let total = 0;
-
-  for (const row of table.rows) {
-    const transactionMonth = normalizeYearMonth(
-      row[index["transaction_date"]]
-    );
-
-    const type = String(
-      row[index["type"]] || ""
-    ).trim();
-
-    const wallet = String(
-      row[index["wallet"]] || "生活"
-    ).trim();
-
-    const amount = Number(
-      row[index["amount"]] || 0
-    );
-
-    if (
-      transactionMonth === targetMonth &&
-      type === "支出" &&
-      wallet === "生活"
-    ) {
-      total += amount;
-    }
-  }
-
-  return total;
+  return result.rows.reduce(
+    (total, row) =>
+      total +
+      Number(row[result.index["amount"]] || 0),
+    0
+  );
 }
 
 function testGetAvailableMoney() {
@@ -2987,7 +2955,11 @@ function isFixedExpenseCategory(majorCategory, subCategory) {
 }
 
 function getMonthlyLivingExpenseBreakdown(yearMonth) {
-  const table = loadTable("transactions");
+  const filtered = filterTransactionRows({
+    yearMonth,
+    type: "支出",
+    wallet: "生活"
+  });
 
   const result = {
     fixedExpense: 0,
@@ -2995,18 +2967,13 @@ function getMonthlyLivingExpenseBreakdown(yearMonth) {
     totalExpense: 0
   };
 
-  if (table.rows.length === 0) {
+  if (filtered.rows.length === 0) {
     return result;
   }
 
-  const index = table.index;
-
   assertRequiredColumns(
-    index,
+    filtered.index,
     [
-      "transaction_date",
-      "type",
-      "wallet",
       "major_category",
       "sub_category",
       "amount"
@@ -3014,40 +2981,18 @@ function getMonthlyLivingExpenseBreakdown(yearMonth) {
     "transactions"
   );
 
-  const targetMonth = normalizeBudgetYearMonth(yearMonth);
-
-  for (const row of table.rows) {
-    const transactionMonth = normalizeYearMonth(
-      row[index["transaction_date"]]
-    );
-
-    const type = String(
-      row[index["type"]] || ""
-    ).trim();
-
-    const wallet = String(
-      row[index["wallet"]] || "生活"
-    ).trim();
-
+  for (const row of filtered.rows) {
     const major = String(
-      row[index["major_category"]] || ""
+      row[filtered.index["major_category"]] || ""
     ).trim();
 
     const sub = String(
-      row[index["sub_category"]] || ""
+      row[filtered.index["sub_category"]] || ""
     ).trim();
 
     const amount = Number(
-      row[index["amount"]] || 0
+      row[filtered.index["amount"]] || 0
     );
-
-    if (
-      transactionMonth !== targetMonth ||
-      type !== "支出" ||
-      wallet !== "生活"
-    ) {
-      continue;
-    }
 
     result.totalExpense += amount;
 
@@ -3140,53 +3085,31 @@ function testHomeMetrics() {
 }
 
 function getSideBusinessProfit(yearMonth) {
-  const table = loadTable("transactions");
+  const filtered = filterTransactionRows({
+    yearMonth,
+    wallet: "事業"
+  });
 
-  if (table.rows.length === 0) {
+  if (filtered.rows.length === 0) {
     return 0;
   }
 
-  const index = table.index;
-
   assertRequiredColumns(
-    index,
-    [
-      "transaction_date",
-      "wallet",
-      "type",
-      "amount"
-    ],
+    filtered.index,
+    ["type", "amount"],
     "transactions"
   );
-
-  const targetMonth = normalizeBudgetYearMonth(yearMonth);
 
   let income = 0;
   let expense = 0;
 
-  for (const row of table.rows) {
-    const transactionMonth = normalizeYearMonth(
-      row[index["transaction_date"]]
-    );
-
-    if (transactionMonth !== targetMonth) {
-      continue;
-    }
-
-    const wallet = String(
-      row[index["wallet"]] || ""
-    ).trim();
-
-    if (wallet !== "事業") {
-      continue;
-    }
-
+  for (const row of filtered.rows) {
     const type = String(
-      row[index["type"]] || ""
+      row[filtered.index["type"]] || ""
     ).trim();
 
     const amount = Number(
-      row[index["amount"]] || 0
+      row[filtered.index["amount"]] || 0
     );
 
     if (type === "収入") {
