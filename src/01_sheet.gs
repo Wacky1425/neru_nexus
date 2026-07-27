@@ -117,3 +117,55 @@ function loadTable(sheetName) {
     index: createHeaderIndex(headers)
   };
 }
+
+/**
+ * 1行の配列を、ヘッダー名をキーにしたオブジェクトへ変換する。
+ *
+ * @param {Array<*>} headers
+ * @param {Array<*>} row
+ * @return {Object<string, *>}
+ */
+function rowToObject(headers, row) {
+  const result = {};
+
+  headers.forEach((header, columnIndex) => {
+    const name = String(header || "").trim();
+
+    if (name) {
+      result[name] = row[columnIndex];
+    }
+  });
+
+  return result;
+}
+
+/**
+ * 表形式のデータをオブジェクト配列へ変換する。
+ * 1行目をヘッダーとして扱う。
+ *
+ * @param {Array<Array<*>>} values
+ * @return {Array<Object<string, *>>}
+ */
+function tableValuesToObjects(values) {
+  if (!Array.isArray(values) || values.length < 2) {
+    return [];
+  }
+
+  const headers = values[0];
+
+  return values
+    .slice(1)
+    .map(row => rowToObject(headers, row));
+}
+
+/**
+ * 指定シートをオブジェクト配列として読み込む。
+ *
+ * @param {string} sheetName
+ * @return {Array<Object<string, *>>}
+ */
+function loadObjects(sheetName) {
+  return tableValuesToObjects(
+    getValues(sheetName)
+  );
+}

@@ -190,19 +190,16 @@ function testAccess() {
 }
 
 function getRules() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("rules");
-  const values = sheet.getDataRange().getValues();
+  const rules = loadObjects("rules")
+    .filter(rule =>
+      String(rule.keyword || "").trim() !== ""
+    );
 
-  const headers = values[0];
-  const rows = values.slice(1);
-
-  const rules = rows.map(row => {
-    const obj = {};
-    headers.forEach((h, i) => obj[h] = row[i]);
-    return obj;
-  });
-
-  rules.sort((a, b) => Number(a.priority) - Number(b.priority));
+  rules.sort(
+    (a, b) =>
+      Number(a.priority || 0) -
+      Number(b.priority || 0)
+  );
 
   return rules;
 }
@@ -499,44 +496,44 @@ function guessExpenseRatio(subCategory) {
 }
 
 function getImportConfig(configName) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("import_config");
-  const values = sheet.getDataRange().getValues();
+  const targetName = String(
+    configName || ""
+  ).trim();
 
-  const headers = values[0];
-  const rows = values.slice(1);
+  const config = loadObjects("import_config")
+    .find(row =>
+      String(row.config_name || "").trim() ===
+      targetName
+    );
 
-  for (const row of rows) {
-    const obj = {};
-    headers.forEach((h, i) => obj[h] = row[i]);
-
-    if (obj.config_name === configName) {
-      const active = String(obj.active || "1").trim();
-
-      if (active !== "1" && active.toUpperCase() !== "TRUE") {
-        throw new Error("import_config が inactive です: " + configName);
-      }
-
-      return obj;
-    }
+  if (!config) {
+    throw new Error(
+      "import_config に該当設定がありません: " +
+      targetName
+    );
   }
 
-  throw new Error("import_config に該当設定がありません: " + configName);
+  const active = String(
+    config.active === undefined
+      ? "1"
+      : config.active
+  ).trim();
+
+  if (
+    active !== "1" &&
+    active.toUpperCase() !== "TRUE"
+  ) {
+    throw new Error(
+      "import_config が inactive です: " +
+      targetName
+    );
+  }
+
+  return config;
 }
 
 function readImportCsv() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("import_csv");
-  const values = sheet.getDataRange().getValues();
-
-  if (values.length < 2) return [];
-
-  const headers = values[0];
-  const rows = values.slice(1);
-
-  return rows.map(row => {
-    const obj = {};
-    headers.forEach((h, i) => obj[h] = row[i]);
-    return obj;
-  });
+  return loadObjects("import_csv");
 }
 
 function normalizeCsvRow(row, config) {
@@ -3515,4 +3512,28 @@ function testLoadTable() {
   Logger.log(`rows: ${table.rows.length}`);
   Logger.log(`headers: ${table.headers.join(", ")}`);
   Logger.log(`merchant列: ${table.index["merchant"]}`);
+}
+
+function testObjectLoaders() {
+  const rules = getRules();
+  const configs = loadObjects("import_config");
+  const importRows = readImportCsv();
+
+  Logger.log(`rules: ${rules.length}`);
+  Logger.log(`configs: ${configs.length}`);
+  Logger.log(`import_csv: ${importRows.length}`);
+
+  if (rules.length > 0) {
+    Logger.log(
+      `先頭rule: ${JSON.stringify(rules[0])}`
+    );
+  }
+
+  const olive = getImportConfig(
+    "olive_credit_v1"
+  );
+
+  Logger.log(
+    `config取得: ${olive.config_name}`
+  );
 }
