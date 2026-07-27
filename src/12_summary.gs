@@ -244,3 +244,42 @@ function rebuildSummaries() {
     `カテゴリ集計: ${categoryRows.length}件`
   );
 }
+
+function getCategorySummary(yearMonth){
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("category_summary");
+
+  const values = sheet.getDataRange().getValues();
+
+  if(values.length < 2){
+    return [];
+  }
+
+  const headers = values[0];
+  const idx = {};
+
+  headers.forEach((h,i)=>idx[h]=i);
+
+  const result = [];
+
+  for(const row of values.slice(1)){
+
+    if(String(row[idx["year_month"]]) !== yearMonth){
+      continue;
+    }
+
+    result.push({
+
+      category: row[idx["major_category"]],
+      amount: Number(row[idx["total_amount"]]||0)
+
+    });
+
+  }
+
+  result.sort((a,b)=>b.amount-a.amount);
+
+  return result;
+
+}

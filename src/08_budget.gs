@@ -181,3 +181,22 @@ function testGetLatestBudget() {
     `最新月の貯金目標: ${getLatestBudget("貯金目標")}`
   );
 }
+
+function getLatestYearMonth() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("monthly_summary");
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) {
+    throw new Error("monthly_summary にデータがありません");
+  }
+
+  const rows = values.slice(1).filter(r => r[0]);
+  const latestRaw = rows[rows.length - 1][0];
+  const latest = normalizeYearMonth(latestRaw);
+
+  if (!latest) {
+    throw new Error("最新の year_month を正規化できません");
+  }
+
+  return latest;
+}

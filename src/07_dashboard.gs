@@ -1,3 +1,120 @@
+function rebuildAllViews() {
+  rebuildSummaries();
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const monthlySheet = ss.getSheetByName("monthly_summary");
+  const hasMonthlyData = monthlySheet.getLastRow() >= 2;
+
+  if (!hasMonthlyData) {
+    setLatestMonthToDashboard();
+    return;
+  }
+
+  setLatestMonthToDashboard();
+  refreshDashboardFromCell();
+}
+
+function refreshDashboard(targetMonth) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const dashboard = ss.getSheetByName("dashboard");
+  const monthlySheet = ss.getSheetByName("monthly_summary");
+
+  const values = monthlySheet.getDataRange().getValues();
+  if (values.length < 2) return;
+
+  const headers = values[0];
+  const rows = values.slice(1);
+
+  const idx = {};
+  headers.forEach((h, i) => idx[h] = i);
+
+  let targetRow = null;
+
+  for (const row of rows) {
+    if (normalizeYearMonth(row[idx["year_month"]]) === normalizeYearMonth(targetMonth)) {
+      targetRow = row;
+      break;
+    }
+  }
+
+  if (!targetRow) {
+    throw new Error(`monthly_summary に ${targetMonth} が見つかりません`);
+  }
+
+  dashboard.getRange("A1:B7").setValues([
+    ["項目", "値"],
+    ["今月", normalizeYearMonth(targetMonth)],
+    ["今月の支出", targetRow[idx["total_expense"]]],
+    ["今月の収入", targetRow[idx["total_income"]]],
+    ["今月の値引き", targetRow[idx["total_discount"]]],
+    ["今月の実質支出", targetRow[idx["net_expense"]]],
+    ["今月の経費合計", targetRow[idx["total_business_expense"]]],
+  ]);
+}
+
+function refreshDashboardCategoryTable(targetMonth) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const dashboard = ss.getSheetByName("dashboard");
+  const categorySheet = ss.getSheetByName("category_summary");
+
+  const values = categorySheet.getDataRange().getValues();
+  if (values.length < 2) return;
+
+  const headers = values[0];
+  const rows = values.slice(1);
+
+  const idx = {};
+  headers.forEach((h, i) => idx[h] = i);
+
+  const filtered = rows.filter(row =>
+    normalizeYearMonth(row[idx["year_month"]]) === normalizeYearMonth(targetMonth)
+  );
+
+  dashboard.getRange("D20:E100").clearContent();
+  dashboard.getRange("D20:E20").setValues([["major_category", "total_amount"]]);
+
+  if (filtered.length === 0) return;
+
+  const out = filtered
+    .filter(row => row[idx["major_category"]] && Number(row[idx["total_amount"]]) !== 0)
+    .map(row => [
+      row[idx["major_category"]],
+      row[idx["total_amount"]],
+    ]);
+
+  if (out.length > 0) {
+    dashboard.getRange(21, 4, out.length, 2).setValues(out);
+  }
+}
+
+function refreshDashboardFromCell() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const dashboard = ss.getSheetByName("dashboard");
+  const targetMonth = normalizeYearMonth(dashboard.getRange("B2").getValue());
+
+  if (!targetMonth) {
+    throw new Error("dashboard!B2 に対象月がありません");
+  }
+
+  refreshDashboard(targetMonth);
+  refreshDashboardCategoryTable(targetMonth);
+}
+
+function setLatestMonthToDashboard() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const dashboard = ss.getSheetByName("dashboard");
+
+  let latestMonth = "";
+
+  try {
+    latestMonth = getLatestYearMonth();
+  } catch (e) {
+    latestMonth = Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy-MM");
+  }
+
+  dashboard.getRange("B2").setValue(latestMonth);
+}
+
 function rebuildHomeDashboard() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName("home");
@@ -431,4 +548,193 @@ function testHomeDashboard(){
 
   Logger.log("Home更新完了");
 
+}
+
+function isFixedExpenseCategory(majorCategory, subCategory) {
+  const major = String(majorCategory || "").trim();
+  const sub = String(subCategory || "").trim();
+
+  if (major === "住居" || major === "通信") {
+    return true;
+  }
+
+  if (
+    major === "金融" &&
+    ["税金", "保険"].includes(sub)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function getMoneyHealth(yearMonth) {
+
+  const available = getAvailableMoney(yearMonth);
+  const savingForecast = getSavingForecast(yearMonth);
+  const expense = getMonthlyLivingExpenseBreakdown(yearMonth);
+
+  let level = "🟢";
+  let title = "順調です";
+
+  const comments = [];
+
+  if (available < 0) {
+
+    level = "🔴";
+    title = "予算オーバー";
+
+    comments.push("今月の自由に使えるお金を超えています。");
+
+  } else if (available < 10000) {
+
+    level = "🟡";
+    title = "少し注意";
+
+    comments.push("残りの自由枠が1万円未満です。");
+
+  } else {
+
+    comments.push("今月は予算内で推移しています。");
+
+  }
+
+  if (savingForecast < 0) {
+
+    comments.push("このままでは今月は赤字予測です。");
+
+  } else {
+
+    comments.push(
+      `今月は約${savingForecast.toLocaleString()}円貯金できる見込みです。`
+    );
+
+  }
+
+  if (expense.variableExpense > expense.fixedExpense) {
+
+    comments.push("変動費が固定費を上回っています。");
+
+  }
+
+  return {
+
+    level,
+    title,
+    message: comments.join("\n")
+
+  };
+
+}
+
+function getDreamFund(dreamId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("dream_funds");
+
+  if (!sheet) {
+    throw new Error("dream_funds シートがありません");
+  }
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return null;
+
+  const headers = values[0];
+  const idx = {};
+  headers.forEach((h, i) => idx[String(h).trim()] = i);
+
+  for (const row of values.slice(1)) {
+
+    if (String(row[idx["dream_id"]]) !== dreamId) {
+      continue;
+    }
+
+    const target = Number(row[idx["target_amount"]] || 0);
+    const current = Number(row[idx["current_amount"]] || 0);
+    const monthly = Number(row[idx["monthly_plan"]] || 0);
+
+    const remain = Math.max(target - current, 0);
+
+    let progress = 0;
+
+    if (target > 0) {
+      progress = current / target;
+    }
+
+    let remainMonths = 0;
+
+    if (monthly > 0) {
+      remainMonths = Math.ceil(remain / monthly);
+    }
+
+    return {
+      dream_id: dreamId,
+      name: row[idx["name"]],
+      wallet: row[idx["wallet"]],
+      target_amount: target,
+      current_amount: current,
+      remain_amount: remain,
+      monthly_plan: monthly,
+      progress,
+      remain_months: remainMonths,
+      target_date: row[idx["target_date"]],
+      priority: row[idx["priority"]],
+      status: row[idx["status"]]
+    };
+  }
+
+  return null;
+}
+
+function getFeaturedDreamFund() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("dream_funds");
+
+  if (!sheet) {
+    throw new Error("dream_funds シートがありません");
+  }
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return null;
+
+  const headers = values[0];
+  const idx = {};
+  headers.forEach((h, i) => {
+    idx[String(h).trim()] = i;
+  });
+
+  const priorityOrder = {
+    High: 3,
+    Medium: 2,
+    Low: 1
+  };
+
+  const candidates = [];
+
+  for (const row of values.slice(1)) {
+    const dreamId = String(row[idx["dream_id"]] || "").trim();
+    const status = String(row[idx["status"]] || "").trim();
+    const priority = String(row[idx["priority"]] || "").trim();
+
+    if (!dreamId || status !== "進行中") continue;
+
+    const dream = getDreamFund(dreamId);
+    if (!dream) continue;
+
+    candidates.push({
+      ...dream,
+      priority_score: priorityOrder[priority] || 0
+    });
+  }
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    if (b.priority_score !== a.priority_score) {
+      return b.priority_score - a.priority_score;
+    }
+
+    return a.dream_id.localeCompare(b.dream_id);
+  });
+
+  return candidates[0];
 }

@@ -332,3 +332,38 @@ function mapMajorCategory(subCategory) {
 
   return map[subCategory] || "その他";
 }
+
+function guessIntent(subCategory) {
+  const major = mapMajorCategory(subCategory);
+
+  if ([
+    "食費",
+    "住居",
+    "通信",
+    "交通",
+    "生活用品"
+  ].includes(major)) {
+    return "生活維持";
+  }
+
+  if (major === "趣味") {
+    return "娯楽";
+  }
+
+  if (major === "金融") {
+    return "資産形成";
+  }
+
+  if (major === "交際") {
+    return "贈与・交際";
+  }
+
+  if (
+    major === "配信" ||
+    guessPurposeType(subCategory) === "経費"
+  ) {
+    return "事業活動";
+  }
+
+  return "その他";
+}
