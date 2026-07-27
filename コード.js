@@ -2245,6 +2245,7 @@ function rebuildRecurringCandidates() {
     outSheet.getRange(2, 1, candidates.length, candidates[0].length).setValues(candidates);
   }
 }
+
 function initializeTransactionWallet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName("transactions");
@@ -2477,15 +2478,6 @@ function normalizeAccountName(accountName) {
   return raw;
 }
 
-
-
-
-
-
-
-
-
-
 function getAvailableMoney(yearMonth) {
   const budgets = getBudgetsForMonth(yearMonth);
   const expenses =
@@ -2502,22 +2494,25 @@ function getAvailableMoney(yearMonth) {
 
 
 function getMonthlyLivingExpense(yearMonth) {
-  const result = filterTransactionRows({
+  const filtered = filterTransactionRows({
     yearMonth,
     type: "支出",
     wallet: "生活"
   });
 
   assertRequiredColumns(
-    result.index,
+    filtered.index,
     ["amount"],
     "transactions"
   );
 
-  return result.rows.reduce(
+  return filtered.rows.reduce(
     (total, row) =>
-      total +
-      Number(row[result.index["amount"]] || 0),
+      total + getNumber(
+        row,
+        filtered.index,
+        "amount"
+      ),
     0
   );
 }
@@ -2598,8 +2593,6 @@ function initializeRuleIntent() {
 
   Logger.log(updated + "件更新");
 }
-
-
 
 function rebuildHomeDashboard() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -2982,16 +2975,22 @@ function getMonthlyLivingExpenseBreakdown(yearMonth) {
   );
 
   for (const row of filtered.rows) {
-    const major = String(
-      row[filtered.index["major_category"]] || ""
-    ).trim();
+    const major = getString(
+      row,
+      filtered.index,
+      "major_category"
+    );
 
-    const sub = String(
-      row[filtered.index["sub_category"]] || ""
-    ).trim();
+    const sub = getString(
+      row,
+      filtered.index,
+      "sub_category"
+    );
 
-    const amount = Number(
-      row[filtered.index["amount"]] || 0
+    const amount = getNumber(
+      row,
+      filtered.index,
+      "amount"
     );
 
     result.totalExpense += amount;
@@ -3104,12 +3103,16 @@ function getSideBusinessProfit(yearMonth) {
   let expense = 0;
 
   for (const row of filtered.rows) {
-    const type = String(
-      row[filtered.index["type"]] || ""
-    ).trim();
+    const type = getString(
+      row,
+      filtered.index,
+      "type"
+    );
 
-    const amount = Number(
-      row[filtered.index["amount"]] || 0
+    const amount = getNumber(
+      row,
+      filtered.index,
+      "amount"
     );
 
     if (type === "収入") {
