@@ -173,7 +173,7 @@ function testDoPostMemo() {
 
 
 function testAccess() {
-  const folder = DriveApp.getFolderById("1Kv0tY7pPD6vcumQH-xcyuZ1Mo_XtH39b");
+  const folder = DriveApp.getFolderById(FOLDERS.EVIDENCE_IMAGES);
   const response = UrlFetchApp.fetch("https://example.com");
 
   const file = folder.createFile("test.txt", "permission check");

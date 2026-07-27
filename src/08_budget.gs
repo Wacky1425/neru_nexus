@@ -183,7 +183,7 @@ function testGetLatestBudget() {
 }
 
 function getLatestYearMonth() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("monthly_summary");
+  const sheet = SS.getSheetByName("monthly_summary");
   const values = sheet.getDataRange().getValues();
 
   if (values.length < 2) {

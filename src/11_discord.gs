@@ -22,7 +22,7 @@ function doPost(e) {
         const response = UrlFetchApp.fetch(imageUrl);
         const blob = response.getBlob();
 
-        const folder = DriveApp.getFolderById("1Kv0tY7pPD6vcumQH-xcyuZ1Mo_XtH39b");
+        const folder = DriveApp.getFolderById(FOLDERS.EVIDENCE_IMAGES);
         const safeName = merchantInput.replace(/[\\\/:*?"<>|]/g, "_");
         const fileName =
           Utilities.formatDate(timestamp, "Asia/Tokyo", "yyyyMMdd_HHmmss") +

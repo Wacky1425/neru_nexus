@@ -1,3 +1,5 @@
+const TABLE_CACHE = {};
+
 /**
  * 指定した名前のシートを取得する。
  * 存在しない場合は例外を投げる。
@@ -93,28 +95,32 @@ function assertRequiredColumns(
  * }}
  */
 function loadTable(sheetName) {
+  if (TABLE_CACHE[sheetName]) {
+    return TABLE_CACHE[sheetName];
+  }
+
   const sheet = getRequiredSheet(sheetName);
   const values = sheet.getDataRange().getValues();
 
-  if (values.length === 0) {
-    return {
-      sheet,
-      values: [],
-      headers: [],
-      rows: [],
-      index: {}
-    };
-  }
+  const table = values.length === 0
+    ? {
+        sheet,
+        values: [],
+        headers: [],
+        rows: [],
+        index: {}
+      }
+    : {
+        sheet,
+        values,
+        headers: values[0],
+        rows: values.slice(1),
+        index: createHeaderIndex(values[0])
+      };
 
-  const headers = values[0];
+  TABLE_CACHE[sheetName] = table;
 
-  return {
-    sheet,
-    values,
-    headers,
-    rows: values.slice(1),
-    index: createHeaderIndex(headers)
-  };
+  return table;
 }
 
 /**
@@ -213,6 +219,8 @@ function writeTable(
     )
     .setValues([headers]);
 
+    clearTableCache(sheet.getName());
+
   if (dataRows.length === 0) {
     return;
   }
@@ -237,4 +245,17 @@ function writeTable(
       columnCount
     )
     .setValues(dataRows);
+
+    clearTableCache();
+}
+
+function clearTableCache(sheetName) {
+  if (sheetName) {
+    delete TABLE_CACHE[sheetName];
+    return;
+  }
+
+  Object.keys(TABLE_CACHE).forEach(name => {
+    delete TABLE_CACHE[name];
+  });
 }

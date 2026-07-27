@@ -186,7 +186,7 @@ function getImportConfig(configName) {
     configName || ""
   ).trim();
 
-  const config = loadObjects("import_config")
+  const config = loadObjects(SHEETS.IMPORT_CONFIG)
     .find(row =>
       String(row.config_name || "").trim() ===
       targetName
@@ -323,8 +323,7 @@ function getConfigNameByCsvType(csvType) {
 }
 
 function runImportAllCsv() {
-  const folderId = "1igN1iH0nFHOqf45uGUBIXe7oBPZIE_Hq";
-  const folder = DriveApp.getFolderById(folderId);
+  const folder = DriveApp.getFolderById(FOLDERS.CSV_IMPORT);
   const files = folder.getFiles();
 
   while (files.hasNext()) {

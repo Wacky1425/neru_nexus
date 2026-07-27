@@ -1,6 +1,5 @@
 function migrateRulesToCategoryV2() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("rules");
+  const sheet = SS.getSheetByName("rules");
 
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) return;
@@ -63,8 +62,7 @@ function migrateRulesToCategoryV2() {
 }
 
 function migrateRulesToFinalCategories() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("rules");
+  const sheet = SS.getSheetByName("rules");
 
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) return;
@@ -101,8 +99,7 @@ function migrateRulesToFinalCategories() {
 }
 
 function initializeTransactionWallet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("transactions");
+  const sheet = SS.getSheetByName("transactions");
 
   if (!sheet) {
     throw new Error("transactions シートがありません");
@@ -143,8 +140,7 @@ function initializeTransactionWallet() {
 }
 
 function initializeRuleWallet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("rules");
+  const sheet = SS.getSheetByName("rules");
 
   if (!sheet) {
     throw new Error("rules シートがありません");
@@ -208,8 +204,7 @@ function initializeRuleWallet() {
 }
 
 function initializeRuleIntent() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("rules");
+  const sheet = SS.getSheetByName("rules");
 
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) return;

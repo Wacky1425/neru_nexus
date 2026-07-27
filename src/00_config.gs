@@ -18,3 +18,10 @@ const SHEETS = Object.freeze({
   MERCHANT_ALIAS: "merchant_alias",
   DASHBOARD: "dashboard",
 });
+
+const FOLDERS = Object.freeze({
+  CSV_IMPORT: "1igN1iH0nFHOqf45uGUBIXe7oBPZIE_Hq",
+  EVIDENCE_IMAGES: "1Kv0tY7pPD6vcumQH-xcyuZ1Mo_XtH39b"
+});
+
+const SS = SpreadsheetApp.getActiveSpreadsheet();

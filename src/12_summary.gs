@@ -247,8 +247,7 @@ function rebuildSummaries() {
 
 function getCategorySummary(yearMonth){
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEETS.CATEGORY_SUMMARY);
+  const sheet = SS.getSheetByName(SHEETS.CATEGORY_SUMMARY);
 
   const values = sheet.getDataRange().getValues();
 

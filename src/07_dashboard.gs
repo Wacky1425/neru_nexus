@@ -1,8 +1,7 @@
 function rebuildAllViews() {
   rebuildSummaries();
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const monthlySheet = ss.getSheetByName(SHEETS.MONTHLY_SUMMARY);
+  const monthlySheet = SS.getSheetByName(SHEETS.MONTHLY_SUMMARY);
   const hasMonthlyData = monthlySheet.getLastRow() >= 2;
 
   if (!hasMonthlyData) {
@@ -15,9 +14,8 @@ function rebuildAllViews() {
 }
 
 function refreshDashboard(targetMonth) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const dashboard = ss.getSheetByName(SHEETS.DASHBOARD);
-  const monthlySheet = ss.getSheetByName(SHEETS.MONTHLY_SUMMARY);
+  const dashboard = SS.getSheetByName(SHEETS.DASHBOARD);
+  const monthlySheet = SS.getSheetByName(SHEETS.MONTHLY_SUMMARY);
 
   const values = monthlySheet.getDataRange().getValues();
   if (values.length < 2) return;
@@ -53,9 +51,8 @@ function refreshDashboard(targetMonth) {
 }
 
 function refreshDashboardCategoryTable(targetMonth) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const dashboard = ss.getSheetByName(SHEETS.DASHBOARD);
-  const categorySheet = ss.getSheetByName(SHEETS.CATEGORY_SUMMARY);
+  const dashboard = SS.getSheetByName(SHEETS.DASHBOARD);
+  const categorySheet = SS.getSheetByName(SHEETS.CATEGORY_SUMMARY);
 
   const values = categorySheet.getDataRange().getValues();
   if (values.length < 2) return;
@@ -88,8 +85,7 @@ function refreshDashboardCategoryTable(targetMonth) {
 }
 
 function refreshDashboardFromCell() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const dashboard = ss.getSheetByName(SHEETS.DASHBOARD);
+  const dashboard = SS.getSheetByName(SHEETS.DASHBOARD);
   const targetMonth = normalizeYearMonth(dashboard.getRange("B2").getValue());
 
   if (!targetMonth) {
@@ -101,8 +97,7 @@ function refreshDashboardFromCell() {
 }
 
 function setLatestMonthToDashboard() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const dashboard = ss.getSheetByName(SHEETS.DASHBOARD);
+  const dashboard = SS.getSheetByName(SHEETS.DASHBOARD);
 
   let latestMonth = "";
 
@@ -116,8 +111,7 @@ function setLatestMonthToDashboard() {
 }
 
 function rebuildHomeDashboard() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEETS.HOME);
+  const sheet = SS.getSheetByName(SHEETS.HOME);
 
   if (!sheet) {
     throw new Error("home シートがありません");
@@ -628,8 +622,7 @@ function getMoneyHealth(yearMonth) {
 }
 
 function getDreamFund(dreamId) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEETS.DREAM_FUNDS);
+  const sheet = SS.getSheetByName(SHEETS.DREAM_FUNDS);
 
   if (!sheet) {
     throw new Error("dream_funds シートがありません");
@@ -686,8 +679,7 @@ function getDreamFund(dreamId) {
 }
 
 function getFeaturedDreamFund() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEETS.DREAM_FUNDS);
+  const sheet = SS.getSheetByName(SHEETS.DREAM_FUNDS);
 
   if (!sheet) {
     throw new Error("dream_funds シートがありません");

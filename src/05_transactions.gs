@@ -481,6 +481,8 @@ function buildTransactionRow(
 function appendTransactionRow(row) {
   getRequiredSheet(SHEETS.TRANSACTIONS)
     .appendRow(row);
+
+    clearTableCache();
 }
 
 function resolveTransactionYearMonth(transactionDate, fallbackDate) {
@@ -527,7 +529,7 @@ function buildDuplicateKey(tx) {
 }
 
 function getExistingDuplicateKeys() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.TRANSACTIONS);
+  const sheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
   const values = sheet.getDataRange().getValues();
 
   if (values.length < 2) return new Set();
@@ -645,8 +647,7 @@ function normalizeMerchant(merchant) {
 }
 
 function normalizeAllTransactions() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEETS.TRANSACTIONS);
+  const sheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
 
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) return;
@@ -673,8 +674,7 @@ function normalizeTextBase(value) {
 }
 
 function loadMerchantAliases() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEETS.MERCHANT_ALIAS);
+  const sheet = SS.getSheetByName(SHEETS.MERCHANT_ALIAS);
 
   if (!sheet) return new Map();
 
@@ -710,8 +710,7 @@ function applyMerchantAlias(merchant, aliasMap) {
 }
 
 function normalizeAllTransactionsWithAlias() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEETS.TRANSACTIONS);
+  const sheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
   const aliasMap = loadMerchantAliases();
 
   const values = sheet.getDataRange().getValues();
@@ -735,8 +734,7 @@ function normalizeAllTransactionsWithAlias() {
 }
 
 function buildMerchantFrequencyMap() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEETS.TRANSACTIONS);
+  const sheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
 
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) return {};
@@ -758,9 +756,8 @@ function buildMerchantFrequencyMap() {
 }
 
 function validateTransactionAccounts() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const txSheet = ss.getSheetByName(SHEETS.TRANSACTIONS);
-  const accountSheet = ss.getSheetByName(SHEETS.ACCOUNTS);
+  const txSheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
+  const accountSheet = SS.getSheetByName(SHEETS.ACCOUNTS);
 
   if (!txSheet) {
     throw new Error("transactions シートがありません");
@@ -857,8 +854,7 @@ function normalizeAccountName(accountName) {
   const raw = String(accountName || "").trim();
   if (!raw) return "";
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEETS.ACCOUNT_ALIAS);
+  const sheet = SS.getSheetByName(SHEETS.ACCOUNT_ALIAS);
 
   if (!sheet) return raw;
 
