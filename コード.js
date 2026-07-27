@@ -61,6 +61,8 @@ function doPost(e) {
         purpose_type: "私用",
         expense_ratio: 0,
         status: "pending",
+        wallet: "生活",
+        intent: "その他",
       };
     } else if (data.category && String(data.category).trim() !== "") {
       classified = {
@@ -70,6 +72,8 @@ function doPost(e) {
         purpose_type: guessPurposeType(data.category),
         expense_ratio: guessExpenseRatio(data.category),
         status: "確定",
+        wallet: guessPurposeType(data.category) === "経費" ? "事業" : "生活",
+        intent: guessIntent(data.category),
       };
     } else {
       classified = classifyTransaction(sample, rules);
@@ -104,6 +108,41 @@ function doPost(e) {
       }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+function guessIntent(subCategory) {
+  const major = mapMajorCategory(subCategory);
+
+  if ([
+    "食費",
+    "住居",
+    "通信",
+    "交通",
+    "生活用品"
+  ].includes(major)) {
+    return "生活維持";
+  }
+
+  if (major === "趣味") {
+    return "娯楽";
+  }
+
+  if (major === "金融") {
+    return "資産形成";
+  }
+
+  if (major === "交際") {
+    return "贈与・交際";
+  }
+
+  if (
+    major === "配信" ||
+    guessPurposeType(subCategory) === "経費"
+  ) {
+    return "事業活動";
+  }
+
+  return "その他";
 }
 
 function testDoPostCash() {
@@ -260,6 +299,7 @@ function classifyTransaction(tx, rules) {
         expense_ratio: Number(rule.expense_ratio || 0),
         status: rule.status_result,
         wallet: rule.wallet_result || "生活",
+        intent: rule.intent_result || "その他",
       };
     }
   }
@@ -272,6 +312,7 @@ function classifyTransaction(tx, rules) {
     expense_ratio: 0,
     status: "要確認",
     wallet: "生活",
+    intent: "その他",
   };
 }
 
@@ -295,6 +336,7 @@ function addTransaction(tx) {
   const id = Utilities.getUuid();
   const expenseAmount = tx.amount * tx.expense_ratio;
   const wallet = tx.wallet || "生活";
+  const intent = tx.intent || "その他";
 
   const duplicateKey = buildDuplicateKey(tx);
   const existingKeys = getExistingDuplicateKeys();
@@ -327,7 +369,8 @@ function addTransaction(tx) {
     tx.import_batch || "",
     duplicateKey,
     tx.status,
-    wallet
+    wallet,
+    intent
   ]);
 
   return true;
@@ -1383,7 +1426,8 @@ function reclassifyAllTransactions() {
       "expense_ratio",
       "expense_amount",
       "status",
-      "wallet"
+      "wallet",
+      "intent"
     ],
     "transactions"
   );
@@ -1411,6 +1455,7 @@ function reclassifyAllTransactions() {
     row[index["expense_amount"]] = amount * expenseRatio;
     row[index["status"]] = classified.status;
     row[index["wallet"]] = classified.wallet || "生活";
+    row[index["intent"]] = classified.intent || "その他";
 
     updatedCount++;
   }
