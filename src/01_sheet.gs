@@ -70,8 +70,7 @@ function createHeaderIndex(headers) {
 function assertRequiredColumns(
   index,
   requiredColumns,
-  sheetName
-) {
+  sheetName) {
   for (const columnName of requiredColumns) {
     if (index[columnName] === undefined) {
       throw new Error(

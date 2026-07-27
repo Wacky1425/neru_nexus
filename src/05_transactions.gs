@@ -1,3 +1,39 @@
+function addTransaction(tx) {
+  tx.account_name = normalizeAccountName(
+    tx.account_name
+  );
+
+  const duplicateKey = buildDuplicateKey(tx);
+  const existingKeys = getExistingDuplicateKeys();
+
+  if (existingKeys.has(duplicateKey)) {
+    Logger.log(
+      "重複のためスキップ: " + duplicateKey
+    );
+
+    return false;
+  }
+
+  const createdAt = new Date();
+
+  const yearMonth = resolveTransactionYearMonth(
+    tx.transaction_date,
+    createdAt
+  );
+
+  const row = buildTransactionRow(
+    tx,
+    Utilities.getUuid(),
+    createdAt,
+    yearMonth,
+    duplicateKey
+  );
+
+  appendTransactionRow(row);
+
+  return true;
+}
+
 /**
  * 対象月の取引金額を指定列ごとに集計する。
  *
@@ -14,9 +50,9 @@ function summarizeTransactionsByField(
   yearMonth,
   groupColumn,
   options
-) {
+    ) {
   const settings = options || {};
-  const table = loadTable("transactions");
+  table = table || loadTransactions();
 
   if (table.rows.length === 0) {
     return [];
@@ -168,7 +204,7 @@ function filterTransactions(options) {
  * }}
  */
 function filterTransactionRows(options) {
-  const table = loadTable("transactions");
+  table = table || loadTransactions();
 
   if (table.rows.length === 0) {
     return {
@@ -262,4 +298,199 @@ function filterTransactionRows(options) {
     rows,
     index: table.index
   };
+}
+
+function getMonthlyLivingExpense(yearMonth,table) {
+  const filtered = filterTransactionRows({
+    yearMonth,
+    type: "支出",
+    wallet: "生活"
+  },
+  table
+  );
+
+  assertRequiredColumns(
+    filtered.index,
+    ["amount"],
+    "transactions"
+  );
+
+  return filtered.rows.reduce(
+    (total, row) =>
+      total + getNumber(
+        row,
+        filtered.index,
+        "amount"
+      ),
+    0
+  );
+}
+
+function getMonthlyLivingExpenseBreakdown(yearMonth) {
+  const filtered = filterTransactionRows({
+    yearMonth,
+    type: "支出",
+    wallet: "生活"
+  });
+
+  const result = {
+    fixedExpense: 0,
+    variableExpense: 0,
+    totalExpense: 0
+  };
+
+  if (filtered.rows.length === 0) {
+    return result;
+  }
+
+  assertRequiredColumns(
+    filtered.index,
+    [
+      "major_category",
+      "sub_category",
+      "amount"
+    ],
+    "transactions"
+  );
+
+  for (const row of filtered.rows) {
+    const major = getString(
+      row,
+      filtered.index,
+      "major_category"
+    );
+
+    const sub = getString(
+      row,
+      filtered.index,
+      "sub_category"
+    );
+
+    const amount = getNumber(
+      row,
+      filtered.index,
+      "amount"
+    );
+
+    result.totalExpense += amount;
+
+    if (isFixedExpenseCategory(major, sub)) {
+      result.fixedExpense += amount;
+    } else {
+      result.variableExpense += amount;
+    }
+  }
+
+  return result;
+}
+
+function getSideBusinessProfit(yearMonth) {
+  const filtered = filterTransactionRows({
+    yearMonth,
+    wallet: "事業"
+  });
+
+  if (filtered.rows.length === 0) {
+    return 0;
+  }
+
+  assertRequiredColumns(
+    filtered.index,
+    ["type", "amount"],
+    "transactions"
+  );
+
+  let income = 0;
+  let expense = 0;
+
+  for (const row of filtered.rows) {
+    const type = getString(
+      row,
+      filtered.index,
+      "type"
+    );
+
+    const amount = getNumber(
+      row,
+      filtered.index,
+      "amount"
+    );
+
+    if (type === "収入") {
+      income += amount;
+    } else if (type === "支出") {
+      expense += amount;
+    }
+  }
+
+  return income - expense;
+}
+
+function loadTransactions() {
+  return loadTable("transactions");
+}
+
+function buildTransactionRow(
+  tx,
+  id,
+  createdAt,
+  yearMonth,
+  duplicateKey
+    ) {
+  const amount = Number(tx.amount || 0);
+  const expenseRatio = Number(tx.expense_ratio || 0);
+
+  return [
+    id,
+    tx.transaction_date || "",
+    createdAt,
+    yearMonth,
+    tx.type || "",
+    tx.source_type || "manual",
+    tx.payment_method || "",
+    tx.account_name || "",
+    tx.merchant || "",
+    tx.item_name || "",
+    amount,
+    tx.major_category || "",
+    tx.sub_category || "",
+    tx.purpose_type || "",
+    expenseRatio,
+    amount * expenseRatio,
+    tx.note || "",
+    tx.evidence_url || "",
+    tx.original_image_url || "",
+    tx.import_batch || "",
+    duplicateKey,
+    tx.status || "",
+    tx.wallet || "生活",
+    tx.intent || "その他"
+  ];
+}
+
+function appendTransactionRow(row) {
+  getRequiredSheet("transactions")
+    .appendRow(row);
+}
+
+function resolveTransactionYearMonth(transactionDate, fallbackDate) {
+  if (transactionDate) {
+    const parsedDate = new Date(
+      String(transactionDate).replace(/\./g, "/")
+    );
+
+    if (!isNaN(parsedDate.getTime())) {
+      return Utilities.formatDate(
+        parsedDate,
+        "Asia/Tokyo",
+        "yyyy-MM"
+      );
+    }
+  }
+
+  return Utilities.formatDate(
+    fallbackDate,
+    "Asia/Tokyo",
+    "yyyy-MM"
+  );
 }
