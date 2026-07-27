@@ -504,3 +504,15 @@ function resolveTransactionYearMonth(transactionDate, fallbackDate) {
     "yyyy-MM"
   );
 }
+
+function createTransactionAccessor(row, index) {
+  return {
+    get(name) {
+      return getString(row, index, name);
+    },
+
+    number(name) {
+      return getNumber(row, index, name);
+    }
+  };
+}

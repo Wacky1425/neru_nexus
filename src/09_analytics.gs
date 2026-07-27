@@ -13,15 +13,7 @@ function rebuildAnalytics() {
 function rebuildWalletTable() {
   const analytics = getRequiredSheet("analytics");
 
-  analytics
-    .getRange("G3:H1000")
-    .clearContent();
-
-  analytics
-    .getRange("G3:H3")
-    .setValues([["Wallet", "金額"]]);
-
-  const result = summarizeTransactionsByField(
+  const rows = summarizeTransactionsByField(
     getLatestBudgetMonth(),
     "wallet",
     {
@@ -30,27 +22,19 @@ function rebuildWalletTable() {
     }
   );
 
-  if (result.length === 0) {
-    return;
-  }
-
-  analytics
-    .getRange(4, 7, result.length, 2)
-    .setValues(result);
+  writeTable(
+    analytics,
+    3,
+    7,
+    ["Wallet", "金額"],
+    rows
+  );
 }
 
 function rebuildIntentTable() {
   const analytics = getRequiredSheet("analytics");
 
-  analytics
-    .getRange("J3:K1000")
-    .clearContent();
-
-  analytics
-    .getRange("J3:K3")
-    .setValues([["Intent", "金額"]]);
-
-  const result = summarizeTransactionsByField(
+  const rows = summarizeTransactionsByField(
     getLatestBudgetMonth(),
     "intent",
     {
@@ -59,11 +43,73 @@ function rebuildIntentTable() {
     }
   );
 
-  if (result.length === 0) {
+  writeTable(
+    analytics,
+    3,
+    10,
+    ["Intent", "金額"],
+    rows
+  );
+}
+
+function rebuildCategoryTable() {
+  const analytics = getRequiredSheet("analytics");
+  const yearMonth = getLatestBudgetMonth();
+
+  const rows = getCategorySummary(yearMonth)
+    .map(item => [
+      item.category,
+      item.amount
+    ]);
+
+  writeTable(
+    analytics,
+    3,
+    1,
+    ["カテゴリ", "金額"],
+    rows
+  );
+}
+
+function rebuildMonthlyTable() {
+  const analytics = getRequiredSheet("analytics");
+  const table = loadTable("monthly_summary");
+
+  if (table.rows.length === 0) {
+    writeTable(
+      analytics,
+      3,
+      4,
+      ["年月", "支出"],
+      []
+    );
+
     return;
   }
 
-  analytics
-    .getRange(4, 10, result.length, 2)
-    .setValues(result);
+  assertRequiredColumns(
+    table.index,
+    [
+      "year_month",
+      "net_expense"
+    ],
+    "monthly_summary"
+  );
+
+  const rows = table.rows.map(row => [
+    row[table.index["year_month"]],
+    getNumber(
+      row,
+      table.index,
+      "net_expense"
+    )
+  ]);
+
+  writeTable(
+    analytics,
+    3,
+    4,
+    ["年月", "支出"],
+    rows
+  );
 }

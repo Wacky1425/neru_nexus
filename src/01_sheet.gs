@@ -168,3 +168,73 @@ function loadObjects(sheetName) {
     getValues(sheetName)
   );
 }
+
+/**
+ * 指定範囲を消去し、ヘッダーとデータ行を書き込む。
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {number} startRow 1始まり
+ * @param {number} startColumn 1始まり
+ * @param {Array<*>} headers
+ * @param {Array<Array<*>>} rows
+ * @param {number=} clearRowCount
+ */
+function writeTable(
+  sheet,
+  startRow,
+  startColumn,
+  headers,
+  rows,
+  clearRowCount
+    ) {
+  const dataRows = Array.isArray(rows) ? rows : [];
+  const columnCount = headers.length;
+  const rowsToClear = clearRowCount || 1000;
+
+  if (columnCount === 0) {
+    throw new Error("headers が空です");
+  }
+
+  sheet
+    .getRange(
+      startRow,
+      startColumn,
+      rowsToClear,
+      columnCount
+    )
+    .clearContent();
+
+  sheet
+    .getRange(
+      startRow,
+      startColumn,
+      1,
+      columnCount
+    )
+    .setValues([headers]);
+
+  if (dataRows.length === 0) {
+    return;
+  }
+
+  const invalidRow = dataRows.find(
+    row => !Array.isArray(row) ||
+      row.length !== columnCount
+  );
+
+  if (invalidRow) {
+    throw new Error(
+      `書込みデータの列数がヘッダーと一致しません。` +
+      ` expected=${columnCount}`
+    );
+  }
+
+  sheet
+    .getRange(
+      startRow + 1,
+      startColumn,
+      dataRows.length,
+      columnCount
+    )
+    .setValues(dataRows);
+}
