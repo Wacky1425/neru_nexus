@@ -30,7 +30,7 @@ const REVIEW_QUEUE_HEADERS = [
 ];
 
 function loadReviewManualMap_() {
-  const table = loadTable("review_queue");
+  const table = loadTable(SHEETS.REVIEW_QUEUE);
   const manualMap = new Map();
 
   if (table.rows.length === 0) {
@@ -218,7 +218,7 @@ function rebuildReviewQueue() {
   );
 
   writeTable(
-    getRequiredSheet("review_queue"),
+    getRequiredSheet(SHEETS.REVIEW_QUEUE),
     1,
     1,
     REVIEW_QUEUE_HEADERS,
@@ -227,8 +227,8 @@ function rebuildReviewQueue() {
 }
 
 function rebuildReviewSummary() {
-  const table = loadTable("review_queue");
-  const summarySheet = getRequiredSheet("review_summary");
+  const table = loadTable(SHEETS.REVIEW_QUEUE);
+  const summarySheet = getRequiredSheet(SHEETS.REVIEW_SUMMARY);
 
   if (table.rows.length === 0) {
     writeTable(
@@ -255,7 +255,7 @@ function rebuildReviewSummary() {
       "major_category",
       "sub_category"
     ],
-    "review_queue"
+    SHEETS.REVIEW_QUEUE
   );
 
   const summaryMap = new Map();
@@ -329,8 +329,8 @@ function rebuildReviewSummary() {
 }
 
 function rebuildBulkReview() {
-  const table = loadTable("review_summary");
-  const bulkSheet = getRequiredSheet("bulk_review");
+  const table = loadTable(SHEETS.REVIEW_SUMMARY);
+  const bulkSheet = getRequiredSheet(SHEETS.BULK_REVIEW);
 
   const headers = [
     "merchant",
@@ -368,7 +368,7 @@ function rebuildBulkReview() {
       "total_amount",
       "sample_category"
     ],
-    "review_summary"
+    SHEETS.REVIEW_SUMMARY
   );
 
   const rows = table.rows.map(row => {
@@ -455,8 +455,8 @@ function appendRules_(rules) {
     return 0;
   }
 
-  const sheet = getRequiredSheet("rules");
-  const table = loadTable("rules");
+  const sheet = getRequiredSheet(SHEETS.RULES);
+  const table = loadTable(SHEETS.RULES);
 
   if (table.headers.length === 0) {
     throw new Error("rules にヘッダーがありません");
@@ -476,7 +476,7 @@ function appendRules_(rules) {
       "expense_ratio",
       "status_result"
     ],
-    "rules"
+    SHEETS.RULES
   );
 
   const rows = rules.map(rule =>
@@ -496,8 +496,8 @@ function appendRules_(rules) {
 }
 
 function learnRulesFromReviewQueue() {
-  const reviewTable = loadTable("review_queue");
-  const ruleTable = loadTable("rules");
+  const reviewTable = loadTable(SHEETS.REVIEW_QUEUE);
+  const ruleTable = loadTable(SHEETS.RULES);
 
   if (reviewTable.rows.length === 0) {
     Logger.log("rules追加: 0件");
@@ -517,13 +517,13 @@ function learnRulesFromReviewQueue() {
       "rule_target",
       "learn"
     ],
-    "review_queue"
+    SHEETS.REVIEW_QUEUE
   );
 
   assertRequiredColumns(
     ruleTable.index,
     ["priority"],
-    "rules"
+    SHEETS.RULES
   );
 
   let nextPriority = getNextRulePriority_(
@@ -625,8 +625,8 @@ function learnRulesFromReviewQueue() {
 }
 
 function learnRulesFromBulkReview() {
-  const bulkTable = loadTable("bulk_review");
-  const ruleTable = loadTable("rules");
+  const bulkTable = loadTable(SHEETS.BULK_REVIEW);
+  const ruleTable = loadTable(SHEETS.RULES);
 
   if (bulkTable.rows.length === 0) {
     Logger.log("bulk rules追加: 0件");
@@ -647,13 +647,13 @@ function learnRulesFromBulkReview() {
       "rule_target",
       "note"
     ],
-    "bulk_review"
+    SHEETS.BULK_REVIEW
   );
 
   assertRequiredColumns(
     ruleTable.index,
     ["priority"],
-    "rules"
+    SHEETS.RULES
   );
 
   let nextPriority = getNextRulePriority_(

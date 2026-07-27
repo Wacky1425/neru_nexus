@@ -15,5 +15,6 @@ const SHEETS = Object.freeze({
   DREAM_FUNDS: "dream_funds",
   ACCOUNTS: "accounts",
   ACCOUNT_ALIAS: "account_alias",
-  MERCHANT_ALIAS: "merchant_alias"
+  MERCHANT_ALIAS: "merchant_alias",
+  DASHBOARD: "dashboard",
 });
