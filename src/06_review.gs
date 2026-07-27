@@ -1,135 +1,229 @@
-function rebuildReviewQueue() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const txSheet = ss.getSheetByName("transactions");
-  const reviewSheet = ss.getSheetByName("review_queue");
+const REVIEW_MANUAL_COLUMNS = [
+  "type_manual",
+  "major_manual",
+  "sub_manual",
+  "purpose_manual",
+  "expense_ratio_manual",
+  "rule_keyword",
+  "rule_target",
+  "learn"
+];
 
-  const manualCols = [
-    "type_manual",
-    "major_manual",
-    "sub_manual",
-    "purpose_manual",
-    "expense_ratio_manual",
-    "rule_keyword",
-    "rule_target",
-    "learn"
-  ];
+const REVIEW_QUEUE_HEADERS = [
+  "id",
+  "transaction_date",
+  "type",
+  "source_type",
+  "account_name",
+  "payment_method",
+  "merchant",
+  "merchant_count",
+  "item_name",
+  "note",
+  "raw_text_preview",
+  "amount",
+  "major_category",
+  "sub_category",
+  "status",
+  "duplicate_key",
+  ...REVIEW_MANUAL_COLUMNS
+];
 
-  // 既存review_queueの手入力内容を退避
-  const oldManualMap = new Map();
-  const oldValues = reviewSheet.getDataRange().getValues();
+function loadReviewManualMap_() {
+  const table = loadTable("review_queue");
+  const manualMap = new Map();
 
-  if (oldValues.length >= 2) {
-    const oldHeaders = oldValues[0];
-    const oldIdx = {};
-    oldHeaders.forEach((h, i) => oldIdx[h] = i);
+  if (table.rows.length === 0) {
+    return manualMap;
+  }
 
-    for (const oldRow of oldValues.slice(1)) {
-      const merchant = String(oldRow[oldIdx["merchant"]] || "").trim();
-      if (!merchant) continue;
+  if (table.index["merchant"] === undefined) {
+    return manualMap;
+  }
 
-      const manual = {};
-      for (const col of manualCols) {
-        manual[col] = oldIdx[col] !== undefined ? oldRow[oldIdx[col]] : "";
-      }
+  for (const row of table.rows) {
+    const merchant = getString(
+      row,
+      table.index,
+      "merchant"
+    );
 
-      oldManualMap.set(merchant, manual);
+    if (!merchant) {
+      continue;
     }
+
+    const manualValues = {};
+
+    for (const columnName of REVIEW_MANUAL_COLUMNS) {
+      manualValues[columnName] =
+        table.index[columnName] === undefined
+          ? ""
+          : row[table.index[columnName]];
+    }
+
+    manualMap.set(merchant, manualValues);
   }
 
-  const values = txSheet.getDataRange().getValues();
-  if (values.length < 2) return;
+  return manualMap;
+}
 
-  const headers = values[0];
-  const rows = values.slice(1);
+function buildMerchantCountMap_(rows, index) {
+  const countMap = new Map();
 
-  const idx = {};
-  headers.forEach((h, i) => idx[h] = i);
-
-  // merchant頻度を作る
-  const merchantCountMap = new Map();
   for (const row of rows) {
-    const merchant = String(row[idx["merchant"]] || "").trim();
-    if (!merchant) continue;
-    merchantCountMap.set(merchant, (merchantCountMap.get(merchant) || 0) + 1);
+    const merchant = getString(
+      row,
+      index,
+      "merchant"
+    );
+
+    if (!merchant) {
+      continue;
+    }
+
+    countMap.set(
+      merchant,
+      (countMap.get(merchant) || 0) + 1
+    );
   }
 
-  const targets = rows.filter(row => {
-    const status = String(row[idx["status"]] || "").trim();
-    return status === "要確認";
-  });
+  return countMap;
+}
 
-  reviewSheet.clearContents();
+function buildReviewQueueRow_(
+  row,
+  index,
+  merchantCountMap,
+  manualMap
+    ) {
+  const merchant = getString(
+    row,
+    index,
+    "merchant"
+  );
 
-  reviewSheet.appendRow([
-    "id",
-    "transaction_date",
-    "type",
-    "source_type",
-    "account_name",
-    "payment_method",
-    "merchant",
-    "merchant_count",
-    "item_name",
-    "note",
-    "raw_text_preview",
-    "amount",
-    "major_category",
-    "sub_category",
-    "status",
-    "duplicate_key",
-    ...manualCols
-  ]);
+  const itemName = getString(
+    row,
+    index,
+    "item_name"
+  );
 
-  if (targets.length === 0) return;
+  const note = getString(
+    row,
+    index,
+    "note"
+  );
 
-  const out = targets.map(row => {
-    const merchant = String(row[idx["merchant"]] || "").trim();
-    const itemName = String(row[idx["item_name"]] || "").trim();
-    const note = String(row[idx["note"]] || "").trim();
-    const paymentMethod = idx["payment_method"] !== undefined
-      ? row[idx["payment_method"]]
-      : "";
+  const paymentMethod =
+    index["payment_method"] === undefined
+      ? ""
+      : row[index["payment_method"]];
 
-    const rawTextPreview = [
-      merchant,
-      itemName,
-      note,
-      paymentMethod
-    ].filter(v => String(v || "").trim() !== "").join(" / ");
+  const rawTextPreview = [
+    merchant,
+    itemName,
+    note,
+    paymentMethod
+  ]
+    .filter(value =>
+      String(value || "").trim() !== ""
+    )
+    .join(" / ");
 
-    const oldManual = oldManualMap.get(merchant) || {};
+  const manual = manualMap.get(merchant) || {};
 
-    return [
-      row[idx["id"]],
-      row[idx["transaction_date"]],
-      row[idx["type"]],
-      row[idx["source_type"]],
-      row[idx["account_name"]],
-      paymentMethod,
-      row[idx["merchant"]],
-      merchantCountMap.get(merchant) || 1,
-      row[idx["item_name"]],
-      row[idx["note"]],
-      rawTextPreview,
-      row[idx["amount"]],
-      row[idx["major_category"]],
-      row[idx["sub_category"]],
-      row[idx["status"]],
-      row[idx["duplicate_key"]],
-      oldManual.type_manual || "",
-      oldManual.major_manual || "",
-      oldManual.sub_manual || "",
-      oldManual.purpose_manual || "私用",
-      oldManual.expense_ratio_manual !== "" && oldManual.expense_ratio_manual !== undefined
-        ? oldManual.expense_ratio_manual
-        : 0,
-      oldManual.rule_keyword || merchant,
-      oldManual.rule_target || "merchant",
-      oldManual.learn || ""
-    ];
-  });
+  return [
+    row[index["id"]],
+    row[index["transaction_date"]],
+    row[index["type"]],
+    row[index["source_type"]],
+    row[index["account_name"]],
+    paymentMethod,
+    merchant,
+    merchantCountMap.get(merchant) || 1,
+    row[index["item_name"]],
+    row[index["note"]],
+    rawTextPreview,
+    row[index["amount"]],
+    row[index["major_category"]],
+    row[index["sub_category"]],
+    row[index["status"]],
+    row[index["duplicate_key"]],
+    manual.type_manual || "",
+    manual.major_manual || "",
+    manual.sub_manual || "",
+    manual.purpose_manual || "私用",
+    manual.expense_ratio_manual !== "" &&
+    manual.expense_ratio_manual !== undefined
+      ? manual.expense_ratio_manual
+      : 0,
+    manual.rule_keyword || merchant,
+    manual.rule_target || "merchant",
+    manual.learn || ""
+  ];
+}
 
-  reviewSheet.getRange(2, 1, out.length, out[0].length).setValues(out);
+function rebuildReviewQueue() {
+  const transactionTable = loadTable("transactions");
+
+  // 元の挙動を維持：
+  // transactionsに明細がなければreview_queueを変更しない
+  if (transactionTable.rows.length === 0) {
+    return;
+  }
+
+  assertRequiredColumns(
+    transactionTable.index,
+    [
+      "id",
+      "transaction_date",
+      "type",
+      "source_type",
+      "account_name",
+      "merchant",
+      "item_name",
+      "note",
+      "amount",
+      "major_category",
+      "sub_category",
+      "status",
+      "duplicate_key"
+    ],
+    "transactions"
+  );
+
+  const manualMap = loadReviewManualMap_();
+
+  const merchantCountMap = buildMerchantCountMap_(
+    transactionTable.rows,
+    transactionTable.index
+  );
+
+  const targetRows = transactionTable.rows.filter(
+    row =>
+      getString(
+        row,
+        transactionTable.index,
+        "status"
+      ) === "要確認"
+  );
+
+  const outputRows = targetRows.map(row =>
+    buildReviewQueueRow_(
+      row,
+      transactionTable.index,
+      merchantCountMap,
+      manualMap
+    )
+  );
+
+  writeTable(
+    getRequiredSheet("review_queue"),
+    1,
+    1,
+    REVIEW_QUEUE_HEADERS,
+    outputRows
+  );
 }
 
 function rebuildReviewSummary() {
