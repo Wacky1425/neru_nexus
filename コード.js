@@ -859,27 +859,66 @@ function importLatestCsvFromDrive(folderId, configName) {
   Logger.log(`追加: ${addedCount}件 / 重複スキップ: ${skippedCount}件`);
 }
 
-function classifyMoneyTransaction(row, txBase, rules, configName) {
+function classifyMoneyTransaction(
+  row,
+  txBase,
+  rules,
+  configName
+) {
   let inAmount = 0;
   let outAmount = 0;
 
   if (configName === "jpbank_v1") {
-    inAmount = Number(String(row["受入金額（円）"] || "0").replace(/,/g, ""));
-    outAmount = Number(String(row["払出金額（円）"] || "0").replace(/,/g, ""));
+    inAmount = parseAmount(
+      row["受入金額（円）"]
+    );
+
+    outAmount = parseAmount(
+      row["払出金額（円）"]
+    );
+
   } else if (configName === "smbc_bank_v1") {
-    inAmount = Number(String(row["お預入れ"] || "0").replace(/,/g, ""));
-    outAmount = Number(String(row["お引出し"] || "0").replace(/,/g, ""));
+    inAmount = parseAmount(
+      row["お預入れ"]
+    );
+
+    outAmount = parseAmount(
+      row["お引出し"]
+    );
+
   } else if (configName === "paypay_v1") {
-    inAmount = Number(String(row["入金金額（円）"] || "0").replace(/,/g, "").replace(/-/g, "0"));
-    outAmount = Number(String(row["出金金額（円）"] || "0").replace(/,/g, "").replace(/-/g, "0"));
+    inAmount = parseAmount(
+      row["入金金額（円）"]
+    );
+
+    outAmount = parseAmount(
+      row["出金金額（円）"]
+    );
   }
 
-  const autoType = inAmount > 0 ? "収入" : "支出";
-  const classified = classifyTransaction(txBase, rules);
+  const classified = classifyTransaction(
+    txBase,
+    rules
+  );
+
+  const isRuleConfirmed =
+    classified.status === "確定";
+
+  let transactionType = "";
+
+  if (isRuleConfirmed) {
+    transactionType = classified.type;
+  } else if (inAmount > 0) {
+    transactionType = "収入";
+  } else if (outAmount > 0) {
+    transactionType = "支出";
+  } else {
+    transactionType = classified.type || "支出";
+  }
 
   return {
     ...classified,
-    type: classified.type || autoType,
+    type: transactionType
   };
 }
 
@@ -3536,4 +3575,66 @@ function testObjectLoaders() {
   Logger.log(
     `config取得: ${olive.config_name}`
   );
+}
+
+function testClassifyMoneyTransaction() {
+  const rules = [];
+
+  const incomeResult = classifyMoneyTransaction(
+    {
+      "お預入れ": "10,000",
+      "お引出し": ""
+    },
+    {
+      merchant: "振込 テスト",
+      item_name: "振込 テスト",
+      note: "",
+      source_type: "CSV_銀行",
+      account_name: "三井住友銀行",
+      payment_method: "銀行_生活",
+      amount: 10000
+    },
+    rules,
+    "smbc_bank_v1"
+  );
+
+  const expenseResult = classifyMoneyTransaction(
+    {
+      "お預入れ": "",
+      "お引出し": "3,000"
+    },
+    {
+      merchant: "ATM",
+      item_name: "ATM",
+      note: "",
+      source_type: "CSV_銀行",
+      account_name: "三井住友銀行",
+      payment_method: "銀行_生活",
+      amount: 3000
+    },
+    rules,
+    "smbc_bank_v1"
+  );
+
+  Logger.log(
+    `入金テスト: ${incomeResult.type}`
+  );
+
+  Logger.log(
+    `出金テスト: ${expenseResult.type}`
+  );
+
+  if (incomeResult.type !== "収入") {
+    throw new Error(
+      "入金が収入として判定されません"
+    );
+  }
+
+  if (expenseResult.type !== "支出") {
+    throw new Error(
+      "出金が支出として判定されません"
+    );
+  }
+
+  Logger.log("入出金判定テスト成功");
 }
