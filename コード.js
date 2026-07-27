@@ -1358,48 +1358,73 @@ function rebuildReviewSummary() {
 }
 
 function reclassifyAllTransactions() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const txSheet = ss.getSheetByName("transactions");
+  const txSheet = getRequiredSheet("transactions");
   const rules = getRules();
 
   const values = txSheet.getDataRange().getValues();
-  if (values.length < 2) return;
 
-  const headers = values[0];
-  const rows = values.slice(1);
-
-  const idx = {};
-  headers.forEach((h, i) => idx[h] = i);
-  if (idx["wallet"] === undefined) {
-    throw new Error("transactions に wallet 列がありません");
+  if (values.length < 2) {
+    return;
   }
 
-  for (let r = 0; r < rows.length; r++) {
-    const row = rows[r];
+  const index = createHeaderIndex(values[0]);
 
-    const tx = {
-      merchant: row[idx["merchant"]] || "",
-      item_name: row[idx["item_name"]] || "",
-      note: row[idx["note"]] || "",
+  assertRequiredColumns(
+    index,
+    [
+      "merchant",
+      "item_name",
+      "note",
+      "amount",
+      "type",
+      "major_category",
+      "sub_category",
+      "purpose_type",
+      "expense_ratio",
+      "expense_amount",
+      "status",
+      "wallet"
+    ],
+    "transactions"
+  );
+
+  let updatedCount = 0;
+
+  for (let rowIndex = 1; rowIndex < values.length; rowIndex++) {
+    const row = values[rowIndex];
+
+    const transaction = {
+      merchant: row[index["merchant"]] || "",
+      item_name: row[index["item_name"]] || "",
+      note: row[index["note"]] || ""
     };
 
-    const classified = classifyTransaction(tx, rules);
+    const classified = classifyTransaction(transaction, rules);
+    const amount = Number(row[index["amount"]] || 0);
+    const expenseRatio = Number(classified.expense_ratio || 0);
 
-    const sheetRow = r + 2;
+    row[index["type"]] = classified.type;
+    row[index["major_category"]] = classified.major_category;
+    row[index["sub_category"]] = classified.sub_category;
+    row[index["purpose_type"]] = classified.purpose_type;
+    row[index["expense_ratio"]] = expenseRatio;
+    row[index["expense_amount"]] = amount * expenseRatio;
+    row[index["status"]] = classified.status;
+    row[index["wallet"]] = classified.wallet || "生活";
 
-    txSheet.getRange(sheetRow, idx["type"] + 1).setValue(classified.type);
-    txSheet.getRange(sheetRow, idx["major_category"] + 1).setValue(classified.major_category);
-    txSheet.getRange(sheetRow, idx["sub_category"] + 1).setValue(classified.sub_category);
-    txSheet.getRange(sheetRow, idx["purpose_type"] + 1).setValue(classified.purpose_type);
-    txSheet.getRange(sheetRow, idx["expense_ratio"] + 1).setValue(classified.expense_ratio);
-    txSheet.getRange(sheetRow, idx["status"] + 1).setValue(classified.status);
-    txSheet.getRange(sheetRow, idx["wallet"] + 1).setValue(classified.wallet || "生活");
-
-    const amount = Number(row[idx["amount"]] || 0);
-    const expenseAmount = amount * Number(classified.expense_ratio || 0);
-    txSheet.getRange(sheetRow, idx["expense_amount"] + 1).setValue(expenseAmount);
-    
+    updatedCount++;
   }
+
+  txSheet
+    .getRange(
+      2,
+      1,
+      values.length - 1,
+      values[0].length
+    )
+    .setValues(values.slice(1));
+
+  Logger.log(`再分類完了: ${updatedCount}件`);
 }
 
 function detectCsvTypeFromRows(values) {
