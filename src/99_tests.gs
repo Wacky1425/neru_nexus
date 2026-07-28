@@ -251,3 +251,39 @@ function debugCsvHeader() {
     Logger.log(JSON.stringify(row));
   }
 }
+
+function testGetHomeData() {
+  const data = getHomeData();
+
+  Logger.log(
+    JSON.stringify(data, null, 2)
+  );
+
+  if (!data.yearMonth) {
+    throw new Error("yearMonth がありません");
+  }
+
+  if (typeof data.availableMoney !== "number") {
+    throw new Error(
+      "availableMoney が数値ではありません"
+    );
+  }
+
+  if (typeof data.savingForecast !== "number") {
+    throw new Error(
+      "savingForecast が数値ではありません"
+    );
+  }
+
+  if (typeof data.sideBusinessProfit !== "number") {
+    throw new Error(
+      "sideBusinessProfit が数値ではありません"
+    );
+  }
+
+  if (!data.moneyHealth) {
+    throw new Error("moneyHealth がありません");
+  }
+
+  Logger.log("Home APIデータ取得成功");
+}
