@@ -24,20 +24,9 @@ class _AppShellState extends State<AppShell> {
     SettingsPage(),
   ];
 
-  static const List<String> _titles = [
-    'Home',
-    '取引',
-    '取込',
-    '分析',
-    '設定',
-  ];
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_titles[_currentIndex]),
-      ),
       body: IndexedStack(
         index: _currentIndex,
         children: _pages,

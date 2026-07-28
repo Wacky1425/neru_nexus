@@ -4,6 +4,7 @@ class HomeModel {
     required this.availableMoney,
     required this.savingForecast,
     required this.sideBusinessProfit,
+    required this.dailyBudget,
     required this.moneyHealth,
     required this.featuredDream,
     required this.generatedAt,
@@ -13,6 +14,7 @@ class HomeModel {
   final int availableMoney;
   final int savingForecast;
   final int sideBusinessProfit;
+  final int dailyBudget;
   final Map<String, dynamic> moneyHealth;
   final Map<String, dynamic>? featuredDream;
   final String generatedAt;
@@ -26,6 +28,8 @@ class HomeModel {
           (json['savingForecast'] as num?)?.toInt() ?? 0,
       sideBusinessProfit:
           (json['sideBusinessProfit'] as num?)?.toInt() ?? 0,
+      dailyBudget:
+          (json['dailyBudget'] as num?)?.toInt() ?? 0,
       moneyHealth:
           Map<String, dynamic>.from(
             json['moneyHealth'] as Map? ?? {},

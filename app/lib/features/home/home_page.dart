@@ -120,8 +120,17 @@ class _HomePageState extends State<HomePage> {
         return RefreshIndicator(
           onRefresh: _reload,
           child: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 20,
+          ),
             children: [
+              Text(
+                "おかえり、ネル👋",
+                style: Theme.of(context)
+                    .textTheme
+                    .headlineMedium,
+              ),
               Text(
                 home.yearMonth,
                 style: Theme.of(context)
@@ -135,6 +144,7 @@ class _HomePageState extends State<HomePage> {
                 amount: _formatMoney(
                   home.availableMoney,
                 ),
+                subAmount: '今日あと ${_formatMoney(home.dailyBudget)}',
                 icon: Icons.account_balance_wallet,
               ),
 
@@ -145,6 +155,7 @@ class _HomePageState extends State<HomePage> {
                 amount: _formatMoney(
                   home.savingForecast,
                 ),
+                subAmount: '月末時点の予測',
                 icon: Icons.savings_outlined,
               ),
 
@@ -155,6 +166,7 @@ class _HomePageState extends State<HomePage> {
                 amount: _formatMoney(
                   home.sideBusinessProfit,
                 ),
+                subAmount: '今月の事業収支',
                 icon: Icons.work_outline,
               ),
 

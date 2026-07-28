@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'core/theme/app_theme.dart';
 import 'features/app_shell.dart';
 
 class NeruNexusApp extends StatelessWidget {
@@ -10,10 +11,9 @@ class NeruNexusApp extends StatelessWidget {
     return MaterialApp(
       title: 'Neru Nexus',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.indigo,
-      ),
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.system,
       home: const AppShell(),
     );
   }

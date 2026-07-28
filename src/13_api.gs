@@ -7,6 +7,7 @@ function getHomeData() {
 
   return {
     yearMonth,
+    dailyBudget: getDailyBudget(yearMonth),
     availableMoney: getAvailableMoney(yearMonth),
     savingForecast: getSavingForecast(yearMonth),
     sideBusinessProfit: getSideBusinessProfit(yearMonth),
