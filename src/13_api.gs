@@ -96,6 +96,16 @@ function doGet(e) {
           "ok"
         );
 
+        case "transactions":
+            return createJsonResponse_(
+                getTransactionsData({
+                limit: parameters.limit,
+                offset: parameters.offset,
+                yearMonth: parameters.yearMonth
+                }),
+                "ok"
+            );
+
       default:
         return createJsonErrorResponse_(
           `未対応のactionです: ${action}`
@@ -111,4 +121,195 @@ function doGet(e) {
         : error
     );
   }
+}
+
+function formatApiDate_(value) {
+  if (!value) {
+    return "";
+  }
+
+  if (
+    value instanceof Date &&
+    !isNaN(value.getTime())
+  ) {
+    return Utilities.formatDate(
+      value,
+      "Asia/Tokyo",
+      "yyyy-MM-dd"
+    );
+  }
+
+  const parsedDate = new Date(
+    String(value).replace(/\./g, "/")
+  );
+
+  if (!isNaN(parsedDate.getTime())) {
+    return Utilities.formatDate(
+      parsedDate,
+      "Asia/Tokyo",
+      "yyyy-MM-dd"
+    );
+  }
+
+  return String(value);
+}
+
+function getTransactionsData(options) {
+  const settings = options || {};
+
+  const requestedLimit = Number(
+    settings.limit || 50
+  );
+
+  const requestedOffset = Number(
+    settings.offset || 0
+  );
+
+  const limit = Math.min(
+    Math.max(requestedLimit, 1),
+    200
+  );
+
+  const offset = Math.max(
+    requestedOffset,
+    0
+  );
+
+  const targetMonth = settings.yearMonth
+    ? normalizeBudgetYearMonth(
+        settings.yearMonth
+      )
+    : "";
+
+  const table = loadTransactions();
+
+  if (table.rows.length === 0) {
+    return {
+      items: [],
+      total: 0,
+      limit,
+      offset,
+      hasMore: false
+    };
+  }
+
+  assertRequiredColumns(
+    table.index,
+    [
+      "id",
+      "transaction_date",
+      "merchant",
+      "item_name",
+      "amount",
+      "type",
+      "major_category",
+      "sub_category",
+      "status",
+      "wallet",
+      "intent"
+    ],
+    SHEETS.TRANSACTIONS
+  );
+
+  const filteredRows = table.rows.filter(row => {
+    if (!targetMonth) {
+      return true;
+    }
+
+    const rowMonth = normalizeYearMonth(
+      row[table.index["transaction_date"]]
+    );
+
+    return rowMonth === targetMonth;
+  });
+
+  filteredRows.sort((a, b) => {
+    const dateA = new Date(
+      a[table.index["transaction_date"]]
+    );
+
+    const dateB = new Date(
+      b[table.index["transaction_date"]]
+    );
+
+    return dateB.getTime() - dateA.getTime();
+  });
+
+  const total = filteredRows.length;
+
+  const items = filteredRows
+    .slice(offset, offset + limit)
+    .map(row => ({
+      id: getString(
+        row,
+        table.index,
+        "id"
+      ),
+
+      transactionDate: formatApiDate_(
+        row[table.index["transaction_date"]]
+      ),
+
+      merchant: getString(
+        row,
+        table.index,
+        "merchant"
+      ),
+
+      itemName: getString(
+        row,
+        table.index,
+        "item_name"
+      ),
+
+      amount: getNumber(
+        row,
+        table.index,
+        "amount"
+      ),
+
+      type: getString(
+        row,
+        table.index,
+        "type"
+      ),
+
+      majorCategory: getString(
+        row,
+        table.index,
+        "major_category"
+      ),
+
+      subCategory: getString(
+        row,
+        table.index,
+        "sub_category"
+      ),
+
+      status: getString(
+        row,
+        table.index,
+        "status"
+      ),
+
+      wallet: getString(
+        row,
+        table.index,
+        "wallet"
+      ),
+
+      intent: getString(
+        row,
+        table.index,
+        "intent"
+      )
+    }));
+
+  return {
+    items,
+    total,
+    limit,
+    offset,
+    hasMore: offset + items.length < total
+  };
 }

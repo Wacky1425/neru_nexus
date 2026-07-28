@@ -287,3 +287,39 @@ function testGetHomeData() {
 
   Logger.log("Home APIデータ取得成功");
 }
+
+function testGetTransactionsData() {
+  const data = getTransactionsData({
+    limit: 10,
+    offset: 0
+  });
+
+  Logger.log(
+    JSON.stringify(data, null, 2)
+  );
+
+  if (!Array.isArray(data.items)) {
+    throw new Error(
+      "itemsが配列ではありません"
+    );
+  }
+
+  if (data.items.length > 10) {
+    throw new Error(
+      "limitを超えて取得されています"
+    );
+  }
+
+  if (
+    data.items.length > 0 &&
+    typeof data.items[0].amount !== "number"
+  ) {
+    throw new Error(
+      "amountが数値ではありません"
+    );
+  }
+
+  Logger.log(
+    `取引一覧API成功: ${data.items.length}/${data.total}件`
+  );
+}
