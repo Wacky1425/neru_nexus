@@ -458,6 +458,56 @@ function getAvailableMoney(yearMonth) {
   );
 }
 
+function getDailyBudget(yearMonth) {
+  const availableMoney = Number(
+    getAvailableMoney(yearMonth) || 0
+  );
+
+  const parts = String(yearMonth).split("-");
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    month < 1 ||
+    month > 12
+  ) {
+    return 0;
+  }
+
+  const today = new Date();
+
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth() + 1;
+
+  const lastDayOfMonth = new Date(
+    year,
+    month,
+    0
+  ).getDate();
+
+  let remainingDays;
+
+  if (
+    year === currentYear &&
+    month === currentMonth
+  ) {
+    remainingDays =
+      lastDayOfMonth - today.getDate() + 1;
+  } else {
+    remainingDays = lastDayOfMonth;
+  }
+
+  if (remainingDays <= 0) {
+    return 0;
+  }
+
+  return Math.floor(
+    availableMoney / remainingDays
+  );
+}
+
 function getSavingForecast(yearMonth) {
   const budgets = getBudgetsForMonth(yearMonth);
 

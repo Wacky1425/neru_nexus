@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import '../../core/constants/api_constants.dart';
-import 'home_model.dart';
+import '../../../core/constants/api_constants.dart';
+import '../model/home_model.dart';
 
 class HomeService {
   const HomeService();

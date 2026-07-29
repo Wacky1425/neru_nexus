@@ -323,3 +323,12 @@ function testGetTransactionsData() {
     `取引一覧API成功: ${data.items.length}/${data.total}件`
   );
 }
+
+function testGetAnalyticsData() {
+  const result =
+    getAnalyticsData("2026-07");
+
+  console.log(
+    JSON.stringify(result, null, 2)
+  );
+}

@@ -7,6 +7,7 @@ class HomeModel {
     required this.dailyBudget,
     required this.moneyHealth,
     required this.featuredDream,
+    required this.recentTransactions,
     required this.generatedAt,
   });
 
@@ -17,6 +18,7 @@ class HomeModel {
   final int dailyBudget;
   final Map<String, dynamic> moneyHealth;
   final Map<String, dynamic>? featuredDream;
+  final List<Map<String, dynamic>> recentTransactions;
   final String generatedAt;
 
   factory HomeModel.fromJson(Map<String, dynamic> json) {
@@ -39,6 +41,14 @@ class HomeModel {
           : Map<String, dynamic>.from(
               json['featuredDream'] as Map,
             ),
+      recentTransactions:
+          (json['recentTransactions'] as List? ?? [])
+              .map(
+                (item) => Map<String, dynamic>.from(
+                  item as Map,
+                ),
+              )
+              .toList(),
       generatedAt: json['generatedAt']?.toString() ?? '',
     );
   }

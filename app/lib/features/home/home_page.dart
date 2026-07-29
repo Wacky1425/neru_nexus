@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'home_model.dart';
-import 'home_service.dart';
+import 'model/home_model.dart';
+import 'service/home_service.dart';
 import 'widgets/money_card.dart';
+import '../dreams/widgets/dream_card.dart';
+import 'widgets/health_card.dart';
+import 'widgets/recent_transaction_card.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -102,12 +105,14 @@ class _HomePageState extends State<HomePage> {
         }
 
         final home = snapshot.data;
+        
 
         if (home == null) {
           return const Center(
             child: Text('Homeデータがありません'),
           );
         }
+        final dream = home.featuredDream;
 
         final healthTitle =
             home.moneyHealth['title']?.toString() ??
@@ -172,27 +177,23 @@ class _HomePageState extends State<HomePage> {
 
               const SizedBox(height: 20),
 
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        healthTitle,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium,
-                      ),
-                      if (healthMessage.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(healthMessage),
-                      ],
-                    ],
-                  ),
-                ),
+              if (dream != null)
+              DreamCard(
+                title: dream['name']?.toString() ?? '',
+                current: (dream['current_amount'] as num?)?.toInt() ?? 0,
+                goal: (dream['target_amount'] as num?)?.toInt() ?? 1,
               ),
+
+              const SizedBox(height: 20),
+              HealthCard(
+                title: healthTitle,
+                message: healthMessage,
+              ),
+
+              RecentTransactionCard(
+                transactions: home.recentTransactions,
+              ),
+
             ],
           ),
         );

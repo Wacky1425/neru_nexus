@@ -364,6 +364,99 @@ function getMonthlyLivingExpenseBreakdown(yearMonth) {
   return result;
 }
 
+function getExpenseCategoryBreakdown(yearMonth) {
+  const filtered = filterTransactionRows({
+    yearMonth,
+    type: "支出",
+    wallet: "生活"
+  });
+
+  if (filtered.rows.length === 0) {
+    return [];
+  }
+
+  assertRequiredColumns(
+    filtered.index,
+    [
+      "major_category",
+      "amount"
+    ],
+    SHEETS.TRANSACTIONS
+  );
+
+  const categoryTotals = {};
+
+  for (const row of filtered.rows) {
+    const category = getString(
+      row,
+      filtered.index,
+      "major_category"
+    );
+
+    const amount = getNumber(
+      row,
+      filtered.index,
+      "amount"
+    );
+
+    const categoryName =
+      category.trim() || "未分類";
+
+    if (!categoryTotals[categoryName]) {
+      categoryTotals[categoryName] = 0;
+    }
+
+    categoryTotals[categoryName] += amount;
+  }
+
+  return Object.entries(categoryTotals)
+    .map(([category, amount]) => ({
+      category,
+      amount
+    }))
+    .sort((a, b) => b.amount - a.amount);
+}
+
+
+function getAnalyticsData(yearMonth) {
+  const targetYearMonth =
+    yearMonth || getLatestBudgetMonth();
+
+  if (!targetYearMonth) {
+    throw new Error(
+      "分析対象の年月が指定されていません"
+    );
+  }
+
+  const expenseBreakdown =
+    getMonthlyLivingExpenseBreakdown(
+      targetYearMonth
+    );
+
+  const categories =
+    getExpenseCategoryBreakdown(
+      targetYearMonth
+    );
+
+  return {
+    yearMonth: targetYearMonth,
+
+    totalExpense:
+      expenseBreakdown.totalExpense,
+
+    fixedExpense:
+      expenseBreakdown.fixedExpense,
+
+    variableExpense:
+      expenseBreakdown.variableExpense,
+
+    categories,
+
+    generatedAt:
+      new Date().toISOString()
+  };
+}
+
 function getSideBusinessProfit(yearMonth) {
   const filtered = filterTransactionRows({
     yearMonth,

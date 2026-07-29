@@ -13,6 +13,9 @@ function getHomeData() {
     sideBusinessProfit: getSideBusinessProfit(yearMonth),
     moneyHealth: getMoneyHealth(yearMonth),
     featuredDream: getFeaturedDreamFund(),
+    recentTransactions: getTransactionsData({
+      limit: 3,
+    }).items,
     generatedAt: new Date().toISOString()
   };
 }
@@ -84,6 +87,14 @@ function doGet(e) {
       case "home":
         return createJsonResponse_(
           getHomeData(),
+          "ok"
+        );
+
+      case "analytics":
+        return createJsonResponse_(
+          getAnalyticsData(
+            parameters.yearMonth
+          ),
           "ok"
         );
 
