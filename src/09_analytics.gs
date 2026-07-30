@@ -113,3 +113,132 @@ function rebuildMonthlyTable() {
     rows
   );
 }
+
+function getAnalyticsData(yearMonth) {
+  const targetYearMonth =
+    yearMonth || getLatestBudgetMonth();
+
+  if (!targetYearMonth) {
+    throw new Error(
+      "分析対象の年月が指定されていません"
+    );
+  }
+
+  const expenseBreakdown =
+    getMonthlyLivingExpenseBreakdown(
+      targetYearMonth
+    );
+
+  const categories =
+    getExpenseCategoryBreakdown(
+      targetYearMonth
+    );
+
+  return {
+    yearMonth: targetYearMonth,
+
+    totalExpense:
+      expenseBreakdown.totalExpense,
+
+    fixedExpense:
+      expenseBreakdown.fixedExpense,
+
+    variableExpense:
+      expenseBreakdown.variableExpense,
+
+    categories,
+
+    monthlyTrend: getMonthlyTrend(yearMonth),
+
+    generatedAt:
+      new Date().toISOString()
+  };
+}
+
+
+function getMonthlyTrend(currentYearMonth) {
+  const normalizedCurrentMonth =
+    normalizeYearMonth_(currentYearMonth);
+
+  if (!normalizedCurrentMonth) {
+    return [];
+  }
+
+  const parts =
+    normalizedCurrentMonth.split("-");
+
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month)
+  ) {
+    return [];
+  }
+
+  const result = [];
+
+  // 選択月を含む直近4か月
+  for (let difference = 3; difference >= 0; difference--) {
+    const targetDate = new Date(
+      year,
+      month - 1 - difference,
+      1
+    );
+
+    const yearMonth =
+      Utilities.formatDate(
+        targetDate,
+        Session.getScriptTimeZone(),
+        "yyyy-MM"
+      );
+
+    const breakdown =
+      getMonthlyLivingExpenseBreakdown(
+        yearMonth
+      );
+
+    result.push({
+      yearMonth,
+      expense:
+        Number(breakdown.totalExpense || 0),
+    });
+  }
+
+  return result;
+}
+
+function normalizeYearMonth_(value) {
+  if (!value) {
+    return "";
+  }
+
+  if (
+    Object.prototype.toString.call(value) ===
+    "[object Date]"
+  ) {
+    return Utilities.formatDate(
+      value,
+      Session.getScriptTimeZone(),
+      "yyyy-MM"
+    );
+  }
+
+  const text = String(value).trim();
+
+  const match = text.match(
+    /^(\d{4})[-\/](\d{1,2})/
+  );
+
+  if (match) {
+    const year = match[1];
+    const month = String(
+      Number(match[2])
+    ).padStart(2, "0");
+
+    return `${year}-${month}`;
+  }
+
+  return "";
+}

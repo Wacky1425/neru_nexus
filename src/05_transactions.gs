@@ -417,46 +417,6 @@ function getExpenseCategoryBreakdown(yearMonth) {
     .sort((a, b) => b.amount - a.amount);
 }
 
-
-function getAnalyticsData(yearMonth) {
-  const targetYearMonth =
-    yearMonth || getLatestBudgetMonth();
-
-  if (!targetYearMonth) {
-    throw new Error(
-      "分析対象の年月が指定されていません"
-    );
-  }
-
-  const expenseBreakdown =
-    getMonthlyLivingExpenseBreakdown(
-      targetYearMonth
-    );
-
-  const categories =
-    getExpenseCategoryBreakdown(
-      targetYearMonth
-    );
-
-  return {
-    yearMonth: targetYearMonth,
-
-    totalExpense:
-      expenseBreakdown.totalExpense,
-
-    fixedExpense:
-      expenseBreakdown.fixedExpense,
-
-    variableExpense:
-      expenseBreakdown.variableExpense,
-
-    categories,
-
-    generatedAt:
-      new Date().toISOString()
-  };
-}
-
 function getSideBusinessProfit(yearMonth) {
   const filtered = filterTransactionRows({
     yearMonth,

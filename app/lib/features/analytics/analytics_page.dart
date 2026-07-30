@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'model/analytics_model.dart';
 import 'service/analytics_service.dart';
 import 'widgets/expense_pie_chart.dart';
+import 'widgets/monthly_expense_chart.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -145,6 +146,11 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                 ExpensePieChart(categories: analytics.categories),
 
                 const SizedBox(height: 24),
+
+                MonthlyExpenseChart(monthlyTrend: analytics.monthlyTrend),
+
+                const SizedBox(height: 24),
+
                 Text('カテゴリ別支出', style: Theme.of(context).textTheme.titleLarge),
 
                 const SizedBox(height: 12),

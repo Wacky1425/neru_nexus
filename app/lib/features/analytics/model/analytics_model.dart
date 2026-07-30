@@ -4,6 +4,7 @@ class AnalyticsModel {
   final int fixedExpense;
   final int variableExpense;
   final List<Map<String, dynamic>> categories;
+  final List<Map<String, dynamic>> monthlyTrend;
 
   AnalyticsModel({
     required this.yearMonth,
@@ -11,19 +12,17 @@ class AnalyticsModel {
     required this.fixedExpense,
     required this.variableExpense,
     required this.categories,
+    required this.monthlyTrend,
   });
 
-  factory AnalyticsModel.fromJson(
-    Map<String, dynamic> json,
-  ) {
+  factory AnalyticsModel.fromJson(Map<String, dynamic> json) {
     return AnalyticsModel(
       yearMonth: json["yearMonth"] ?? "",
       totalExpense: json["totalExpense"] ?? 0,
       fixedExpense: json["fixedExpense"] ?? 0,
       variableExpense: json["variableExpense"] ?? 0,
-      categories: List<Map<String, dynamic>>.from(
-        json["categories"] ?? [],
-      ),
+      categories: List<Map<String, dynamic>>.from(json["categories"] ?? []),
+      monthlyTrend: List<Map<String, dynamic>>.from(json['monthlyTrend'] ?? []),
     );
   }
 }
