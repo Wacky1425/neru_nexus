@@ -2,17 +2,16 @@ import 'package:flutter/material.dart';
 
 import 'model/analytics_model.dart';
 import 'service/analytics_service.dart';
+import 'widgets/expense_pie_chart.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
 
   @override
-  State<AnalyticsPage> createState() =>
-      _AnalyticsPageState();
+  State<AnalyticsPage> createState() => _AnalyticsPageState();
 }
 
-class _AnalyticsPageState
-    extends State<AnalyticsPage> {
+class _AnalyticsPageState extends State<AnalyticsPage> {
   late DateTime _selectedMonth;
   late Future<AnalyticsModel> _analyticsFuture;
 
@@ -22,14 +21,11 @@ class _AnalyticsPageState
 
     final now = DateTime.now();
 
-    _selectedMonth = DateTime(
-      now.year,
-      now.month,
-    );
-    
+    _selectedMonth = DateTime(now.year, now.month);
 
     _analyticsFuture = _fetchSelectedMonth();
   }
+
   Future<AnalyticsModel> _fetchSelectedMonth() {
     return const AnalyticsService().fetchAnalytics(
       yearMonth: _toYearMonth(_selectedMonth),
@@ -61,75 +57,53 @@ class _AnalyticsPageState
       child: FutureBuilder<AnalyticsModel>(
         future: _analyticsFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState ==
-              ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
           }
 
           if (snapshot.hasError) {
-            return _buildError(
-              context,
-              snapshot.error,
-            );
+            return _buildError(context, snapshot.error);
           }
 
           final analytics = snapshot.data;
 
           if (analytics == null) {
-            return _buildError(
-              context,
-              'Analyticsデータがありません',
-            );
+            return _buildError(context, 'Analyticsデータがありません');
           }
 
           return RefreshIndicator(
             onRefresh: _reload,
             child: ListView(
-              physics:
-                  const AlwaysScrollableScrollPhysics(),
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
               children: [
                 Text(
                   'Analytics',
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineMedium,
+                  style: Theme.of(context).textTheme.headlineMedium,
                 ),
 
                 const SizedBox(height: 4),
 
                 Row(
-                  mainAxisAlignment:
-                      MainAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     IconButton(
                       onPressed: () => _changeMonth(-1),
-                      icon: const Icon(
-                        Icons.chevron_left,
-                      ),
+                      icon: const Icon(Icons.chevron_left),
                     ),
 
                     Text(
-                      _formatYearMonth(
-                        _selectedMonth,
+                      _formatYearMonth(_selectedMonth),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
                       ),
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
                     ),
 
                     IconButton(
                       onPressed: _canMoveToNextMonth()
                           ? () => _changeMonth(1)
                           : null,
-                      icon: const Icon(
-                        Icons.chevron_right,
-                      ),
+                      icon: const Icon(Icons.chevron_right),
                     ),
                   ],
                 ),
@@ -149,8 +123,7 @@ class _AnalyticsPageState
                     Expanded(
                       child: _SummaryCard(
                         title: '固定費',
-                        amount:
-                            analytics.fixedExpense,
+                        amount: analytics.fixedExpense,
                         icon: Icons.lock_outline,
                       ),
                     ),
@@ -160,10 +133,8 @@ class _AnalyticsPageState
                     Expanded(
                       child: _SummaryCard(
                         title: '変動費',
-                        amount:
-                            analytics.variableExpense,
-                        icon:
-                            Icons.shopping_bag_outlined,
+                        amount: analytics.variableExpense,
+                        icon: Icons.shopping_bag_outlined,
                       ),
                     ),
                   ],
@@ -171,12 +142,10 @@ class _AnalyticsPageState
 
                 const SizedBox(height: 24),
 
-                Text(
-                  'カテゴリ別支出',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge,
-                ),
+                ExpensePieChart(categories: analytics.categories),
+
+                const SizedBox(height: 24),
+                Text('カテゴリ別支出', style: Theme.of(context).textTheme.titleLarge),
 
                 const SizedBox(height: 12),
 
@@ -184,46 +153,29 @@ class _AnalyticsPageState
                   const Card(
                     child: Padding(
                       padding: EdgeInsets.all(20),
-                      child: Text(
-                        '対象月の支出はありません',
-                      ),
+                      child: Text('対象月の支出はありません'),
                     ),
                   )
                 else
-                  ...analytics.categories.map(
-                    (category) {
-                      final name =
-                          category['category']
-                                  ?.toString() ??
-                              '未分類';
+                  ...analytics.categories.map((category) {
+                    final name = category['category']?.toString() ?? '未分類';
 
-                      final amount =
-                          _toInt(
-                        category['amount'],
-                      );
+                    final amount = _toInt(category['amount']);
 
-                      return Card(
-                        child: ListTile(
-                          leading: const CircleAvatar(
-                            child: Icon(
-                              Icons.category_outlined,
-                            ),
-                          ),
-                          title: Text(name),
-                          trailing: Text(
-                            _formatYen(amount),
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(
-                                  fontWeight:
-                                      FontWeight.bold,
-                                ),
-                          ),
+                    return Card(
+                      child: ListTile(
+                        leading: const CircleAvatar(
+                          child: Icon(Icons.category_outlined),
                         ),
-                      );
-                    },
-                  ),
+                        title: Text(name),
+                        trailing: Text(
+                          _formatYen(amount),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    );
+                  }),
               ],
             ),
           );
@@ -232,37 +184,26 @@ class _AnalyticsPageState
     );
   }
 
-  Widget _buildError(
-    BuildContext context,
-    Object? error,
-  ) {
+  Widget _buildError(BuildContext context, Object? error) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.error_outline,
-              size: 48,
-            ),
+            const Icon(Icons.error_outline, size: 48),
 
             const SizedBox(height: 12),
 
             Text(
               'Analyticsデータを取得できませんでした',
               textAlign: TextAlign.center,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium,
+              style: Theme.of(context).textTheme.titleMedium,
             ),
 
             const SizedBox(height: 8),
 
-            Text(
-              error.toString(),
-              textAlign: TextAlign.center,
-            ),
+            Text(error.toString(), textAlign: TextAlign.center),
 
             const SizedBox(height: 16),
 
@@ -285,15 +226,11 @@ class _AnalyticsPageState
       return value.toInt();
     }
 
-    return int.tryParse(
-          value?.toString() ?? '',
-        ) ??
-        0;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   static String _formatYen(int amount) {
-    final formatted =
-        amount.toString().replaceAllMapped(
+    final formatted = amount.toString().replaceAllMapped(
       RegExp(r'\B(?=(\d{3})+(?!\d))'),
       (_) => ',',
     );
@@ -301,34 +238,23 @@ class _AnalyticsPageState
     return '￥$formatted';
   }
 
-  static String _toYearMonth(
-    DateTime date,
-  ) {
-    final month =
-        date.month.toString().padLeft(2, '0');
+  static String _toYearMonth(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
 
     return '${date.year}-$month';
   }
 
-  static String _formatYearMonth(
-    DateTime date,
-  ) {
+  static String _formatYearMonth(DateTime date) {
     return '${date.year}年${date.month}月';
   }
 
   bool _canMoveToNextMonth() {
     final now = DateTime.now();
 
-    final currentMonth = DateTime(
-      now.year,
-      now.month,
-    );
+    final currentMonth = DateTime(now.year, now.month);
 
-    return _selectedMonth.isBefore(
-      currentMonth,
-    );
+    return _selectedMonth.isBefore(currentMonth);
   }
-
 }
 
 class _SummaryCard extends StatelessWidget {
@@ -348,30 +274,21 @@ class _SummaryCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(icon),
 
             const SizedBox(height: 12),
 
-            Text(
-              title,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium,
-            ),
+            Text(title, style: Theme.of(context).textTheme.bodyMedium),
 
             const SizedBox(height: 4),
 
             Text(
               _formatYen(amount),
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
           ],
         ),
@@ -380,14 +297,11 @@ class _SummaryCard extends StatelessWidget {
   }
 
   static String _formatYen(int amount) {
-    final formatted =
-        amount.toString().replaceAllMapped(
+    final formatted = amount.toString().replaceAllMapped(
       RegExp(r'\B(?=(\d{3})+(?!\d))'),
       (_) => ',',
     );
 
     return '￥$formatted';
   }
-
-  
 }
