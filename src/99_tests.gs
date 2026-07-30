@@ -332,3 +332,19 @@ function testGetAnalyticsData() {
     JSON.stringify(result, null, 2)
   );
 }
+
+function testCreateTransactionFromApp() {
+  const result = createTransactionFromApp_({
+    transactionDate: "2026-07-30",
+    type: "支出",
+    amount: 380,
+    category: "食費",
+    title: "アプリ登録テスト",
+    paymentMethod: "現金",
+    memo: "Flutter接続前のテスト"
+  });
+
+  Logger.log(
+    result.getContent()
+  );
+}

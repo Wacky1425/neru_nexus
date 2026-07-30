@@ -135,6 +135,273 @@ function doGet(e) {
   }
 }
 
+function doPost(e) {
+  try {
+    const data = JSON.parse(
+      e &&
+      e.postData &&
+      e.postData.contents
+        ? e.postData.contents
+        : "{}"
+    );
+
+    const key = String(
+      data.key || ""
+    ).trim();
+
+    if (!isApiAuthorized_(key)) {
+      return createJsonErrorResponse_(
+        "認証に失敗しました"
+      );
+    }
+
+    const action = String(
+      data.action || ""
+    ).trim();
+
+    switch (action) {
+      case "transaction_create":
+        return createTransactionFromApp_(data);
+
+      case "discord_transaction":
+        return createDiscordTransaction_(data);
+
+      default:
+        return createJsonErrorResponse_(
+          `未対応のactionです: ${action}`
+        );
+    }
+
+  } catch (error) {
+    console.error(error);
+
+    return createJsonErrorResponse_(
+      error && error.message
+        ? error.message
+        : String(error)
+    );
+  }
+}
+
+function createTransactionFromApp_(data) {
+  const transactionDate = String(
+    data.transactionDate || ""
+  ).trim();
+
+  const type = String(
+    data.type || ""
+  ).trim();
+
+  const amount = Number(
+    data.amount || 0
+  );
+
+  const category = String(
+    data.category || ""
+  ).trim();
+
+  const title = String(
+    data.title || ""
+  ).trim();
+
+  const paymentMethod = String(
+    data.paymentMethod || ""
+  ).trim();
+
+  const memo = String(
+    data.memo || ""
+  ).trim();
+
+  if (!transactionDate) {
+    throw new Error(
+      "transactionDateは必須です"
+    );
+  }
+
+  const parsedDate = new Date(
+    `${transactionDate}T00:00:00+09:00`
+  );
+
+  if (isNaN(parsedDate.getTime())) {
+    throw new Error(
+      "transactionDateの形式が不正です"
+    );
+  }
+
+  if (
+    type !== "支出" &&
+    type !== "収入"
+  ) {
+    throw new Error(
+      "typeは支出または収入を指定してください"
+    );
+  }
+
+  if (
+    !Number.isFinite(amount) ||
+    amount <= 0
+  ) {
+    throw new Error(
+      "amountは1以上で指定してください"
+    );
+  }
+
+  if (!category) {
+    throw new Error(
+      "categoryは必須です"
+    );
+  }
+
+  if (!title) {
+    throw new Error(
+      "titleは必須です"
+    );
+  }
+
+  if (!paymentMethod) {
+    throw new Error(
+      "paymentMethodは必須です"
+    );
+  }
+
+  const purposeType =
+    type === "収入"
+      ? "私用"
+      : guessPurposeType(category);
+
+  const wallet =
+    purposeType === "経費"
+      ? "事業"
+      : "生活";
+
+  const tx = {
+    transaction_date:
+      transactionDate,
+
+    merchant:
+      normalizeMerchant(title),
+
+    item_name:
+      title,
+
+    amount,
+
+    note:
+      memo,
+
+    source_type:
+      "Neru Nexus App",
+
+    payment_method:
+      paymentMethod,
+
+    account_name:
+      "App Manual",
+
+    evidence_url:
+      "",
+
+    original_image_url:
+      "",
+
+    import_batch:
+      Utilities.formatDate(
+        new Date(),
+        "Asia/Tokyo",
+        "yyyyMMdd_HHmmss"
+      ),
+
+    type,
+
+    major_category:
+      mapMajorCategory(category),
+
+    sub_category:
+      category,
+
+    purpose_type:
+      purposeType,
+
+    expense_ratio:
+      type === "支出"
+        ? guessExpenseRatio(category)
+        : 0,
+
+    status:
+      "確定",
+
+    wallet,
+
+    intent:
+      type === "収入"
+        ? "収入"
+        : guessIntent(category)
+  };
+
+  const result = addTransactions([
+    tx
+  ]);
+
+  if (result.addedCount === 0) {
+    if (result.skippedCount > 0) {
+      throw new Error(
+        "同じ内容の取引がすでに登録されています"
+      );
+    }
+
+    throw new Error(
+      "取引を登録できませんでした"
+    );
+  }
+
+  rebuildReviewQueue();
+  rebuildReviewSummary();
+  rebuildAllViews();
+
+  return createJsonResponse_(
+    {
+      addedCount:
+        result.addedCount,
+
+      skippedCount:
+        result.skippedCount,
+
+      source:
+        "app",
+
+      transaction: {
+        transactionDate:
+          tx.transaction_date,
+
+        type:
+          tx.type,
+
+        amount:
+          tx.amount,
+
+        category:
+          tx.sub_category,
+
+        title:
+          tx.item_name,
+
+        paymentMethod:
+          tx.payment_method,
+
+        memo:
+          tx.note,
+
+        wallet:
+          tx.wallet,
+
+        purposeType:
+          tx.purpose_type
+      }
+    },
+    "ok"
+  );
+}
+
 function formatApiDate_(value) {
   if (!value) {
     return "";

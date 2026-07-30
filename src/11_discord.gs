@@ -1,54 +1,124 @@
-function doPost(e) {
+function createDiscordTransaction_(data) {
   try {
-    const data = JSON.parse(e.postData.contents);
-
     const timestamp = new Date();
     const rules = getRules();
 
-    const mode = String(data.mode || "cash").trim(); // cash / memo
-    const merchantInput = String(data.merchant || data.content || "").trim();
-    const memo = String(data.memo || "").trim();
-    const amount = Number(data.amount || 0);
+    const mode = String(
+      data.mode || "cash"
+    ).trim();
+
+    const merchantInput = String(
+      data.merchant ||
+      data.content ||
+      ""
+    ).trim();
+
+    const memo = String(
+      data.memo || ""
+    ).trim();
+
+    const amount = Number(
+      data.amount || 0
+    );
 
     if (!merchantInput || !amount) {
-      throw new Error("merchant/content と amount は必須です");
+      throw new Error(
+        "merchant/content と amount は必須です"
+      );
     }
 
     let driveUrl = "";
-    const imageUrl = data.image || "";
+
+    const imageUrl = String(
+      data.image || ""
+    ).trim();
 
     try {
       if (imageUrl) {
-        const response = UrlFetchApp.fetch(imageUrl);
-        const blob = response.getBlob();
+        const response =
+          UrlFetchApp.fetch(imageUrl);
 
-        const folder = DriveApp.getFolderById(FOLDERS.EVIDENCE_IMAGES);
-        const safeName = merchantInput.replace(/[\\\/:*?"<>|]/g, "_");
+        const blob =
+          response.getBlob();
+
+        const folder =
+          DriveApp.getFolderById(
+            FOLDERS.EVIDENCE_IMAGES
+          );
+
+        const safeName =
+          merchantInput.replace(
+            /[\\\/:*?"<>|]/g,
+            "_"
+          );
+
         const fileName =
-          Utilities.formatDate(timestamp, "Asia/Tokyo", "yyyyMMdd_HHmmss") +
+          Utilities.formatDate(
+            timestamp,
+            "Asia/Tokyo",
+            "yyyyMMdd_HHmmss"
+          ) +
           "_" +
           safeName;
 
-        const file = folder.createFile(blob.setName(fileName));
+        const file = folder.createFile(
+          blob.setName(fileName)
+        );
+
         driveUrl = file.getUrl();
       }
-    } catch (err) {
+    } catch (error) {
+      console.error(error);
       driveUrl = "";
     }
 
     const sample = {
-      transaction_date: Utilities.formatDate(timestamp, "Asia/Tokyo", "yyyy-MM-dd"),
-      merchant: normalizeMerchant(merchantInput),
-      item_name: merchantInput,
-      amount: amount,
-      note: memo,
-      source_type: "Discord",
-      payment_method: mode === "cash" ? "現金" : "pending",
-      account_name: "Discord Manual",
-      evidence_url: driveUrl,
-      original_image_url: imageUrl,
-      import_batch: Utilities.formatDate(timestamp, "Asia/Tokyo", "yyyyMMdd_HHmmss"),
-      duplicate_key: "",
+      transaction_date:
+        Utilities.formatDate(
+          timestamp,
+          "Asia/Tokyo",
+          "yyyy-MM-dd"
+        ),
+
+      merchant:
+        normalizeMerchant(
+          merchantInput
+        ),
+
+      item_name:
+        merchantInput,
+
+      amount,
+
+      note:
+        memo,
+
+      source_type:
+        "Discord",
+
+      payment_method:
+        mode === "cash"
+          ? "現金"
+          : "pending",
+
+      account_name:
+        "Discord Manual",
+
+      evidence_url:
+        driveUrl,
+
+      original_image_url:
+        imageUrl,
+
+      import_batch:
+        Utilities.formatDate(
+          timestamp,
+          "Asia/Tokyo",
+          "yyyyMMdd_HHmmss"
+        ),
+
+      duplicate_key:
+        "",
     };
 
     let classified;
@@ -64,19 +134,43 @@ function doPost(e) {
         wallet: "生活",
         intent: "その他",
       };
-    } else if (data.category && String(data.category).trim() !== "") {
+
+    } else if (
+      data.category &&
+      String(data.category).trim() !== ""
+    ) {
+      const category =
+        String(data.category).trim();
+
+      const purposeType =
+        guessPurposeType(category);
+
       classified = {
         type: "支出",
-        major_category: mapMajorCategory(data.category),
-        sub_category: data.category,
-        purpose_type: guessPurposeType(data.category),
-        expense_ratio: guessExpenseRatio(data.category),
-        status: "確定",
-        wallet: guessPurposeType(data.category) === "経費" ? "事業" : "生活",
-        intent: guessIntent(data.category),
+        major_category:
+          mapMajorCategory(category),
+        sub_category:
+          category,
+        purpose_type:
+          purposeType,
+        expense_ratio:
+          guessExpenseRatio(category),
+        status:
+          "確定",
+        wallet:
+          purposeType === "経費"
+            ? "事業"
+            : "生活",
+        intent:
+          guessIntent(category),
       };
+
     } else {
-      classified = classifyTransaction(sample, rules);
+      classified =
+        classifyTransaction(
+          sample,
+          rules
+        );
     }
 
     const tx = {
@@ -84,28 +178,33 @@ function doPost(e) {
       ...classified,
     };
 
-    const added = addTransaction(tx);
+    const result =
+      addTransactions([tx]);
 
     rebuildReviewQueue();
     rebuildReviewSummary();
     rebuildAllViews();
 
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        ok: true,
-        added: added,
-        mode: mode,
+    return createJsonResponse_(
+      {
+        addedCount:
+        result.addedCount,
+
+        skippedCount:
+          result.skippedCount,
+        source: "discord",
         merchant: tx.merchant,
         amount: tx.amount,
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
+      },
+      "ok"
+    );
 
   } catch (error) {
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        ok: false,
-        error: error.message,
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return createJsonErrorResponse_(
+      error && error.message
+        ? error.message
+        : String(error)
+    );
   }
 }
+
