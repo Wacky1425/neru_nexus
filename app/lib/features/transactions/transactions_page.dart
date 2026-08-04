@@ -1,80 +1,45 @@
 import 'package:flutter/material.dart';
 
+import 'model/transaction_model.dart';
+import 'service/transaction_service.dart';
 import 'transaction_form_page.dart';
+import 'transaction_detail_page.dart';
 
 class TransactionsPage extends StatefulWidget {
-  const TransactionsPage({
-    super.key,
-  });
+  const TransactionsPage({super.key});
 
   @override
-  State<TransactionsPage> createState() =>
-      _TransactionsPageState();
+  State<TransactionsPage> createState() => _TransactionsPageState();
 }
 
-class _TransactionsPageState
-    extends State<TransactionsPage> {
-  final List<TransactionFormResult> _transactions = [
-    TransactionFormResult(
-      date: DateTime.now(),
-      type: TransactionType.expense,
-      amount: 780,
-      category: '食費',
-      title: 'スーパー',
-      paymentMethod: 'クレジットカード',
-    ),
-    TransactionFormResult(
-      date: DateTime.now(),
-      type: TransactionType.expense,
-      amount: 200,
-      category: '食費',
-      title: '社食',
-      paymentMethod: '現金',
-    ),
-    TransactionFormResult(
-      date: DateTime.now().subtract(
-        const Duration(days: 1),
-      ),
-      type: TransactionType.expense,
-      amount: 540,
-      category: '外食',
-      title: '昼ごはん',
-      paymentMethod: 'PayPay',
-    ),
-  ];
+class _TransactionsPageState extends State<TransactionsPage> {
+  final TransactionService _transactionService = const TransactionService();
 
-  int get _totalExpense {
-    return _transactions
-        .where(
-          (transaction) =>
-              transaction.type ==
-              TransactionType.expense,
-        )
-        .fold(
-          0,
-          (total, transaction) =>
-              total + transaction.amount,
-        );
+  Future<List<TransactionModel>>? _transactionsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _transactionsFuture = _fetchTransactions();
   }
 
-  int get _totalIncome {
-    return _transactions
-        .where(
-          (transaction) =>
-              transaction.type ==
-              TransactionType.income,
-        )
-        .fold(
-          0,
-          (total, transaction) =>
-              total + transaction.amount,
-        );
+  Future<List<TransactionModel>> _fetchTransactions() {
+    return _transactionService.fetchTransactions(limit: 100, offset: 0);
+  }
+
+  Future<void> _reload() async {
+    final future = _fetchTransactions();
+
+    setState(() {
+      _transactionsFuture = future;
+    });
+
+    await future;
   }
 
   Future<void> _openTransactionForm() async {
-    final result =
-        await Navigator.of(context).push<
-            TransactionFormResult>(
+    final result = await Navigator.of(context).push<TransactionFormResult>(
       MaterialPageRoute(
         builder: (context) {
           return const TransactionFormPage();
@@ -86,64 +51,67 @@ class _TransactionsPageState
       return;
     }
 
-    setState(() {
-      _transactions.insert(0, result);
+    await _reload();
 
-      _transactions.sort(
-        (a, b) => b.date.compareTo(a.date),
-      );
-    });
+    if (!mounted) {
+      return;
+    }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('取引を追加しました'),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('取引を追加しました')));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('取引'),
-      ),
-      body: _transactions.isEmpty
-          ? _buildEmptyState(context)
-          : RefreshIndicator(
-              onRefresh: () async {},
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(
-                  16,
-                  8,
-                  16,
-                  100,
-                ),
-                children: [
-                  _MonthlySummaryCard(
-                    income: _totalIncome,
-                    expense: _totalExpense,
-                  ),
+      appBar: AppBar(title: const Text('取引')),
+      body: FutureBuilder<List<TransactionModel>>(
+        future: _transactionsFuture ?? _fetchTransactions(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-                  const SizedBox(height: 20),
+          if (snapshot.hasError) {
+            return _buildErrorState(context, snapshot.error);
+          }
 
-                  Text(
-                    '取引履歴',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
+          final transactions = snapshot.data ?? [];
 
-                  const SizedBox(height: 12),
+          if (transactions.isEmpty) {
+            return _buildEmptyState(context);
+          }
 
-                  ..._buildGroupedTransactions(
+          final totalIncome = _calculateTotalIncome(transactions);
+
+          final totalExpense = _calculateTotalExpense(transactions);
+
+          return RefreshIndicator(
+            onRefresh: _reload,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+              children: [
+                _MonthlySummaryCard(income: totalIncome, expense: totalExpense),
+
+                const SizedBox(height: 20),
+
+                Text(
+                  '取引履歴',
+                  style: Theme.of(
                     context,
-                  ),
-                ],
-              ),
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
+
+                const SizedBox(height: 12),
+
+                ..._buildGroupedTransactions(context, transactions),
+              ],
             ),
+          );
+        },
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openTransactionForm,
         icon: const Icon(Icons.add_rounded),
@@ -152,9 +120,9 @@ class _TransactionsPageState
     );
   }
 
-  Widget _buildEmptyState(
-    BuildContext context,
-  ) {
+  Widget _buildErrorState(BuildContext context, Object? error) {
+    final message = error.toString().replaceFirst('Exception: ', '');
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -162,35 +130,31 @@ class _TransactionsPageState
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.receipt_long_outlined,
-              size: 72,
-              color: Theme.of(context)
-                  .colorScheme
-                  .outline,
+              Icons.error_outline,
+              size: 64,
+              color: Theme.of(context).colorScheme.error,
             ),
+
             const SizedBox(height: 16),
+
             Text(
-              '取引がまだありません',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '右下のボタンから最初の取引を追加してください。',
+              '取引一覧を取得できませんでした',
               textAlign: TextAlign.center,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium,
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
+
+            const SizedBox(height: 8),
+
+            Text(message, textAlign: TextAlign.center),
+
             const SizedBox(height: 24),
+
             FilledButton.icon(
-              onPressed: _openTransactionForm,
-              icon: const Icon(Icons.add),
-              label: const Text('取引を追加'),
+              onPressed: _reload,
+              icon: const Icon(Icons.refresh),
+              label: const Text('再読み込み'),
             ),
           ],
         ),
@@ -198,48 +162,97 @@ class _TransactionsPageState
     );
   }
 
+  Widget _buildEmptyState(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: _reload,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          SizedBox(
+            height: MediaQuery.sizeOf(context).height * 0.65,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.receipt_long_outlined,
+                      size: 72,
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    Text(
+                      '取引がまだありません',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    const Text(
+                      '右下のボタンから取引を追加してください。',
+                      textAlign: TextAlign.center,
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    FilledButton.icon(
+                      onPressed: _openTransactionForm,
+                      icon: const Icon(Icons.add),
+                      label: const Text('取引を追加'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   List<Widget> _buildGroupedTransactions(
     BuildContext context,
+    List<TransactionModel> transactions,
   ) {
-    final grouped =
-        <DateTime, List<TransactionFormResult>>{};
+    final grouped = <DateTime, List<TransactionModel>>{};
 
-    for (final transaction in _transactions) {
-      final date = DateTime(
-        transaction.date.year,
-        transaction.date.month,
-        transaction.date.day,
-      );
+    for (final transaction in transactions) {
+      final parsedDate = DateTime.tryParse(transaction.transactionDate);
+
+      if (parsedDate == null) {
+        continue;
+      }
+
+      final date = DateTime(parsedDate.year, parsedDate.month, parsedDate.day);
 
       grouped.putIfAbsent(date, () => []);
+
       grouped[date]!.add(transaction);
     }
 
-    final dates = grouped.keys.toList()
-      ..sort(
-        (a, b) => b.compareTo(a),
-      );
+    final dates = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
 
     final widgets = <Widget>[];
 
     for (final date in dates) {
       widgets.add(
         Padding(
-          padding: const EdgeInsets.only(
-            top: 8,
-            bottom: 8,
-          ),
+          padding: const EdgeInsets.only(top: 8, bottom: 8),
           child: Text(
             _formatDateLabel(date),
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
         ),
       );
+
+      final dailyTransactions = grouped[date]!;
 
       widgets.add(
         Card(
@@ -249,47 +262,56 @@ class _TransactionsPageState
             children: [
               for (
                 var index = 0;
-                index < grouped[date]!.length;
+                index < dailyTransactions.length;
                 index++
               ) ...[
                 _TransactionTile(
-                  transaction:
-                      grouped[date]![index],
+                  transaction: dailyTransactions[index],
+                  onUpdated: _reload,
                 ),
-                if (
-                  index <
-                      grouped[date]!.length - 1
-                )
-                  const Divider(
-                    height: 1,
-                    indent: 68,
-                  ),
+                if (index < dailyTransactions.length - 1)
+                  const Divider(height: 1, indent: 68),
               ],
             ],
           ),
         ),
       );
 
-      widgets.add(
-        const SizedBox(height: 12),
-      );
+      widgets.add(const SizedBox(height: 12));
+    }
+
+    if (widgets.isEmpty) {
+      return [
+        const Card(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Text('表示できる取引がありません'),
+          ),
+        ),
+      ];
     }
 
     return widgets;
   }
 
+  static int _calculateTotalIncome(List<TransactionModel> transactions) {
+    return transactions
+        .where((transaction) => transaction.type == '収入')
+        .fold(0, (total, transaction) => total + transaction.amount);
+  }
+
+  static int _calculateTotalExpense(List<TransactionModel> transactions) {
+    return transactions
+        .where((transaction) => transaction.type == '支出')
+        .fold(0, (total, transaction) => total + transaction.amount);
+  }
+
   static String _formatDateLabel(DateTime date) {
     final now = DateTime.now();
 
-    final today = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    );
+    final today = DateTime(now.year, now.month, now.day);
 
-    final yesterday = today.subtract(
-      const Duration(days: 1),
-    );
+    final yesterday = today.subtract(const Duration(days: 1));
 
     if (date == today) {
       return '今日';
@@ -304,10 +326,7 @@ class _TransactionsPageState
 }
 
 class _MonthlySummaryCard extends StatelessWidget {
-  const _MonthlySummaryCard({
-    required this.income,
-    required this.expense,
-  });
+  const _MonthlySummaryCard({required this.income, required this.expense});
 
   final int income;
   final int expense;
@@ -315,24 +334,20 @@ class _MonthlySummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final balance = income - expense;
-    final colorScheme =
-        Theme.of(context).colorScheme;
+
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '今月の収支',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              '取得した取引の収支',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
 
             const SizedBox(height: 16),
@@ -343,18 +358,18 @@ class _MonthlySummaryCard extends StatelessWidget {
                   child: _SummaryValue(
                     label: '収入',
                     amount: income,
-                    icon:
-                        Icons.arrow_downward_rounded,
+                    icon: Icons.arrow_downward_rounded,
                     color: colorScheme.tertiary,
                   ),
                 ),
+
                 const SizedBox(width: 12),
+
                 Expanded(
                   child: _SummaryValue(
                     label: '支出',
                     amount: expense,
-                    icon:
-                        Icons.arrow_upward_rounded,
+                    icon: Icons.arrow_upward_rounded,
                     color: colorScheme.error,
                   ),
                 ),
@@ -364,15 +379,10 @@ class _MonthlySummaryCard extends StatelessWidget {
             const Divider(height: 32),
 
             Row(
-              mainAxisAlignment:
-                  MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  '差額',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                const Text('差額', style: TextStyle(fontWeight: FontWeight.bold)),
+
                 Text(
                   _formatSignedYen(balance),
                   style: TextStyle(
@@ -410,38 +420,27 @@ class _SummaryValue extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withValues(
-          alpha: 0.1,
-        ),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(
-                icon,
-                size: 18,
-                color: color,
-              ),
+              Icon(icon, size: 18, color: color),
+
               const SizedBox(width: 4),
-              Text(
-                label,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall,
-              ),
+
+              Text(label, style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
+
           const SizedBox(height: 8),
+
           Text(
             _formatYen(amount),
-            style: const TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
           ),
         ],
       ),
@@ -450,59 +449,69 @@ class _SummaryValue extends StatelessWidget {
 }
 
 class _TransactionTile extends StatelessWidget {
-  const _TransactionTile({
-    required this.transaction,
-  });
+  const _TransactionTile({required this.transaction, required this.onUpdated});
 
-  final TransactionFormResult transaction;
+  final TransactionModel transaction;
+  final Future<void> Function() onUpdated;
 
   @override
   Widget build(BuildContext context) {
-    final isExpense =
-        transaction.type ==
-        TransactionType.expense;
+    final isIncome = transaction.type == '収入';
 
-    final colorScheme =
-        Theme.of(context).colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
-    final transactionColor = isExpense
-        ? colorScheme.error
-        : colorScheme.tertiary;
+    final transactionColor = isIncome
+        ? colorScheme.tertiary
+        : colorScheme.error;
+
+    final displayName = transaction.merchant.trim().isNotEmpty
+        ? transaction.merchant.trim()
+        : transaction.itemName.trim().isNotEmpty
+        ? transaction.itemName.trim()
+        : '名称なし';
+
+    final category = transaction.subCategory.trim().isNotEmpty
+        ? transaction.subCategory.trim()
+        : transaction.majorCategory.trim().isNotEmpty
+        ? transaction.majorCategory.trim()
+        : '未分類';
+
+    final subtitleParts = <String>[category];
+
+    if (transaction.paymentMethod.trim().isNotEmpty) {
+      subtitleParts.add(transaction.paymentMethod.trim());
+    }
 
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 6,
-      ),
-      leading: CircleAvatar(
-        backgroundColor:
-            transactionColor.withValues(
-          alpha: 0.12,
-        ),
-        child: Icon(
-          _categoryIcon(
-            transaction.category,
+      onTap: () async {
+        final updated = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => TransactionDetailPage(transaction: transaction),
           ),
-          color: transactionColor,
-        ),
+        );
+
+        if (updated == true) {
+          await onUpdated();
+        }
+      },
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      leading: CircleAvatar(
+        backgroundColor: transactionColor.withValues(alpha: 0.12),
+        child: Icon(_categoryIcon(category), color: transactionColor),
       ),
       title: Text(
-        transaction.title,
+        displayName,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-        ),
+        style: const TextStyle(fontWeight: FontWeight.bold),
       ),
       subtitle: Text(
-        '${transaction.category}'
-        ' ・ '
-        '${transaction.paymentMethod}',
+        subtitleParts.join(' ・ '),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
       trailing: Text(
-        '${isExpense ? '-' : '+'}'
+        '${isIncome ? '+' : '-'}'
         '${_formatYen(transaction.amount)}',
         style: TextStyle(
           fontSize: 16,
@@ -513,9 +522,7 @@ class _TransactionTile extends StatelessWidget {
     );
   }
 
-  static IconData _categoryIcon(
-    String category,
-  ) {
+  static IconData _categoryIcon(String category) {
     switch (category) {
       case '食費':
       case '外食':
@@ -561,13 +568,10 @@ class _TransactionTile extends StatelessWidget {
 }
 
 String _formatYen(int amount) {
-  final formatted = amount
-      .abs()
-      .toString()
-      .replaceAllMapped(
-        RegExp(r'\B(?=(\d{3})+(?!\d))'),
-        (_) => ',',
-      );
+  final formatted = amount.abs().toString().replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (_) => ',',
+  );
 
   return '￥$formatted';
 }
@@ -576,8 +580,8 @@ String _formatSignedYen(int amount) {
   final sign = amount > 0
       ? '+'
       : amount < 0
-          ? '-'
-          : '';
+      ? '-'
+      : '';
 
   return '$sign${_formatYen(amount)}';
 }

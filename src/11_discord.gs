@@ -148,13 +148,14 @@ function createDiscordTransaction_(data) {
       classified = {
         type: "支出",
         major_category:
-          mapMajorCategory(category),
-        sub_category:
-          category,
+  majorCategory,
+
+sub_category:
+  subCategory,
         purpose_type:
           purposeType,
         expense_ratio:
-          guessExpenseRatio(category),
+          guessExpenseRatio(subCategory),
         status:
           "確定",
         wallet:
@@ -162,7 +163,7 @@ function createDiscordTransaction_(data) {
             ? "事業"
             : "生活",
         intent:
-          guessIntent(category),
+          guessIntent(subCategory),
       };
 
     } else {

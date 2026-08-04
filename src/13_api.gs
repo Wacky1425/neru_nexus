@@ -163,8 +163,14 @@ function doPost(e) {
       case "transaction_create":
         return createTransactionFromApp_(data);
 
+      case "transaction_update":
+        return updateTransactionFromApp_(data);
+
       case "discord_transaction":
         return createDiscordTransaction_(data);
+
+      case "transaction_delete":
+        return deleteTransactionFromApp_(data);
 
       default:
         return createJsonErrorResponse_(
@@ -196,8 +202,12 @@ function createTransactionFromApp_(data) {
     data.amount || 0
   );
 
-  const category = String(
-    data.category || ""
+  const majorCategory = String(
+    data.majorCategory || ""
+  ).trim();
+
+  const subCategory = String(
+    data.subCategory || ""
   ).trim();
 
   const title = String(
@@ -246,9 +256,15 @@ function createTransactionFromApp_(data) {
     );
   }
 
-  if (!category) {
+  if (!majorCategory) {
+  throw new Error(
+    "majorCategoryは必須です"
+  );
+  }
+
+  if (!subCategory) {
     throw new Error(
-      "categoryは必須です"
+      "subCategoryは必須です"
     );
   }
 
@@ -265,9 +281,9 @@ function createTransactionFromApp_(data) {
   }
 
   const purposeType =
-    type === "収入"
-      ? "私用"
-      : guessPurposeType(category);
+  type === "収入"
+    ? "私用"
+    : guessPurposeType(subCategory);
 
   const wallet =
     purposeType === "経費"
@@ -314,18 +330,18 @@ function createTransactionFromApp_(data) {
     type,
 
     major_category:
-      mapMajorCategory(category),
+    majorCategory,
 
-    sub_category:
-      category,
+  sub_category:
+  subCategory,
 
     purpose_type:
       purposeType,
 
     expense_ratio:
-      type === "支出"
-        ? guessExpenseRatio(category)
-        : 0,
+  type === "支出"
+    ? guessExpenseRatio(subCategory)
+    : 0,
 
     status:
       "確定",
@@ -335,7 +351,7 @@ function createTransactionFromApp_(data) {
     intent:
       type === "収入"
         ? "収入"
-        : guessIntent(category)
+        : guessIntent(subCategory)
   };
 
   const result = addTransactions([
@@ -379,8 +395,11 @@ function createTransactionFromApp_(data) {
         amount:
           tx.amount,
 
-        category:
-          tx.sub_category,
+        majorCategory:
+  tx.major_category,
+
+  subCategory:
+  tx.sub_category,
 
         title:
           tx.item_name,
@@ -399,6 +418,445 @@ function createTransactionFromApp_(data) {
       }
     },
     "ok"
+  );
+}
+
+function updateTransactionFromApp_(data) {
+  const id = String(
+    data.id || ""
+  ).trim();
+
+  const transactionDate = String(
+    data.transactionDate || ""
+  ).trim();
+
+  const type = String(
+    data.type || ""
+  ).trim();
+
+  const amount = Number(
+    data.amount || 0
+  );
+
+  const majorCategory = String(
+    data.majorCategory || ""
+  ).trim();
+
+  const subCategory = String(
+    data.subCategory || ""
+  ).trim();
+
+  const title = String(
+    data.title || ""
+  ).trim();
+
+  const paymentMethod = String(
+    data.paymentMethod || ""
+  ).trim();
+
+  const memo = String(
+    data.memo || ""
+  ).trim();
+
+  if (!id) {
+    throw new Error("idは必須です");
+  }
+
+  if (!transactionDate) {
+    throw new Error(
+      "transactionDateは必須です"
+    );
+  }
+
+  if (
+    type !== "支出" &&
+    type !== "収入"
+  ) {
+    throw new Error(
+      "typeは支出または収入を指定してください"
+    );
+  }
+
+  if (
+    !Number.isFinite(amount) ||
+    amount <= 0
+  ) {
+    throw new Error(
+      "amountは1以上で指定してください"
+    );
+  }
+
+  if (!majorCategory) {
+    throw new Error(
+      "majorCategoryは必須です"
+    );
+  }
+
+  if (!subCategory) {
+    throw new Error(
+      "subCategoryは必須です"
+    );
+  }
+
+  if (!title) {
+    throw new Error(
+      "titleは必須です"
+    );
+  }
+
+  if (!paymentMethod) {
+    throw new Error(
+      "paymentMethodは必須です"
+    );
+  }
+
+  const table = loadTransactions();
+
+  if (table.rows.length === 0) {
+    throw new Error(
+      "更新対象の取引が見つかりません"
+    );
+  }
+
+  assertRequiredColumns(
+    table.index,
+    [
+      "id",
+      "transaction_date",
+      "recorded_at",
+      "year_month",
+      "type",
+      "source_type",
+      "payment_method",
+      "account_name",
+      "merchant",
+      "item_name",
+      "amount",
+      "major_category",
+      "sub_category",
+      "purpose_type",
+      "expense_ratio",
+      "expense_amount",
+      "note",
+      "evidence_url",
+      "original_image_url",
+      "import_batch",
+      "duplicate_key",
+      "status",
+      "wallet",
+      "intent"
+    ],
+    SHEETS.TRANSACTIONS
+  );
+
+  const rowIndex = table.rows.findIndex(
+    row =>
+      String(
+        row[table.index["id"]] || ""
+      ).trim() === id
+  );
+
+  if (rowIndex === -1) {
+    throw new Error(
+      "更新対象の取引が見つかりません"
+    );
+  }
+
+  const existingRow =
+    table.rows[rowIndex];
+
+  const purposeType =
+    type === "収入"
+      ? "私用"
+      : guessPurposeType(
+          subCategory
+        );
+
+  const expenseRatio =
+    type === "支出"
+      ? guessExpenseRatio(
+          subCategory
+        )
+      : 0;
+
+  const wallet =
+    purposeType === "経費"
+      ? "事業"
+      : "生活";
+
+  const intent =
+    type === "収入"
+      ? "収入"
+      : guessIntent(
+          subCategory
+        );
+
+  const updatedTransaction = {
+    transaction_date:
+      transactionDate,
+
+    type,
+
+    source_type:
+      getString(
+        existingRow,
+        table.index,
+        "source_type"
+      ) || "Neru Nexus App",
+
+    payment_method:
+      paymentMethod,
+
+    account_name:
+      getString(
+        existingRow,
+        table.index,
+        "account_name"
+      ) || "App Manual",
+
+    merchant:
+      normalizeMerchant(title),
+
+    item_name:
+      title,
+
+    amount,
+
+    major_category:
+      majorCategory,
+
+    sub_category:
+      subCategory,
+
+    purpose_type:
+      purposeType,
+
+    expense_ratio:
+      expenseRatio,
+
+    note:
+      memo,
+
+    evidence_url:
+      getString(
+        existingRow,
+        table.index,
+        "evidence_url"
+      ),
+
+    original_image_url:
+      getString(
+        existingRow,
+        table.index,
+        "original_image_url"
+      ),
+
+    import_batch:
+      getString(
+        existingRow,
+        table.index,
+        "import_batch"
+      ),
+
+    status:
+      "確定",
+
+    wallet,
+
+    intent
+  };
+
+  const recordedAt =
+    existingRow[
+      table.index["recorded_at"]
+    ] || new Date();
+
+  const yearMonth =
+    resolveTransactionYearMonth(
+      transactionDate,
+      recordedAt
+    );
+
+  const duplicateKey =
+    buildDuplicateKey(
+      updatedTransaction
+    );
+
+  const updatedRow =
+    buildTransactionRow(
+      updatedTransaction,
+      id,
+      recordedAt,
+      yearMonth,
+      duplicateKey
+    );
+
+  const sheet = SS.getSheetByName(
+    SHEETS.TRANSACTIONS
+  );
+
+  if (!sheet) {
+    throw new Error(
+      "transactionsシートがありません"
+    );
+  }
+
+  const sheetRowNumber =
+    rowIndex + 2;
+
+  sheet.getRange(
+    sheetRowNumber,
+    1,
+    1,
+    updatedRow.length
+  ).setValues([
+    updatedRow
+  ]);
+
+  clearTableCache(
+    SHEETS.TRANSACTIONS
+  );
+
+  rebuildReviewQueue();
+  rebuildReviewSummary();
+  rebuildAllViews();
+
+  return createJsonResponse_(
+    {
+      updated: true,
+      id,
+      transaction: {
+        transactionDate,
+        type,
+        amount,
+        majorCategory,
+        subCategory,
+        title,
+        paymentMethod,
+        memo,
+        wallet,
+        purposeType
+      }
+    },
+    "ok"
+  );
+}
+
+function deleteTransactionFromApp_(data) {
+
+  const id = String(data.id || "").trim();
+
+  if (!id) {
+    throw new Error("idは必須です");
+  }
+
+  const sheet =
+    SS.getSheetByName(
+      SHEETS.TRANSACTIONS
+    );
+
+  if (!sheet) {
+    throw new Error(
+      "transactionsシートがありません"
+    );
+  }
+
+  const values =
+    sheet.getDataRange().getValues();
+
+  if (values.length <= 1) {
+    throw new Error(
+      "データがありません"
+    );
+  }
+
+  const headers = values[0];
+
+  const idIndex =
+    headers.indexOf("id");
+
+  if (idIndex == -1) {
+    throw new Error(
+      "id列がありません"
+    );
+  }
+
+  for (
+    let i = 1;
+    i < values.length;
+    i++
+  ) {
+
+    if (
+      String(values[i][idIndex]).trim()
+      === id
+    ) {
+
+      sheet.deleteRow(i + 1);
+
+clearTableCache(
+  SHEETS.TRANSACTIONS
+);
+
+/*
+ * 取引そのものの削除は完了済み。
+ * 派生シートの再構築に失敗しても、
+ * 削除API自体は成功として返す。
+ */
+const rebuildErrors = [];
+
+try {
+  rebuildReviewQueue();
+} catch (error) {
+  console.error(
+    "rebuildReviewQueue失敗",
+    error
+  );
+
+  rebuildErrors.push(
+    "reviewQueue"
+  );
+}
+
+try {
+  rebuildReviewSummary();
+} catch (error) {
+  console.error(
+    "rebuildReviewSummary失敗",
+    error
+  );
+
+  rebuildErrors.push(
+    "reviewSummary"
+  );
+}
+
+try {
+  rebuildAllViews();
+} catch (error) {
+  console.error(
+    "rebuildAllViews失敗",
+    error
+  );
+
+  rebuildErrors.push(
+    "allViews"
+  );
+}
+
+return createJsonResponse_(
+  {
+    deleted: true,
+    id,
+    rebuildErrors
+  },
+  "ok"
+);
+    }
+  }
+
+  throw new Error(
+    "削除対象が見つかりません"
   );
 }
 
