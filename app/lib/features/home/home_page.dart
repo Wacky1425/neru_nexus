@@ -6,6 +6,7 @@ import 'widgets/money_card.dart';
 import '../dreams/widgets/dream_card.dart';
 import 'widgets/health_card.dart';
 import 'widgets/recent_transaction_card.dart';
+import '../../core/refresh/app_refresh_controller.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -22,7 +23,20 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+
     _homeFuture = _homeService.fetchHome();
+
+    AppRefreshController.dataVersion.addListener(_handleAppRefresh);
+  }
+
+  void _handleAppRefresh() {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _homeFuture = _homeService.fetchHome();
+    });
   }
 
   Future<void> _reload() async {
@@ -42,10 +56,7 @@ class _HomePageState extends State<HomePage> {
 
       buffer.write(text[i]);
 
-      if (
-        positionFromEnd > 1 &&
-        positionFromEnd % 3 == 1
-      ) {
+      if (positionFromEnd > 1 && positionFromEnd % 3 == 1) {
         buffer.write(',');
       }
     }
@@ -56,17 +67,19 @@ class _HomePageState extends State<HomePage> {
   }
 
   @override
+  void dispose() {
+    AppRefreshController.dataVersion.removeListener(_handleAppRefresh);
+
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder<HomeModel>(
       future: _homeFuture,
       builder: (context, snapshot) {
-        if (
-          snapshot.connectionState ==
-          ConnectionState.waiting
-        ) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
         }
 
         if (snapshot.hasError) {
@@ -76,22 +89,14 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
-                    Icons.error_outline,
-                    size: 48,
-                  ),
+                  const Icon(Icons.error_outline, size: 48),
                   const SizedBox(height: 16),
                   Text(
                     'Homeデータを取得できませんでした',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    snapshot.error.toString(),
-                    textAlign: TextAlign.center,
-                  ),
+                  Text(snapshot.error.toString(), textAlign: TextAlign.center),
                   const SizedBox(height: 16),
                   FilledButton.icon(
                     onPressed: _reload,
@@ -105,50 +110,34 @@ class _HomePageState extends State<HomePage> {
         }
 
         final home = snapshot.data;
-        
 
         if (home == null) {
-          return const Center(
-            child: Text('Homeデータがありません'),
-          );
+          return const Center(child: Text('Homeデータがありません'));
         }
         final dream = home.featuredDream;
 
-        final healthTitle =
-            home.moneyHealth['title']?.toString() ??
-            '状態不明';
+        final healthTitle = home.moneyHealth['title']?.toString() ?? '状態不明';
 
-        final healthMessage =
-            home.moneyHealth['message']?.toString() ??
-            '';
+        final healthMessage = home.moneyHealth['message']?.toString() ?? '';
 
         return RefreshIndicator(
           onRefresh: _reload,
           child: ListView(
-            padding: const EdgeInsets.symmetric(
-            horizontal: 24,
-            vertical: 20,
-          ),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
             children: [
               Text(
                 "おかえり、ネル👋",
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineMedium,
+                style: Theme.of(context).textTheme.headlineMedium,
               ),
               Text(
                 home.yearMonth,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium,
+                style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 16),
 
               MoneyCard(
                 title: 'あと使えるお金',
-                amount: _formatMoney(
-                  home.availableMoney,
-                ),
+                amount: _formatMoney(home.availableMoney),
                 subAmount: '今日あと ${_formatMoney(home.dailyBudget)}',
                 icon: Icons.account_balance_wallet,
               ),
@@ -157,9 +146,7 @@ class _HomePageState extends State<HomePage> {
 
               MoneyCard(
                 title: '今月の貯金予測',
-                amount: _formatMoney(
-                  home.savingForecast,
-                ),
+                amount: _formatMoney(home.savingForecast),
                 subAmount: '月末時点の予測',
                 icon: Icons.savings_outlined,
               ),
@@ -168,9 +155,7 @@ class _HomePageState extends State<HomePage> {
 
               MoneyCard(
                 title: '副業利益',
-                amount: _formatMoney(
-                  home.sideBusinessProfit,
-                ),
+                amount: _formatMoney(home.sideBusinessProfit),
                 subAmount: '今月の事業収支',
                 icon: Icons.work_outline,
               ),
@@ -178,22 +163,16 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 20),
 
               if (dream != null)
-              DreamCard(
-                title: dream['name']?.toString() ?? '',
-                current: (dream['current_amount'] as num?)?.toInt() ?? 0,
-                goal: (dream['target_amount'] as num?)?.toInt() ?? 1,
-              ),
+                DreamCard(
+                  title: dream['name']?.toString() ?? '',
+                  current: (dream['current_amount'] as num?)?.toInt() ?? 0,
+                  goal: (dream['target_amount'] as num?)?.toInt() ?? 1,
+                ),
 
               const SizedBox(height: 20),
-              HealthCard(
-                title: healthTitle,
-                message: healthMessage,
-              ),
+              HealthCard(title: healthTitle, message: healthMessage),
 
-              RecentTransactionCard(
-                transactions: home.recentTransactions,
-              ),
-
+              RecentTransactionCard(transactions: home.recentTransactions),
             ],
           ),
         );
@@ -201,4 +180,3 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
-

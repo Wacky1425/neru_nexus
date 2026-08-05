@@ -4,6 +4,7 @@ import 'model/analytics_model.dart';
 import 'service/analytics_service.dart';
 import 'widgets/expense_pie_chart.dart';
 import 'widgets/monthly_expense_chart.dart';
+import '../../core/refresh/app_refresh_controller.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -25,6 +26,18 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     _selectedMonth = DateTime(now.year, now.month);
 
     _analyticsFuture = _fetchSelectedMonth();
+
+    AppRefreshController.dataVersion.addListener(_handleAppRefresh);
+  }
+
+  void _handleAppRefresh() {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _analyticsFuture = _fetchSelectedMonth();
+    });
   }
 
   Future<AnalyticsModel> _fetchSelectedMonth() {
@@ -50,6 +63,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     });
 
     await _analyticsFuture;
+  }
+
+  @override
+  void dispose() {
+    AppRefreshController.dataVersion.removeListener(_handleAppRefresh);
+
+    super.dispose();
   }
 
   @override

@@ -13,6 +13,7 @@ class TransactionFormResult {
     required this.subCategory,
     required this.title,
     required this.paymentMethod,
+    required this.status,
     this.memo,
   });
 
@@ -23,6 +24,7 @@ class TransactionFormResult {
   final String subCategory;
   final String title;
   final String paymentMethod;
+  final String status;
   final String? memo;
 }
 
@@ -57,6 +59,8 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
   String _selectedSubCategory = 'スーパー';
 
   String _selectedPaymentMethod = 'クレジットカード';
+
+  bool _isConfirmed = false;
 
   bool _isSaving = false;
 
@@ -137,19 +141,25 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
 
     if (_categoryMap.containsKey(majorCategory)) {
       _selectedMajorCategory = majorCategory;
+    } else {
+      _selectedMajorCategory = _categoryMap.keys.first;
+    }
 
-      final candidates = _categoryMap[_selectedMajorCategory] ?? [];
+    final candidates = _categoryMap[_selectedMajorCategory] ?? const <String>[];
 
-      if (candidates.contains(subCategory)) {
-        _selectedSubCategory = subCategory;
-      } else if (candidates.isNotEmpty) {
-        _selectedSubCategory = candidates.first;
-      }
+    if (candidates.contains(subCategory)) {
+      _selectedSubCategory = subCategory;
+    } else if (candidates.contains('その他')) {
+      _selectedSubCategory = 'その他';
+    } else if (candidates.isNotEmpty) {
+      _selectedSubCategory = candidates.first;
     }
 
     if (_paymentMethods.contains(tx.paymentMethod)) {
       _selectedPaymentMethod = tx.paymentMethod;
     }
+
+    _isConfirmed = tx.status == '確定';
 
     _memoController.text = "";
   }
@@ -227,6 +237,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
       subCategory: _selectedSubCategory,
       title: _titleController.text.trim(),
       paymentMethod: _selectedPaymentMethod,
+      status: _isConfirmed ? '確定' : '要確認',
       memo: _memoController.text.trim().isEmpty
           ? null
           : _memoController.text.trim(),
@@ -384,6 +395,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                       border: OutlineInputBorder(),
                     ),
                     items: _categoryMap.keys
+                        .toSet()
                         .map(
                           (category) => DropdownMenuItem<String>(
                             value: category,
@@ -421,6 +433,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                       border: OutlineInputBorder(),
                     ),
                     items: _subCategories
+                        .toSet()
                         .map(
                           (category) => DropdownMenuItem<String>(
                             value: category,
@@ -484,6 +497,24 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                         _selectedPaymentMethod = value;
                       });
                     },
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('取引を確定する'),
+                    subtitle: Text(
+                      _isConfirmed ? 'この取引は確定済みです' : 'カテゴリを確認したらONにしてください',
+                    ),
+                    value: _isConfirmed,
+                    onChanged: _isSaving
+                        ? null
+                        : (value) {
+                            setState(() {
+                              _isConfirmed = value;
+                            });
+                          },
                   ),
 
                   const SizedBox(height: 20),

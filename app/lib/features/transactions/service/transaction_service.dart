@@ -106,6 +106,7 @@ class TransactionService {
         'subCategory': transaction.subCategory,
         'title': transaction.title,
         'paymentMethod': transaction.paymentMethod,
+        'status': transaction.status,
         'memo': transaction.memo ?? '',
       });
 
@@ -190,6 +191,7 @@ class TransactionService {
         'subCategory': transaction.subCategory,
         'title': transaction.title,
         'paymentMethod': transaction.paymentMethod,
+        'status': transaction.status,
         'memo': transaction.memo ?? '',
       });
 

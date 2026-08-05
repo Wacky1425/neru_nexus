@@ -4,6 +4,9 @@ import 'model/transaction_model.dart';
 import 'service/transaction_service.dart';
 import 'transaction_form_page.dart';
 import 'transaction_detail_page.dart';
+import '../../core/refresh/app_refresh_controller.dart';
+import '../review/review_page.dart';
+import '../review/service/review_service.dart';
 
 class TransactionsPage extends StatefulWidget {
   const TransactionsPage({super.key});
@@ -16,12 +19,31 @@ class _TransactionsPageState extends State<TransactionsPage> {
   final TransactionService _transactionService = const TransactionService();
 
   Future<List<TransactionModel>>? _transactionsFuture;
+  final ReviewService _reviewService = const ReviewService();
+
+  Future<int>? _reviewCountFuture;
 
   @override
   void initState() {
     super.initState();
 
     _transactionsFuture = _fetchTransactions();
+
+    _reviewCountFuture = _reviewService.fetchReviewCount();
+
+    AppRefreshController.dataVersion.addListener(_handleAppRefresh);
+  }
+
+  void _handleAppRefresh() {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _transactionsFuture = _fetchTransactions();
+
+      _reviewCountFuture = _reviewService.fetchReviewCount();
+    });
   }
 
   Future<List<TransactionModel>> _fetchTransactions() {
@@ -29,13 +51,14 @@ class _TransactionsPageState extends State<TransactionsPage> {
   }
 
   Future<void> _reload() async {
-    final future = _fetchTransactions();
+    final transactionsFuture = _fetchTransactions();
 
     setState(() {
-      _transactionsFuture = future;
+      _transactionsFuture = transactionsFuture;
+      _reviewCountFuture = _reviewService.fetchReviewCount();
     });
 
-    await future;
+    await transactionsFuture;
   }
 
   Future<void> _openTransactionForm() async {
@@ -63,9 +86,69 @@ class _TransactionsPageState extends State<TransactionsPage> {
   }
 
   @override
+  void dispose() {
+    AppRefreshController.dataVersion.removeListener(_handleAppRefresh);
+
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('取引')),
+      appBar: AppBar(
+        title: const Text('取引'),
+        actions: [
+          FutureBuilder<int>(
+            future: _reviewCountFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                );
+              }
+
+              if (snapshot.hasError) {
+                return IconButton(
+                  tooltip: '要確認件数の取得に失敗しました',
+                  onPressed: () {
+                    setState(() {
+                      _reviewCountFuture = _reviewService.fetchReviewCount();
+                    });
+                  },
+                  icon: const Icon(Icons.warning_amber_rounded),
+                );
+              }
+
+              final count = snapshot.data ?? 0;
+
+              return IconButton(
+                tooltip: '要確認 $count件',
+                onPressed: () async {
+                  final changed = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(builder: (_) => const ReviewPage()),
+                  );
+
+                  if (changed == true && mounted) {
+                    await _reload();
+                  }
+                },
+                icon: Badge(
+                  isLabelVisible: count > 0,
+                  label: Text(count > 99 ? '99+' : count.toString()),
+                  child: const Icon(Icons.warning_amber_rounded),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       body: FutureBuilder<List<TransactionModel>>(
         future: _transactionsFuture ?? _fetchTransactions(),
         builder: (context, snapshot) {
