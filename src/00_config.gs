@@ -3,6 +3,7 @@ const SHEETS = Object.freeze({
   RULES: "rules",
   BUDGETS: "budgets",
   MONTHLY_SUMMARY: "monthly_summary",
+  CATEGORIES: "categories",
   CATEGORY_SUMMARY: "category_summary",
   ANALYTICS: "analytics",
   HOME: "home",

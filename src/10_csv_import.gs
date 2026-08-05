@@ -542,26 +542,208 @@ function importLatestCsvFromDrive(
 }
 
 function importCsvFileAuto(file) {
-  const parsed = readCsvRowsFromFile(file);
+  const parsed =
+    readCsvRowsFromFile(
+      file
+    );
 
-  const configName = getConfigNameByCsvType(
-    parsed.csvType
+  const result =
+    importParsedCsvRows_(
+      parsed
+    );
+
+  Logger.log(
+    [
+      file.getName(),
+      parsed.csvType,
+      `追加: ${result.addedCount}件`,
+      `重複スキップ: ${result.skippedCount}件`
+    ].join(" / ")
   );
 
-  const config = getImportConfig(configName);
-  const rules = getRules();
+  return result;
+}
+
+function importCsvFromApp_(data) {
+  const csvText = String(
+    data.csvText || ""
+  );
+
+  if (!csvText.trim()) {
+    throw new Error(
+      "csvTextは必須です"
+    );
+  }
+
+  const parsed = readCsvRowsFromText_(
+    csvText
+  );
+
+  const result =
+    importParsedCsvRows_(
+      parsed
+    );
+
+  rebuildReviewQueue();
+  rebuildReviewSummary();
+  rebuildAllViews();
+
+  return createJsonResponse_(
+    {
+      csvType:
+        parsed.csvType,
+
+      addedCount:
+        result.addedCount,
+
+      skippedCount:
+        result.skippedCount,
+    },
+    "ok"
+  );
+}
+
+function readCsvRowsFromText_(csvText) {
+  const normalizedText = String(
+    csvText || ""
+  )
+    .replace(/^\uFEFF/, "")
+    .trim();
+
+  if (!normalizedText) {
+    throw new Error(
+      "CSVが空です"
+    );
+  }
+
+  const values = Utilities.parseCsv(
+    normalizedText
+  );
+
+  if (
+    !Array.isArray(values) ||
+    values.length === 0
+  ) {
+    throw new Error(
+      "CSVを解析できませんでした"
+    );
+  }
+
+  const detection =
+    detectCsvTypeFromRows(values);
+
+  const csvType = detection.csvType;
+  const headerRowIndex =
+    detection.headerRowIndex;
+
+  if (
+    !csvType ||
+    csvType === "unknown"
+  ) {
+    throw new Error(
+      "対応していないCSV形式です"
+    );
+  }
+
+  /*
+   * ヘッダーなしのOlive明細。
+   * 既存の変換関数で、ヘッダー付きの
+   * オブジェクト配列へ変換する。
+   */
+  if (csvType === "olive_credit_v2" ||
+  headerRowIndex === -1) {
+    const sourceRows = values
+      .slice(
+        Math.max(headerRowIndex, 0)
+      )
+      .filter(row =>
+        row.some(value =>
+          String(value || "")
+            .trim() !== ""
+        )
+      );
+
+    const rows =
+      convertOliveRowsWithoutHeader(
+        sourceRows
+      );
+
+    return {
+      csvType,
+      rows
+    };
+  }
+
+  if (headerRowIndex < 0) {
+    throw new Error(
+      "CSVのヘッダー行を特定できませんでした"
+    );
+  }
+
+  const header = values[
+    headerRowIndex
+  ].map(value =>
+    String(value || "").trim()
+  );
+
+  const rows = values
+    .slice(headerRowIndex + 1)
+    .filter(row =>
+      row.some(value =>
+        String(value || "")
+          .trim() !== ""
+      )
+    )
+    .map(row => {
+      const object = {};
+
+      header.forEach(
+        (columnName, index) => {
+          if (!columnName) {
+            return;
+          }
+
+          object[columnName] =
+            row[index] ?? "";
+        }
+      );
+
+      return object;
+    });
+
+  return {
+    csvType,
+    rows
+  };
+}
+
+function importParsedCsvRows_(parsed) {
+  const configName =
+    getConfigNameByCsvType(
+      parsed.csvType
+    );
+
+  const config =
+    getImportConfig(
+      configName
+    );
+
+  const rules =
+    getRules();
 
   const transactions = [];
 
   for (const row of parsed.rows) {
-    const txBase = normalizeCsvRowByHeader(
-      row,
-      config
-    );
+    const txBase =
+      normalizeCsvRowByHeader(
+        row,
+        config
+      );
 
-    txBase.merchant = normalizeMerchant(
-      txBase.merchant
-    );
+    txBase.merchant =
+      normalizeMerchant(
+        txBase.merchant
+      );
 
     if (
       !txBase.transaction_date ||
@@ -574,21 +756,26 @@ function importCsvFileAuto(file) {
     let classified;
 
     if (
-      config.config_name === "smbc_bank_v1" ||
-      config.config_name === "paypay_v1" ||
-      config.config_name === "jpbank_v1"
+      config.config_name ===
+        "smbc_bank_v1" ||
+      config.config_name ===
+        "paypay_v1" ||
+      config.config_name ===
+        "jpbank_v1"
     ) {
-      classified = classifyMoneyTransaction(
-        row,
-        txBase,
-        rules,
-        config.config_name
-      );
+      classified =
+        classifyMoneyTransaction(
+          row,
+          txBase,
+          rules,
+          config.config_name
+        );
     } else {
-      classified = classifyTransaction(
-        txBase,
-        rules
-      );
+      classified =
+        classifyTransaction(
+          txBase,
+          rules
+        );
     }
 
     transactions.push({
@@ -597,18 +784,9 @@ function importCsvFileAuto(file) {
     });
   }
 
-  const result = addTransactions(transactions);
-
-  Logger.log(
-    [
-      file.getName(),
-      parsed.csvType,
-      `追加: ${result.addedCount}件`,
-      `重複スキップ: ${result.skippedCount}件`
-    ].join(" / ")
+  return addTransactions(
+    transactions
   );
-
-  return result;
 }
 
 function runImportTest() {

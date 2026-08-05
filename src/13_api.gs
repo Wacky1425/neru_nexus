@@ -118,6 +118,33 @@ function doGet(e) {
                 "ok"
             );
 
+        case "categories":
+          return createJsonResponse_(
+            getCategoriesData(),
+            "ok"
+          );
+
+        case "master":
+          return createJsonResponse_(
+            getMasterData(),
+            "ok"
+          );
+
+        case "review_transactions":
+          return createJsonResponse_(
+            getReviewTransactionsData({
+              limit: parameters.limit,
+              offset: parameters.offset
+            }),
+            "ok"
+          );
+
+        case "review_count":
+          return createJsonResponse_(
+            getReviewTransactionCount(),
+            "ok"
+          );
+
       default:
         return createJsonErrorResponse_(
           `未対応のactionです: ${action}`
@@ -166,11 +193,17 @@ function doPost(e) {
       case "transaction_update":
         return updateTransactionFromApp_(data);
 
+      case "transaction_delete":
+        return deleteTransactionFromApp_(data);
+
+      case "csv_import":
+        return importCsvFromApp_(data);
+
       case "discord_transaction":
         return createDiscordTransaction_(data);
 
-      case "transaction_delete":
-        return deleteTransactionFromApp_(data);
+      case "category_create":
+  return createCategoryFromApp_(data);
 
       default:
         return createJsonErrorResponse_(
@@ -217,6 +250,14 @@ function createTransactionFromApp_(data) {
   const paymentMethod = String(
     data.paymentMethod || ""
   ).trim();
+
+  const status = String(
+    data.status || "要確認"
+  ).trim();
+
+  const accountName = String(
+  data.accountName || ""
+).trim();
 
   const memo = String(
     data.memo || ""
@@ -277,6 +318,15 @@ function createTransactionFromApp_(data) {
   if (!paymentMethod) {
     throw new Error(
       "paymentMethodは必須です"
+    );
+  }
+
+  if (
+  status !== "確定" &&
+  status !== "要確認"
+  ) {
+    throw new Error(
+      "statusは確定または要確認を指定してください"
     );
   }
 
@@ -344,7 +394,9 @@ function createTransactionFromApp_(data) {
     : 0,
 
     status:
-      "確定",
+      status,
+
+    account_name: accountName,
 
     wallet,
 
@@ -454,6 +506,10 @@ function updateTransactionFromApp_(data) {
     data.paymentMethod || ""
   ).trim();
 
+  const status = String(
+    data.status || "要確認"
+  ).trim();
+
   const memo = String(
     data.memo || ""
   ).trim();
@@ -507,6 +563,15 @@ function updateTransactionFromApp_(data) {
   if (!paymentMethod) {
     throw new Error(
       "paymentMethodは必須です"
+    );
+  }
+
+  if (
+  status !== "確定" &&
+  status !== "要確認"
+  ) {
+    throw new Error(
+      "statusは確定または要確認を指定してください"
     );
   }
 
@@ -659,7 +724,7 @@ function updateTransactionFromApp_(data) {
       ),
 
     status:
-      "確定",
+      status,
 
     wallet,
 
@@ -794,70 +859,70 @@ function deleteTransactionFromApp_(data) {
 
       sheet.deleteRow(i + 1);
 
-clearTableCache(
-  SHEETS.TRANSACTIONS
-);
-
-/*
- * 取引そのものの削除は完了済み。
- * 派生シートの再構築に失敗しても、
- * 削除API自体は成功として返す。
- */
-const rebuildErrors = [];
-
-try {
-  rebuildReviewQueue();
-} catch (error) {
-  console.error(
-    "rebuildReviewQueue失敗",
-    error
+  clearTableCache(
+    SHEETS.TRANSACTIONS
   );
 
-  rebuildErrors.push(
-    "reviewQueue"
-  );
-}
+  /*
+  * 取引そのものの削除は完了済み。
+  * 派生シートの再構築に失敗しても、
+  * 削除API自体は成功として返す。
+  */
+  const rebuildErrors = [];
 
-try {
-  rebuildReviewSummary();
-} catch (error) {
-  console.error(
-    "rebuildReviewSummary失敗",
-    error
-  );
+  try {
+    rebuildReviewQueue();
+  } catch (error) {
+    console.error(
+      "rebuildReviewQueue失敗",
+      error
+    );
 
-  rebuildErrors.push(
-    "reviewSummary"
-  );
-}
-
-try {
-  rebuildAllViews();
-} catch (error) {
-  console.error(
-    "rebuildAllViews失敗",
-    error
-  );
-
-  rebuildErrors.push(
-    "allViews"
-  );
-}
-
-return createJsonResponse_(
-  {
-    deleted: true,
-    id,
-    rebuildErrors
-  },
-  "ok"
-);
-    }
+    rebuildErrors.push(
+      "reviewQueue"
+    );
   }
 
-  throw new Error(
-    "削除対象が見つかりません"
+  try {
+    rebuildReviewSummary();
+  } catch (error) {
+    console.error(
+      "rebuildReviewSummary失敗",
+      error
+    );
+
+    rebuildErrors.push(
+      "reviewSummary"
+    );
+  }
+
+  try {
+    rebuildAllViews();
+  } catch (error) {
+    console.error(
+      "rebuildAllViews失敗",
+      error
+    );
+
+    rebuildErrors.push(
+      "allViews"
+    );
+  }
+
+  return createJsonResponse_(
+    {
+      deleted: true,
+      id,
+      rebuildErrors
+    },
+    "ok"
   );
+      }
+    }
+
+    throw new Error(
+      "削除対象が見つかりません"
+    );
 }
 
 function formatApiDate_(value) {
@@ -1048,5 +1113,206 @@ function getTransactionsData(options) {
     limit,
     offset,
     hasMore: offset + items.length < total
+  };
+}
+
+function getReviewTransactionsData(options) {
+  const settings = options || {};
+
+  const requestedLimit = Number(
+    settings.limit || 100
+  );
+
+  const requestedOffset = Number(
+    settings.offset || 0
+  );
+
+  const limit = Math.min(
+    Math.max(requestedLimit, 1),
+    200
+  );
+
+  const offset = Math.max(
+    requestedOffset,
+    0
+  );
+
+  const table = loadTransactions();
+
+  if (table.rows.length === 0) {
+    return {
+      items: [],
+      total: 0,
+      limit,
+      offset,
+      hasMore: false
+    };
+  }
+
+  assertRequiredColumns(
+    table.index,
+    [
+      "id",
+      "transaction_date",
+      "merchant",
+      "item_name",
+      "amount",
+      "type",
+      "major_category",
+      "sub_category",
+      "status",
+      "wallet",
+      "intent",
+      "payment_method",
+      "note"
+    ],
+    SHEETS.TRANSACTIONS
+  );
+
+  const filteredRows = table.rows.filter(
+    row =>
+      getString(
+        row,
+        table.index,
+        "status"
+      ) === "要確認"
+  );
+
+  filteredRows.sort((a, b) => {
+    const dateA = new Date(
+      a[table.index["transaction_date"]]
+    );
+
+    const dateB = new Date(
+      b[table.index["transaction_date"]]
+    );
+
+    return dateB.getTime() - dateA.getTime();
+  });
+
+  const total = filteredRows.length;
+
+  const items = filteredRows
+    .slice(offset, offset + limit)
+    .map(row => ({
+      id: getString(
+        row,
+        table.index,
+        "id"
+      ),
+
+      transactionDate: formatApiDate_(
+        row[table.index["transaction_date"]]
+      ),
+
+      merchant: getString(
+        row,
+        table.index,
+        "merchant"
+      ),
+
+      itemName: getString(
+        row,
+        table.index,
+        "item_name"
+      ),
+
+      amount: getNumber(
+        row,
+        table.index,
+        "amount"
+      ),
+
+      type: getString(
+        row,
+        table.index,
+        "type"
+      ),
+
+      majorCategory: getString(
+        row,
+        table.index,
+        "major_category"
+      ),
+
+      subCategory: getString(
+        row,
+        table.index,
+        "sub_category"
+      ),
+
+      status: getString(
+        row,
+        table.index,
+        "status"
+      ),
+
+      wallet: getString(
+        row,
+        table.index,
+        "wallet"
+      ),
+
+      intent: getString(
+        row,
+        table.index,
+        "intent"
+      ),
+
+      paymentMethod: getString(
+        row,
+        table.index,
+        "payment_method"
+      ),
+
+      note: getString(
+        row,
+        table.index,
+        "note"
+      )
+    }));
+
+  return {
+    items,
+    total,
+    limit,
+    offset,
+    hasMore: offset + items.length < total
+  };
+}
+
+function getReviewTransactionCount() {
+  const table = loadTransactions();
+
+  if (table.rows.length === 0) {
+    return {
+      count: 0
+    };
+  }
+
+  assertRequiredColumns(
+    table.index,
+    [
+      "status"
+    ],
+    SHEETS.TRANSACTIONS
+  );
+
+  let count = 0;
+
+  for (const row of table.rows) {
+    if (
+      getString(
+        row,
+        table.index,
+        "status"
+      ) === "要確認"
+    ) {
+      count++;
+    }
+  }
+
+  return {
+    count
   };
 }

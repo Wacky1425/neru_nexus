@@ -348,3 +348,40 @@ function testCreateTransactionFromApp() {
     result.getContent()
   );
 }
+
+function testGetCategoriesData() {
+  const data = getCategoriesData();
+
+  Logger.log(
+    JSON.stringify(
+      data,
+      null,
+      2
+    )
+  );
+}
+
+function testGetMasterData() {
+  const data = getMasterData();
+
+  Logger.log(
+    JSON.stringify(
+      data,
+      null,
+      2
+    )
+  );
+}
+
+function testCreateCategoryFromApp() {
+  const result =
+    createCategoryFromApp_({
+      type: "支出",
+      majorCategory: "テスト",
+      subCategory: "動作確認"
+    });
+
+  Logger.log(
+    result.getContent()
+  );
+}

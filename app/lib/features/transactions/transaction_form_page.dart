@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import 'service/transaction_service.dart';
 import 'model/transaction_model.dart';
+import '../../core/master/master_repository.dart';
+import '../master/model/master_model.dart';
 
 class TransactionFormResult {
   const TransactionFormResult({
@@ -13,6 +15,7 @@ class TransactionFormResult {
     required this.subCategory,
     required this.title,
     required this.paymentMethod,
+    required this.accountName,
     required this.status,
     this.memo,
   });
@@ -24,6 +27,7 @@ class TransactionFormResult {
   final String subCategory;
   final String title;
   final String paymentMethod;
+  final String accountName;
   final String status;
   final String? memo;
 }
@@ -50,6 +54,12 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
 
   final _transactionService = const TransactionService();
 
+  final MasterRepository _masterRepository = const MasterRepository();
+
+  late Future<MasterModel> _masterFuture;
+
+  MasterModel? _master;
+
   TransactionType _selectedType = TransactionType.expense;
 
   DateTime _selectedDate = DateTime.now();
@@ -60,43 +70,33 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
 
   String _selectedPaymentMethod = 'クレジットカード';
 
+  String _selectedAccountId = '';
+  String _selectedAccountName = '';
   bool _isConfirmed = false;
 
   bool _isSaving = false;
 
-  static const Map<String, List<String>> _expenseCategoryMap = {
+  static const Map<String, List<String>> _fallbackExpenseCategoryMap = {
     '食費': ['スーパー', 'コンビニ', '外食', 'カフェ', 'その他'],
-
     '交通費': ['電車', 'バス', 'タクシー', 'ガソリン', '高速料金', 'その他'],
-
     '日用品': ['ドラッグストア', '生活用品', 'その他'],
-
     '娯楽': ['ゲーム', '映画', '旅行', 'サブスク', 'その他'],
-
     '衣服': ['服', '靴', 'アクセサリー', 'その他'],
-
     '美容': ['美容院', '化粧品', 'その他'],
-
     '医療': ['病院', '薬', 'その他'],
-
     '通信費': ['携帯', 'ネット', 'その他'],
-
     '水道光熱費': ['電気', 'ガス', '水道'],
-
     '家賃': ['家賃'],
-
     'その他': ['その他'],
   };
 
-  static const Map<String, List<String>> _incomeCategoryMap = {
+  static const Map<String, List<String>> _fallbackIncomeCategoryMap = {
     '給与': ['給与'],
-
     '副業': ['副業'],
-
     '臨時収入': ['ポイント', '返金', 'お祝い', 'その他'],
   };
 
-  static const _paymentMethods = [
+  static const List<String> _fallbackPaymentMethods = [
     'クレジットカード',
     '現金',
     'PayPay',
@@ -107,9 +107,38 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
   ];
 
   Map<String, List<String>> get _categoryMap {
+    final master = _master;
+
+    if (master != null) {
+      final map = _categoryMapFromMaster(master);
+
+      if (map.isNotEmpty) {
+        return map;
+      }
+    }
+
     return _selectedType == TransactionType.expense
-        ? _expenseCategoryMap
-        : _incomeCategoryMap;
+        ? _fallbackExpenseCategoryMap
+        : _fallbackIncomeCategoryMap;
+  }
+
+  List<AccountMaster> get _accounts {
+    final master = _master;
+    if (master == null) {
+      return const [];
+    }
+
+    return master.accounts.where((e) => e.active).toList();
+  }
+
+  List<String> get _paymentMethods {
+    final methods = _master?.paymentMethods ?? const [];
+
+    if (methods.isNotEmpty) {
+      return methods;
+    }
+
+    return _fallbackPaymentMethods;
   }
 
   List<String> get _subCategories {
@@ -119,6 +148,8 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
   @override
   void initState() {
     super.initState();
+
+    _masterFuture = _loadMaster();
 
     final tx = widget.initialTransaction;
 
@@ -162,6 +193,133 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
     _isConfirmed = tx.status == '確定';
 
     _memoController.text = "";
+  }
+
+  Future<MasterModel> _loadMaster() async {
+    final master = await _masterRepository.getMaster();
+
+    if (!mounted) {
+      return master;
+    }
+
+    setState(() {
+      _master = master;
+
+      _applyMasterDefaults(master);
+    });
+
+    return master;
+  }
+
+  void _applyMasterDefaults(MasterModel master) {
+    final categoryMap = _categoryMapFromMaster(master);
+
+    if (categoryMap.isEmpty) {
+      return;
+    }
+
+    final transaction = widget.initialTransaction;
+
+    if (transaction == null) {
+      if (!categoryMap.containsKey(_selectedMajorCategory)) {
+        _selectedMajorCategory = categoryMap.keys.first;
+      }
+
+      final subCategories =
+          categoryMap[_selectedMajorCategory] ?? const <String>[];
+
+      if (!subCategories.contains(_selectedSubCategory)) {
+        _selectedSubCategory = subCategories.isNotEmpty
+            ? subCategories.first
+            : '';
+      }
+    } else {
+      final major = transaction.majorCategory.trim();
+
+      final sub = transaction.subCategory.trim();
+
+      if (categoryMap.containsKey(major)) {
+        _selectedMajorCategory = major;
+      } else {
+        _selectedMajorCategory = categoryMap.keys.first;
+      }
+
+      final subCategories =
+          categoryMap[_selectedMajorCategory] ?? const <String>[];
+
+      if (subCategories.contains(sub)) {
+        _selectedSubCategory = sub;
+      } else if (subCategories.contains('その他')) {
+        _selectedSubCategory = 'その他';
+      } else {
+        _selectedSubCategory = subCategories.isNotEmpty
+            ? subCategories.first
+            : '';
+      }
+    }
+
+    final paymentMethods = master.paymentMethods;
+
+    if (paymentMethods.isNotEmpty &&
+        !paymentMethods.contains(_selectedPaymentMethod)) {
+      final currentPaymentMethod = transaction?.paymentMethod.trim() ?? '';
+
+      if (paymentMethods.contains(currentPaymentMethod)) {
+        _selectedPaymentMethod = currentPaymentMethod;
+      } else {
+        _selectedPaymentMethod = paymentMethods.first;
+      }
+    }
+
+    if (_accounts.isNotEmpty) {
+      final account = _accounts.first;
+
+      _selectedAccountId = account.accountId;
+      _selectedAccountName = account.accountName;
+      _selectedPaymentMethod = account.paymentMethod;
+    }
+  }
+
+  Map<String, List<String>> _categoryMapFromMaster(MasterModel master) {
+    final categories = master.categories;
+
+    final mapsByTypeValue = categories['mapsByType'];
+
+    if (mapsByTypeValue is! Map) {
+      return {};
+    }
+
+    final typeName = _selectedType == TransactionType.income ? '収入' : '支出';
+
+    final typeMapValue = mapsByTypeValue[typeName];
+
+    if (typeMapValue is! Map) {
+      return {};
+    }
+
+    final result = <String, List<String>>{};
+
+    for (final entry in typeMapValue.entries) {
+      final majorCategory = entry.key.toString().trim();
+
+      final subCategoriesValue = entry.value;
+
+      if (majorCategory.isEmpty || subCategoriesValue is! List) {
+        continue;
+      }
+
+      final subCategories = subCategoriesValue
+          .map((item) => item?.toString().trim() ?? '')
+          .where((item) => item.isNotEmpty)
+          .toSet()
+          .toList();
+
+      if (subCategories.isNotEmpty) {
+        result[majorCategory] = subCategories;
+      }
+    }
+
+    return result;
   }
 
   @override
@@ -237,6 +395,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
       subCategory: _selectedSubCategory,
       title: _titleController.text.trim(),
       paymentMethod: _selectedPaymentMethod,
+      accountName: _selectedAccountName,
       status: _isConfirmed ? '確定' : '要確認',
       memo: _memoController.text.trim().isEmpty
           ? null
@@ -388,7 +547,10 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                       '${_selectedType.name}-'
                       '$_selectedMajorCategory',
                     ),
-                    initialValue: _selectedMajorCategory,
+                    initialValue:
+                        _categoryMap.containsKey(_selectedMajorCategory)
+                        ? _selectedMajorCategory
+                        : null,
                     decoration: const InputDecoration(
                       labelText: '大カテゴリ',
                       prefixIcon: Icon(Icons.category_outlined),
@@ -411,9 +573,12 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                       setState(() {
                         _selectedMajorCategory = value;
 
-                        _selectedSubCategory = _subCategories.isNotEmpty
-                            ? _subCategories.first
-                            : 'その他';
+                        final subCategories =
+                            _categoryMap[value] ?? const <String>[];
+
+                        _selectedSubCategory = subCategories.isNotEmpty
+                            ? subCategories.first
+                            : '';
                       });
                     },
                   ),
@@ -426,7 +591,9 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                       '$_selectedMajorCategory-'
                       '$_selectedSubCategory',
                     ),
-                    initialValue: _selectedSubCategory,
+                    initialValue: _subCategories.contains(_selectedSubCategory)
+                        ? _selectedSubCategory
+                        : null,
                     decoration: const InputDecoration(
                       labelText: '小カテゴリ',
                       prefixIcon: Icon(Icons.subdirectory_arrow_right),
@@ -474,27 +641,33 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                   const SizedBox(height: 20),
 
                   DropdownButtonFormField<String>(
-                    initialValue: _selectedPaymentMethod,
+                    value: _selectedAccountId.isEmpty
+                        ? null
+                        : _selectedAccountId,
                     decoration: const InputDecoration(
-                      labelText: '支払方法',
-                      prefixIcon: Icon(Icons.account_balance_wallet_outlined),
+                      labelText: '利用口座',
+                      prefixIcon: Icon(Icons.account_balance),
                       border: OutlineInputBorder(),
                     ),
-                    items: _paymentMethods
+                    items: _accounts
                         .map(
-                          (paymentMethod) => DropdownMenuItem<String>(
-                            value: paymentMethod,
-                            child: Text(paymentMethod),
+                          (account) => DropdownMenuItem(
+                            value: account.accountId,
+                            child: Text(account.accountName),
                           ),
                         )
                         .toList(),
                     onChanged: (value) {
-                      if (value == null) {
-                        return;
-                      }
+                      if (value == null) return;
+
+                      final account = _accounts.firstWhere(
+                        (e) => e.accountId == value,
+                      );
 
                       setState(() {
-                        _selectedPaymentMethod = value;
+                        _selectedAccountId = account.accountId;
+                        _selectedAccountName = account.accountName;
+                        _selectedPaymentMethod = account.paymentMethod;
                       });
                     },
                   ),

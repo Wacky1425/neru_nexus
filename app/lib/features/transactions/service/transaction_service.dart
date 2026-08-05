@@ -108,6 +108,7 @@ class TransactionService {
         'paymentMethod': transaction.paymentMethod,
         'status': transaction.status,
         'memo': transaction.memo ?? '',
+        'accountName': transaction.accountName,
       });
 
       final streamedResponse = await client.send(request);
