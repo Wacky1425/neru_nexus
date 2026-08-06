@@ -385,3 +385,17 @@ function testCreateCategoryFromApp() {
     result.getContent()
   );
 }
+
+function testUpdateCategoryFromApp() {
+  const result =
+    updateCategoryFromApp_({
+      subCategoryId: "sub_001",
+      majorCategory: "食費",
+      subCategory: "外食",
+      active: true
+    });
+
+  Logger.log(
+    result.getContent()
+  );
+}

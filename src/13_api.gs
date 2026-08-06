@@ -203,7 +203,10 @@ function doPost(e) {
         return createDiscordTransaction_(data);
 
       case "category_create":
-  return createCategoryFromApp_(data);
+        return createCategoryFromApp_(data);
+
+      case "category_update":
+        return updateCategoryFromApp_(data);
 
       default:
         return createJsonErrorResponse_(
@@ -257,7 +260,7 @@ function createTransactionFromApp_(data) {
 
   const accountName = String(
   data.accountName || ""
-).trim();
+  ).trim();
 
   const memo = String(
     data.memo || ""

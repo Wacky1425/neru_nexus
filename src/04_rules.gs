@@ -806,6 +806,231 @@ function createCategoryFromApp_(data) {
   );
 }
 
+function updateCategoryFromApp_(data) {
+  const subCategoryId = String(
+    data.subCategoryId || ""
+  ).trim();
+
+  const majorCategory = String(
+    data.majorCategory || ""
+  ).trim();
+
+  const subCategory = String(
+    data.subCategory || ""
+  ).trim();
+
+  const active = toBoolean_(
+    data.active,
+    true
+  );
+
+  if (!subCategoryId) {
+    throw new Error(
+      "subCategoryIdは必須です"
+    );
+  }
+
+  if (!majorCategory) {
+    throw new Error(
+      "majorCategoryは必須です"
+    );
+  }
+
+  if (!subCategory) {
+    throw new Error(
+      "subCategoryは必須です"
+    );
+  }
+
+  const sheet = SS.getSheetByName(
+    SHEETS.CATEGORIES
+  );
+
+  if (!sheet) {
+    throw new Error(
+      "categoriesシートがありません"
+    );
+  }
+
+  const values =
+    sheet.getDataRange().getValues();
+
+  if (values.length <= 1) {
+    throw new Error(
+      "更新対象のカテゴリがありません"
+    );
+  }
+
+  const headers = values[0].map(
+    value => String(value || "").trim()
+  );
+
+  const index = {};
+
+  headers.forEach((header, columnIndex) => {
+    index[header] = columnIndex;
+  });
+
+  const requiredColumns = [
+    "sub_category_id",
+    "major_category",
+    "sub_category",
+    "active"
+  ];
+
+  for (const column of requiredColumns) {
+    if (index[column] === undefined) {
+      throw new Error(
+        `categoriesシートに${column}列がありません`
+      );
+    }
+  }
+
+  let targetRowIndex = -1;
+
+  for (
+    let rowIndex = 1;
+    rowIndex < values.length;
+    rowIndex++
+  ) {
+    const rowSubCategoryId = String(
+      values[rowIndex][
+        index["sub_category_id"]
+      ] || ""
+    ).trim();
+
+    if (
+      rowSubCategoryId ===
+      subCategoryId
+    ) {
+      targetRowIndex = rowIndex;
+      break;
+    }
+  }
+
+  if (targetRowIndex === -1) {
+    throw new Error(
+      "更新対象のカテゴリが見つかりません"
+    );
+  }
+
+  const type = String(
+    values[targetRowIndex][
+      index["type"]
+    ] || ""
+  ).trim();
+
+  const duplicateExists = values
+    .slice(1)
+    .some((row, indexInSlice) => {
+      const actualRowIndex =
+        indexInSlice + 1;
+
+      if (
+        actualRowIndex ===
+        targetRowIndex
+      ) {
+        return false;
+      }
+
+      return (
+        String(
+          row[index["type"]] || ""
+        ).trim() === type &&
+        String(
+          row[index["major_category"]] || ""
+        ).trim() === majorCategory &&
+        String(
+          row[index["sub_category"]] || ""
+        ).trim() === subCategory
+      );
+    });
+
+  if (duplicateExists) {
+    throw new Error(
+      "同じカテゴリがすでに存在します"
+    );
+  }
+
+  values[targetRowIndex][
+    index["major_category"]
+  ] = majorCategory;
+
+  values[targetRowIndex][
+    index["sub_category"]
+  ] = subCategory;
+
+  values[targetRowIndex][
+    index["active"]
+  ] = active ? 1 : 0;
+
+  sheet
+    .getRange(
+      targetRowIndex + 1,
+      1,
+      1,
+      headers.length
+    )
+    .setValues([
+      values[targetRowIndex]
+    ]);
+
+  clearTableCache(
+    SHEETS.CATEGORIES
+  );
+
+  return createJsonResponse_(
+    {
+      subCategoryId,
+      majorCategory,
+      subCategory,
+      active
+    },
+    "ok"
+  );
+}
+
+function toBoolean_(
+  value,
+  defaultValue
+  ) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return defaultValue;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+
+  const text = String(
+    value
+  ).trim().toLowerCase();
+
+  if (
+    text === "true" ||
+    text === "1"
+  ) {
+    return true;
+  }
+
+  if (
+    text === "false" ||
+    text === "0"
+  ) {
+    return false;
+  }
+
+  return defaultValue;
+}
+
 function createNextCategoryId_(
   rows,
   columnIndex,

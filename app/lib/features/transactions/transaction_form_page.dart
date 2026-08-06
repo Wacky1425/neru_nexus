@@ -5,6 +5,7 @@ import 'service/transaction_service.dart';
 import 'model/transaction_model.dart';
 import '../../core/master/master_repository.dart';
 import '../master/model/master_model.dart';
+import '../categories/widgets/add_category_dialog.dart';
 
 class TransactionFormResult {
   const TransactionFormResult({
@@ -281,41 +282,29 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
   }
 
   Map<String, List<String>> _categoryMapFromMaster(MasterModel master) {
-    final categories = master.categories;
-
-    final mapsByTypeValue = categories['mapsByType'];
-
-    if (mapsByTypeValue is! Map) {
-      return {};
-    }
-
     final typeName = _selectedType == TransactionType.income ? '収入' : '支出';
 
-    final typeMapValue = mapsByTypeValue[typeName];
-
-    if (typeMapValue is! Map) {
-      return {};
-    }
+    final categories =
+        master.categories
+            .where((category) => category.type == typeName && category.active)
+            .toList()
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
     final result = <String, List<String>>{};
 
-    for (final entry in typeMapValue.entries) {
-      final majorCategory = entry.key.toString().trim();
+    for (final category in categories) {
+      final majorCategory = category.majorCategory.trim();
 
-      final subCategoriesValue = entry.value;
+      final subCategory = category.subCategory.trim();
 
-      if (majorCategory.isEmpty || subCategoriesValue is! List) {
+      if (majorCategory.isEmpty || subCategory.isEmpty) {
         continue;
       }
 
-      final subCategories = subCategoriesValue
-          .map((item) => item?.toString().trim() ?? '')
-          .where((item) => item.isNotEmpty)
-          .toSet()
-          .toList();
+      final subCategories = result.putIfAbsent(majorCategory, () => <String>[]);
 
-      if (subCategories.isNotEmpty) {
-        result[majorCategory] = subCategories;
+      if (!subCategories.contains(subCategory)) {
+        subCategories.add(subCategory);
       }
     }
 
@@ -439,6 +428,75 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
           _isSaving = false;
         });
       }
+    }
+  }
+
+  Future<void> _openAddCategoryDialog() async {
+    final master = _master;
+
+    if (master == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('マスターデータを取得できていません')));
+
+      return;
+    }
+
+    final result = await showDialog<CategoryCreateResult>(
+      context: context,
+      builder: (dialogContext) {
+        return AddCategoryDialog(
+          master: master,
+          initialType: _selectedType == TransactionType.income ? '収入' : '支出',
+          initialMajorCategory: _selectedMajorCategory,
+        );
+      },
+    );
+
+    if (result == null || !mounted) {
+      return;
+    }
+
+    try {
+      final refreshedMaster = await _masterRepository.getMaster(
+        forceRefresh: true,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _master = refreshedMaster;
+
+        _selectedMajorCategory = result.majorCategory;
+
+        _selectedSubCategory = result.subCategory;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${result.majorCategory} / '
+            '${result.subCategory}を追加しました',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      final message = error.toString().replaceFirst('Exception: ', '');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'カテゴリは追加されましたが、'
+            '一覧の更新に失敗しました：$message',
+          ),
+        ),
+      );
     }
   }
 
@@ -619,7 +677,16 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                     },
                   ),
 
-                  const SizedBox(height: 20),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _isSaving ? null : _openAddCategoryDialog,
+                      icon: const Icon(Icons.add),
+                      label: const Text('カテゴリを追加'),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
 
                   TextFormField(
                     controller: _titleController,
