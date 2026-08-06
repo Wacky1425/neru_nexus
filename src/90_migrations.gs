@@ -99,7 +99,7 @@ function migrateRulesToFinalCategories() {
 }
 
 function initializeTransactionWallet() {
-  const sheet = SS.getSheetByName("transactions");
+  getSheetByName(SHEETS.TRANSACTIONS)
 
   if (!sheet) {
     throw new Error("transactions シートがありません");

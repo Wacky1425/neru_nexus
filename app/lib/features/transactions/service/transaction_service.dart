@@ -12,6 +12,9 @@ class TransactionService {
     int limit = 100,
     int offset = 0,
     String? yearMonth,
+    String? keyword,
+    String? majorCategory,
+    bool reviewOnly = false,
   }) async {
     final queryParameters = <String, String>{
       'action': 'transactions',
@@ -19,15 +22,23 @@ class TransactionService {
       'limit': limit.toString(),
       'offset': offset.toString(),
     };
-
     if (yearMonth != null && yearMonth.trim().isNotEmpty) {
       queryParameters['yearMonth'] = yearMonth.trim();
     }
 
+    if (keyword != null && keyword.trim().isNotEmpty) {
+      queryParameters['keyword'] = keyword.trim();
+    }
+
+    if (majorCategory != null && majorCategory.trim().isNotEmpty) {
+      queryParameters['majorCategory'] = majorCategory.trim();
+    }
+
+    queryParameters['reviewOnly'] = reviewOnly.toString();
+
     final uri = Uri.parse(
       ApiConstants.baseUrl,
     ).replace(queryParameters: queryParameters);
-
     final response = await http.get(uri);
 
     if (response.statusCode != 200) {

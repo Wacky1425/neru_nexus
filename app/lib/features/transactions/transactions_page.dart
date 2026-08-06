@@ -16,6 +16,12 @@ class TransactionsPage extends StatefulWidget {
 }
 
 class _TransactionsPageState extends State<TransactionsPage> {
+  final TextEditingController _searchController = TextEditingController();
+
+  String _searchKeyword = '';
+  String? _selectedYearMonth;
+  String? _selectedMajorCategory;
+  bool _reviewOnly = false;
   final TransactionService _transactionService = const TransactionService();
 
   Future<List<TransactionModel>>? _transactionsFuture;
@@ -47,7 +53,14 @@ class _TransactionsPageState extends State<TransactionsPage> {
   }
 
   Future<List<TransactionModel>> _fetchTransactions() {
-    return _transactionService.fetchTransactions(limit: 100, offset: 0);
+    return _transactionService.fetchTransactions(
+      limit: 100,
+      offset: 0,
+      keyword: _searchKeyword,
+      yearMonth: _selectedYearMonth,
+      majorCategory: _selectedMajorCategory,
+      reviewOnly: _reviewOnly,
+    );
   }
 
   Future<void> _reload() async {
@@ -87,6 +100,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     AppRefreshController.dataVersion.removeListener(_handleAppRefresh);
 
     super.dispose();
@@ -166,9 +180,15 @@ class _TransactionsPageState extends State<TransactionsPage> {
             return _buildEmptyState(context);
           }
 
-          final totalIncome = _calculateTotalIncome(transactions);
+          final yearMonths = _buildYearMonths(transactions);
 
-          final totalExpense = _calculateTotalExpense(transactions);
+          final majorCategories = _buildMajorCategories(transactions);
+
+          final filteredTransactions = transactions;
+
+          final totalIncome = _calculateTotalIncome(filteredTransactions);
+
+          final totalExpense = _calculateTotalExpense(filteredTransactions);
 
           return RefreshIndicator(
             onRefresh: _reload,
@@ -176,6 +196,154 @@ class _TransactionsPageState extends State<TransactionsPage> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
               children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        textInputAction: TextInputAction.search,
+                        decoration: InputDecoration(
+                          labelText: '取引を検索',
+                          hintText: '店名・内容・カテゴリなど',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _searchController.text.isEmpty
+                              ? null
+                              : IconButton(
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _searchKeyword = '';
+
+                                    setState(() {});
+
+                                    _reload();
+                                  },
+                                  icon: const Icon(Icons.clear),
+                                ),
+                          border: const OutlineInputBorder(),
+                        ),
+                        onChanged: (value) {
+                          _searchKeyword = value;
+
+                          setState(() {});
+                        },
+                        onSubmitted: (_) {
+                          FocusScope.of(context).unfocus();
+                          _reload();
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(width: 8),
+
+                    SizedBox(
+                      height: 56,
+                      child: FilledButton(
+                        onPressed: () {
+                          _searchKeyword = _searchController.text.trim();
+
+                          FocusScope.of(context).unfocus();
+
+                          _reload();
+                        },
+                        child: const Text('検索'),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: yearMonths.contains(_selectedYearMonth)
+                            ? _selectedYearMonth
+                            : null,
+                        decoration: const InputDecoration(
+                          labelText: '年月',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          const DropdownMenuItem<String>(
+                            value: null,
+                            child: Text('すべて'),
+                          ),
+                          ...yearMonths.map(
+                            (yearMonth) => DropdownMenuItem<String>(
+                              value: yearMonth,
+                              child: Text(
+                                yearMonth.replaceFirst('-', '年') + '月',
+                              ),
+                            ),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedYearMonth = value;
+                          });
+                          _reload();
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue:
+                            majorCategories.contains(_selectedMajorCategory)
+                            ? _selectedMajorCategory
+                            : null,
+                        decoration: const InputDecoration(
+                          labelText: '大カテゴリ',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          const DropdownMenuItem<String>(
+                            value: null,
+                            child: Text('すべて'),
+                          ),
+                          ...majorCategories.map(
+                            (category) => DropdownMenuItem<String>(
+                              value: category,
+                              child: Text(category),
+                            ),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedMajorCategory = value;
+                          });
+                          _reload();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('要確認のみ表示'),
+                  value: _reviewOnly,
+                  onChanged: (value) {
+                    setState(() {
+                      _reviewOnly = value;
+                    });
+                    _reload();
+                  },
+                ),
+
+                const SizedBox(height: 8),
+
+                Text(
+                  '${filteredTransactions.length}件表示',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+
+                const SizedBox(height: 12),
+
                 _MonthlySummaryCard(income: totalIncome, expense: totalExpense),
 
                 const SizedBox(height: 20),
@@ -189,7 +357,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
 
                 const SizedBox(height: 12),
 
-                ..._buildGroupedTransactions(context, transactions),
+                ..._buildGroupedTransactions(context, filteredTransactions),
               ],
             ),
           );
@@ -296,6 +464,39 @@ class _TransactionsPageState extends State<TransactionsPage> {
         ],
       ),
     );
+  }
+
+  List<String> _buildYearMonths(List<TransactionModel> transactions) {
+    final values = <String>{};
+
+    for (final transaction in transactions) {
+      final date = DateTime.tryParse(transaction.transactionDate);
+
+      if (date == null) {
+        continue;
+      }
+
+      values.add(
+        '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}',
+      );
+    }
+
+    final result = values.toList()..sort((a, b) => b.compareTo(a));
+
+    return result;
+  }
+
+  List<String> _buildMajorCategories(List<TransactionModel> transactions) {
+    final values =
+        transactions
+            .map((transaction) => transaction.majorCategory.trim())
+            .where((value) => value.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+
+    return values;
   }
 
   List<Widget> _buildGroupedTransactions(
@@ -567,13 +768,14 @@ class _TransactionTile extends StatelessWidget {
 
     return ListTile(
       onTap: () async {
-        final updated = await Navigator.of(context).push<bool>(
-          MaterialPageRoute(
-            builder: (_) => TransactionDetailPage(transaction: transaction),
-          ),
-        );
+        final result = await Navigator.of(context)
+            .push<TransactionDetailResult>(
+              MaterialPageRoute(
+                builder: (_) => TransactionDetailPage(transaction: transaction),
+              ),
+            );
 
-        if (updated == true) {
+        if (result != null) {
           await onUpdated();
         }
       },

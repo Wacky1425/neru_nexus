@@ -110,9 +110,6 @@ class TransactionDetailPage extends StatelessWidget {
   }
 
   Future<void> _deleteTransaction(BuildContext context) async {
-    // 詳細画面を管理しているNavigatorを、
-    // 非同期処理の前に取得しておく
-    final pageNavigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
 
     final confirmed = await showDialog<bool>(
@@ -139,20 +136,28 @@ class TransactionDetailPage extends StatelessWidget {
       },
     );
 
-    if (confirmed != true) {
+    if (confirmed != true || !context.mounted) {
       return;
     }
 
     try {
       await const TransactionService().deleteTransaction(id: transaction.id);
 
-      if (!pageNavigator.mounted) {
+      // ダイアログやメニューのNavigator処理が
+      // 完全に終わるのを少し待つ
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      if (!context.mounted) {
         return;
       }
 
-      // 保持しておいた詳細画面のNavigatorを閉じる
-      pageNavigator.pop(TransactionDetailResult.deleted);
+      // 詳細画面を閉じる
+      Navigator.of(context).pop(TransactionDetailResult.deleted);
     } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+
       final message = error.toString().replaceFirst('Exception: ', '');
 
       messenger.showSnackBar(SnackBar(content: Text(message)));

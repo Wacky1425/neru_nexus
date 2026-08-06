@@ -1,5 +1,5 @@
 function testLoadTable() {
-  const table = loadTable("transactions");
+  const table = loadTable(SHEETS.TRANSACTIONS)
 
   Logger.log(`values: ${table.values.length}`);
   Logger.log(`rows: ${table.rows.length}`);

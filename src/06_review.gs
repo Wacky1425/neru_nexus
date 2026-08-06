@@ -164,7 +164,7 @@ function buildReviewQueueRow_(
 }
 
 function rebuildReviewQueue() {
-  const transactionTable = loadTable("transactions");
+  const transactionTable = loadTable(SHEETS.TRANSACTIONS)
 
   // 元の挙動を維持：
   // transactionsに明細がなければreview_queueを変更しない

@@ -109,14 +109,23 @@ function doGet(e) {
         );
 
         case "transactions":
-            return createJsonResponse_(
-                getTransactionsData({
-                limit: parameters.limit,
-                offset: parameters.offset,
-                yearMonth: parameters.yearMonth
-                }),
-                "ok"
-            );
+  return createJsonResponse_(
+    getTransactionsData({
+      limit:
+        parameters.limit,
+      offset:
+        parameters.offset,
+      yearMonth:
+        parameters.yearMonth,
+      keyword:
+        parameters.keyword,
+      majorCategory:
+        parameters.majorCategory,
+      reviewOnly:
+        parameters.reviewOnly
+    }),
+    "ok"
+  );
 
         case "categories":
           return createJsonResponse_(
@@ -986,6 +995,22 @@ function getTransactionsData(options) {
       )
     : "";
 
+  const keyword = String(
+    settings.keyword || ""
+  )
+    .normalize("NFKC")
+    .trim()
+    .toLowerCase();
+
+  const majorCategory = String(
+    settings.majorCategory || ""
+  ).trim();
+
+  const reviewOnly = toBoolean_(
+    settings.reviewOnly,
+    false
+  );
+
   const table = loadTransactions();
 
   if (table.rows.length === 0) {
@@ -1017,33 +1042,118 @@ function getTransactionsData(options) {
   );
 
   const filteredRows = table.rows.filter(row => {
-    if (!targetMonth) {
-      return true;
+    if (targetMonth) {
+      const rowMonth = normalizeYearMonth(
+        row[
+          table.index["transaction_date"]
+        ]
+      );
+
+      if (rowMonth !== targetMonth) {
+        return false;
+      }
     }
 
-    const rowMonth = normalizeYearMonth(
-      row[table.index["transaction_date"]]
-    );
+    if (majorCategory) {
+      const rowMajorCategory = getString(
+        row,
+        table.index,
+        "major_category"
+      );
 
-    return rowMonth === targetMonth;
+      if (
+        rowMajorCategory !==
+        majorCategory
+      ) {
+        return false;
+      }
+    }
+
+    if (reviewOnly) {
+      const status = getString(
+        row,
+        table.index,
+        "status"
+      );
+
+      if (status !== "要確認") {
+        return false;
+      }
+    }
+
+    if (keyword) {
+      const searchableText = [
+        getString(
+          row,
+          table.index,
+          "merchant"
+        ),
+        getString(
+          row,
+          table.index,
+          "item_name"
+        ),
+        getString(
+          row,
+          table.index,
+          "major_category"
+        ),
+        getString(
+          row,
+          table.index,
+          "sub_category"
+        ),
+        getString(
+          row,
+          table.index,
+          "wallet"
+        ),
+        getString(
+          row,
+          table.index,
+          "intent"
+        )
+      ]
+        .join(" ")
+        .normalize("NFKC")
+        .toLowerCase();
+
+      if (
+        !searchableText.includes(keyword)
+      ) {
+        return false;
+      }
+    }
+
+    return true;
   });
 
   filteredRows.sort((a, b) => {
     const dateA = new Date(
-      a[table.index["transaction_date"]]
+      a[
+        table.index["transaction_date"]
+      ]
     );
 
     const dateB = new Date(
-      b[table.index["transaction_date"]]
+      b[
+        table.index["transaction_date"]
+      ]
     );
 
-    return dateB.getTime() - dateA.getTime();
+    return (
+      dateB.getTime() -
+      dateA.getTime()
+    );
   });
 
   const total = filteredRows.length;
 
   const items = filteredRows
-    .slice(offset, offset + limit)
+    .slice(
+      offset,
+      offset + limit
+    )
     .map(row => ({
       id: getString(
         row,
@@ -1052,7 +1162,11 @@ function getTransactionsData(options) {
       ),
 
       transactionDate: formatApiDate_(
-        row[table.index["transaction_date"]]
+        row[
+          table.index[
+            "transaction_date"
+          ]
+        ]
       ),
 
       merchant: getString(
@@ -1115,7 +1229,8 @@ function getTransactionsData(options) {
     total,
     limit,
     offset,
-    hasMore: offset + items.length < total
+    hasMore:
+      offset + items.length < total
   };
 }
 
