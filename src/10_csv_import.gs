@@ -219,7 +219,7 @@ function getImportConfig(configName) {
 }
 
 function readImportCsv() {
-  return loadObjects("import_csv");
+  return loadObjects(SHEETS.IMPORT_CSV);
 }
 
 function normalizeCsvRow(row, config) {

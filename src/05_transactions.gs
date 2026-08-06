@@ -561,7 +561,8 @@ function getExistingDuplicateKeys() {
   const duplicateKeyIndex = headers.indexOf("duplicate_key");
 
   if (duplicateKeyIndex === -1) {
-    throw new Error("transactions シートに duplicate_key 列がありません");
+    throw new Error(`${SHEETS.TRANSACTIONS}シートに`
+  + "duplicate_key列がありません");
   }
 
   const rows = values.slice(1);
@@ -647,7 +648,7 @@ function reclassifyAllTransactions() {
   Logger.log(`再分類完了: ${updatedCount}件`);
 }
 
-function normalizeMerchant(merchant) {
+function normalizeMerchant(merchant) {3w
   if (!merchant) return "";
 
   merchant = String(merchant).trim();
