@@ -36,9 +36,15 @@ class TransactionFormResult {
 enum TransactionType { expense, income }
 
 class TransactionFormPage extends StatefulWidget {
-  const TransactionFormPage({super.key, this.initialTransaction});
+  const TransactionFormPage({
+    super.key,
+    this.initialTransaction,
+    this.fromReview = false,
+  });
 
   final TransactionModel? initialTransaction;
+
+  final bool fromReview;
 
   @override
   State<TransactionFormPage> createState() => _TransactionFormPageState();
@@ -76,6 +82,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
   bool _isConfirmed = false;
 
   bool _isSaving = false;
+  bool _saveRule = false;
 
   static const Map<String, List<String>> _fallbackExpenseCategoryMap = {
     '食費': ['スーパー', 'コンビニ', '外食', 'カフェ', 'その他'],
@@ -404,6 +411,8 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
         await _transactionService.updateTransaction(
           id: initialTransaction.id,
           transaction: result,
+          saveRule: widget.fromReview && _saveRule,
+          merchant: _titleController.text.trim(),
         );
       }
 
@@ -686,6 +695,28 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                     ),
                   ),
 
+                  if (widget.fromReview) ...[
+                    const SizedBox(height: 8),
+
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: _saveRule,
+                      onChanged: _isSaving
+                          ? null
+                          : (value) {
+                              setState(() {
+                                _saveRule = value ?? false;
+                                if (_saveRule) {
+                                  _isConfirmed = true;
+                                }
+                              });
+                            },
+                      title: const Text('今後もこの取引先を同じ分類にする'),
+                      subtitle: const Text('次回から同じ取引先を自動で分類します'),
+                      controlAffinity: ListTileControlAffinity.leading,
+                    ),
+                  ],
+
                   const SizedBox(height: 12),
 
                   TextFormField(
@@ -742,17 +773,16 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                   const SizedBox(height: 20),
 
                   SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('取引を確定する'),
-                    subtitle: Text(
-                      _isConfirmed ? 'この取引は確定済みです' : 'カテゴリを確認したらONにしてください',
-                    ),
                     value: _isConfirmed,
                     onChanged: _isSaving
                         ? null
                         : (value) {
                             setState(() {
                               _isConfirmed = value;
+
+                              if (!value) {
+                                _saveRule = false;
+                              }
                             });
                           },
                   ),

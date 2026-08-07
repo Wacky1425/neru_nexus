@@ -68,10 +68,50 @@ function detectCsvTypeFromRows(values) {
     }
   }
 
-  return {
-    csvType: "unknown",
-    headerRowIndex: -1,
-  };
+  let fallbackHeaderRowIndex = -1;
+
+for (let i = 0; i < values.length; i++) {
+  const row = values[i]
+    .map(value =>
+      String(value || "").trim()
+    );
+
+  const nonEmptyCount = row.filter(
+    value => value !== ""
+  ).length;
+
+  if (nonEmptyCount < 2) {
+    continue;
+  }
+
+  const textLikeCount = row.filter(
+    value => {
+      if (!value) {
+        return false;
+      }
+
+      // 数字だけ・金額だけの行は
+      // ヘッダー候補にしにくい
+      return !/^[\d,.\-￥¥]+$/.test(
+        value
+      );
+    }
+  ).length;
+
+  if (
+    textLikeCount >=
+    Math.ceil(nonEmptyCount / 2)
+  ) {
+    fallbackHeaderRowIndex = i;
+    break;
+  }
+}
+
+return {
+  csvType: "unknown",
+  headerRowIndex:
+    fallbackHeaderRowIndex,
+};
 }
 
 function readCsvRowsFromFile(file) {
@@ -97,11 +137,15 @@ function readCsvRowsFromFile(file) {
     };
   }
 
-  if (detected.csvType === "olive_credit_v2") {
+  if (
+    detected.csvType === "olive_credit_v2"
+  ) {
     return {
       csvType: detected.csvType,
       rows: convertOliveRowsWithoutHeader(
-        values.slice(detected.headerRowIndex)
+        values.slice(
+          detected.headerRowIndex
+        )
       )
     };
   }
@@ -113,7 +157,9 @@ function readCsvRowsFromFile(file) {
   );
 
   const rows = values
-    .slice(detected.headerRowIndex + 1)
+    .slice(
+      detected.headerRowIndex + 1
+    )
     .filter(row =>
       row.join("").trim() !== ""
     );
@@ -461,11 +507,22 @@ function normalizeCsvRowByHeader(row, config) {
     note = noteValue || "";
   }
 
+  const rawText = [
+  merchant,
+  itemName,
+  note
+]
+  .filter(value =>
+    String(value || "").trim() !== ""
+  )
+  .join(" / ");
+
   return {
     transaction_date: transactionDate,
     merchant: merchant,
     item_name: itemName,
     amount: amount,
+    raw_text: rawText,
     note: note,
     source_type: config.source_type || "CSV",
     payment_method: config.payment_method || "",
@@ -579,6 +636,26 @@ function importCsvFromApp_(data) {
     csvText
   );
 
+  if (parsed.csvType === "unknown") {
+  return createJsonResponse_(
+    {
+      status: "unknown_csv",
+
+      csvType: "unknown",
+
+      headerRowIndex:
+        parsed.headerRowIndex,
+
+      headers:
+        parsed.headers || [],
+
+      sampleRows:
+        parsed.sampleRows || []
+    },
+    "ok"
+  );
+}
+
   const result =
     importParsedCsvRows_(
       parsed
@@ -590,6 +667,8 @@ function importCsvFromApp_(data) {
 
   return createJsonResponse_(
     {
+      status: "imported",
+
       csvType:
         parsed.csvType,
 
@@ -636,14 +715,47 @@ function readCsvRowsFromText_(csvText) {
   const headerRowIndex =
     detection.headerRowIndex;
 
-  if (
-    !csvType ||
-    csvType === "unknown"
-  ) {
-    throw new Error(
-      "対応していないCSV形式です"
-    );
+if (
+  !csvType ||
+  csvType === "unknown"
+) {
+  if (headerRowIndex < 0) {
+    return {
+      csvType: "unknown",
+      headerRowIndex: -1,
+      headers: [],
+      sampleRows: values
+        .filter(row =>
+          row.some(value =>
+            String(value || "").trim() !== ""
+          )
+        )
+        .slice(0, 5)
+    };
   }
+
+  const headers = values[
+    headerRowIndex
+  ].map(value =>
+    String(value || "").trim()
+  );
+
+  const sampleRows = values
+    .slice(headerRowIndex + 1)
+    .filter(row =>
+      row.some(value =>
+        String(value || "").trim() !== ""
+      )
+    )
+    .slice(0, 5);
+
+  return {
+    csvType: "unknown",
+    headerRowIndex,
+    headers,
+    sampleRows
+  };
+}
 
   /*
    * ヘッダーなしのOlive明細。

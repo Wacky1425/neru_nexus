@@ -12,6 +12,7 @@ class TransactionModel {
     required this.wallet,
     required this.intent,
     required this.paymentMethod,
+    required this.rawText,
   });
 
   final String id;
@@ -26,6 +27,7 @@ class TransactionModel {
   final String wallet;
   final String intent;
   final String paymentMethod;
+  final String rawText;
 
   factory TransactionModel.fromJson(Map<String, dynamic> json) {
     return TransactionModel(
@@ -41,6 +43,7 @@ class TransactionModel {
       wallet: json['wallet'] ?? '',
       intent: json['intent'] ?? '',
       paymentMethod: json['paymentMethod'] ?? '',
+      rawText: json['rawText'] ?? '',
     );
   }
 }

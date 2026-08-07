@@ -484,6 +484,7 @@ function buildTransactionRow(
     tx.account_name || "",
     tx.merchant || "",
     tx.item_name || "",
+    tx.raw_text || "",
     amount,
     tx.major_category || "",
     tx.sub_category || "",
@@ -648,7 +649,7 @@ function reclassifyAllTransactions() {
   Logger.log(`再分類完了: ${updatedCount}件`);
 }
 
-function normalizeMerchant(merchant) {3w
+function normalizeMerchant(merchant) {
   if (!merchant) return "";
 
   merchant = String(merchant).trim();

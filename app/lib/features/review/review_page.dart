@@ -170,6 +170,7 @@ class _ReviewPageState extends State<ReviewPage> {
                             MaterialPageRoute(
                               builder: (_) => TransactionDetailPage(
                                 transaction: transaction,
+                                 fromReview: true,
                               ),
                             ),
                           );

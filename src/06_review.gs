@@ -921,3 +921,141 @@ function rebuildRecurringCandidates() {
     `定期支払い候補: ${rows.length}件`
   );
 }
+
+function addRuleFromTransaction_(data) {
+  const merchant = String(
+    data.merchant || ""
+  ).trim();
+
+  const type = String(
+    data.type || ""
+  ).trim();
+
+  const majorCategory = String(
+    data.majorCategory || ""
+  ).trim();
+
+  const subCategory = String(
+    data.subCategory || ""
+  ).trim();
+
+  if (!merchant) {
+    throw new Error(
+      "ルール登録にはmerchantが必要です"
+    );
+  }
+
+  if (
+    !type ||
+    !majorCategory ||
+    !subCategory
+  ) {
+    throw new Error(
+      "ルール登録には分類情報が必要です"
+    );
+  }
+
+  const ruleTable = loadTable(
+    SHEETS.RULES
+  );
+
+  assertRequiredColumns(
+    ruleTable.index,
+    [
+      "priority",
+      "match_target",
+      "keyword",
+      "rule_type",
+      "type_result",
+      "major_category",
+      "sub_category",
+      "purpose_type",
+      "expense_ratio",
+      "status_result",
+      "note",
+      "wallet_result",
+      "intent_result"
+    ],
+    SHEETS.RULES
+  );
+
+  const duplicate = ruleTable.rows.some(
+    row =>
+      getString(
+        row,
+        ruleTable.index,
+        "match_target"
+      ) === "merchant" &&
+      getString(
+        row,
+        ruleTable.index,
+        "keyword"
+      ) === merchant &&
+      getString(
+        row,
+        ruleTable.index,
+        "rule_type"
+      ) === "equals"
+  );
+
+  if (duplicate) {
+    return {
+      added: false,
+      reason: "duplicate"
+    };
+  }
+
+  const priority = getNextRulePriority_(
+    ruleTable.rows,
+    ruleTable.index
+  );
+
+  const purpose =
+    String(
+      data.purposeType || "私用"
+    ).trim() || "私用";
+
+  const wallet =
+    String(
+      data.wallet || ""
+    ).trim() ||
+    (
+      purpose === "経費"
+        ? "事業"
+        : "生活"
+    );
+
+  const intent =
+    String(
+      data.intent || ""
+    ).trim() ||
+    guessIntent(subCategory);
+
+  const addedCount = appendRules_([
+    {
+      priority,
+      match_target: "merchant",
+      keyword: merchant,
+      rule_type: "equals",
+      type_result: type,
+      major_category: majorCategory,
+      sub_category: subCategory,
+      purpose_type: purpose,
+      expense_ratio: Number(
+        data.expenseRatio || 0
+      ),
+      status_result: "確定",
+      note: "アプリの要確認から追加",
+      wallet_result: wallet,
+      intent_result: intent
+    }
+  ]);
+
+  return {
+    added: addedCount > 0,
+    reason:
+      addedCount > 0
+        ? "added"
+        : "not_added"
+  };
+}

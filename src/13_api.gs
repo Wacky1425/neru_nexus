@@ -526,6 +526,15 @@ function updateTransactionFromApp_(data) {
     data.memo || ""
   ).trim();
 
+  const saveRule = toBoolean_(
+  data.saveRule,
+  false
+);
+
+const ruleMerchant = String(
+  data.merchant || ""
+).trim();
+
   if (!id) {
     throw new Error("idは必須です");
   }
@@ -608,6 +617,7 @@ function updateTransactionFromApp_(data) {
       "account_name",
       "merchant",
       "item_name",
+      "raw_text",
       "amount",
       "major_category",
       "sub_category",
@@ -696,6 +706,13 @@ function updateTransactionFromApp_(data) {
 
     item_name:
       title,
+
+    raw_text:
+  getString(
+    existingRow,
+    table.index,
+    "raw_text"
+  ),
 
     amount,
 
@@ -791,12 +808,41 @@ function updateTransactionFromApp_(data) {
   ]);
 
   clearTableCache(
-    SHEETS.TRANSACTIONS
-  );
+  SHEETS.TRANSACTIONS
+);
 
-  rebuildReviewQueue();
-  rebuildReviewSummary();
-  rebuildAllViews();
+let ruleResult = null;
+
+if (saveRule) {
+  const merchantForRule =
+    ruleMerchant ||
+    getString(
+      existingRow,
+      table.index,
+      "merchant"
+    );
+
+  if (!merchantForRule) {
+    throw new Error(
+      "ルール登録対象の取引先を取得できません"
+    );
+  }
+
+  ruleResult = addRuleFromTransaction_({
+    merchant: merchantForRule,
+    type,
+    majorCategory,
+    subCategory,
+    purposeType,
+    expenseRatio,
+    wallet,
+    intent
+  });
+}
+
+rebuildReviewQueue();
+rebuildReviewSummary();
+rebuildAllViews();
 
   return createJsonResponse_(
     {
@@ -834,7 +880,7 @@ function deleteTransactionFromApp_(data) {
 
   if (!sheet) {
     throw new Error(
-      "transactionsシートがありません"
+      `${SHEETS.TRANSACTIONS}シートがありません`
     );
   }
 
@@ -1036,6 +1082,7 @@ function getTransactionsData(options) {
       "sub_category",
       "status",
       "wallet",
+      "raw_text",
       "intent"
     ],
     SHEETS.TRANSACTIONS
@@ -1221,7 +1268,13 @@ function getTransactionsData(options) {
         row,
         table.index,
         "intent"
-      )
+      ),
+
+      rawText: getString(
+        row,
+        table.index,
+        "raw_text"
+      ),
     }));
 
   return {
@@ -1282,6 +1335,7 @@ function getReviewTransactionsData(options) {
       "wallet",
       "intent",
       "payment_method",
+      "raw_text",
       "note"
     ],
     SHEETS.TRANSACTIONS
@@ -1381,6 +1435,12 @@ function getReviewTransactionsData(options) {
         row,
         table.index,
         "payment_method"
+      ),
+
+      rawText: getString(
+        row,
+        table.index,
+        "raw_text"
       ),
 
       note: getString(

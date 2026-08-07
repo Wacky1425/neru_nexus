@@ -9,9 +9,14 @@ enum TransactionDetailAction { edit, delete }
 enum TransactionDetailResult { updated, deleted }
 
 class TransactionDetailPage extends StatelessWidget {
-  const TransactionDetailPage({super.key, required this.transaction});
+  const TransactionDetailPage({
+    super.key,
+    required this.transaction,
+    this.fromReview = false,
+  });
 
   final TransactionModel transaction;
+  final bool fromReview;
 
   @override
   Widget build(BuildContext context) {
@@ -98,7 +103,10 @@ class TransactionDetailPage extends StatelessWidget {
   Future<void> _editTransaction(BuildContext context) async {
     final result = await Navigator.of(context).push<TransactionFormResult>(
       MaterialPageRoute(
-        builder: (_) => TransactionFormPage(initialTransaction: transaction),
+        builder: (_) => TransactionFormPage(
+          initialTransaction: transaction,
+          fromReview: fromReview,
+        ),
       ),
     );
 

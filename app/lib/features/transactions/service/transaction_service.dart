@@ -176,6 +176,8 @@ class TransactionService {
   Future<void> updateTransaction({
     required String id,
     required TransactionFormResult transaction,
+    bool saveRule = false,
+    String merchant = '',
   }) async {
     if (id.trim().isEmpty) {
       throw Exception('更新対象の取引IDがありません');
@@ -205,6 +207,8 @@ class TransactionService {
         'paymentMethod': transaction.paymentMethod,
         'status': transaction.status,
         'memo': transaction.memo ?? '',
+        'saveRule': saveRule,
+        'merchant': merchant,
       });
 
       final streamedResponse = await client.send(request);
