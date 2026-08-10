@@ -135,13 +135,22 @@ class _ImportPageState extends State<ImportPage> {
         _detectedCsvType = result.csvType;
         _addedCount = result.addedCount;
         _skippedCount = result.skippedCount;
+
+        // 取込成功後は選択中CSVを解除
+        _selectedFileName = null;
+        _selectedFileBytes = null;
       });
 
       AppRefreshController.refreshAll();
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('${result.addedCount}件取り込みました')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${result.addedCount}件追加・'
+            '${result.skippedCount}件重複スキップしました',
+          ),
+        ),
+      );
     } catch (error) {
       if (!mounted) {
         return;

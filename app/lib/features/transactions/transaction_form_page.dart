@@ -412,7 +412,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
           id: initialTransaction.id,
           transaction: result,
           saveRule: widget.fromReview && _saveRule,
-          merchant: _titleController.text.trim(),
+          merchant: initialTransaction.merchant.trim(),
         );
       }
 
