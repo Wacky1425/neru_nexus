@@ -457,6 +457,99 @@ function reconcileCardSettlementForBatch_(importBatch, rawAccountName) {
   };
 }
 
+function confirmSettlementManually_(data) {
+  const settlementTransactionId = String(
+    data.settlementTransactionId || "",
+  ).trim();
+
+  const importBatch = String(data.importBatch || "").trim();
+
+  if (!settlementTransactionId) {
+    throw new Error("settlementTransactionIdは必須です");
+  }
+
+  if (!importBatch) {
+    throw new Error("importBatchは必須です");
+  }
+
+  const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
+
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) {
+    throw new Error("取引データがありません");
+  }
+
+  const index = createHeaderIndex(values[0]);
+
+  assertRequiredColumns(
+    index,
+    ["id", "type", "import_batch", "settlement_status", "settlement_id"],
+    SHEETS.TRANSACTIONS,
+  );
+
+  let settlementRow = null;
+  const batchRows = [];
+
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+
+    const id = String(row[index["id"]] || "").trim();
+
+    if (id === settlementTransactionId) {
+      settlementRow = row;
+    }
+
+    const rowBatch = String(row[index["import_batch"]] || "").trim();
+
+    if (
+      rowBatch === importBatch &&
+      String(row[index["type"]] || "").trim() !== "移動"
+    ) {
+      batchRows.push(row);
+    }
+  }
+
+  if (!settlementRow) {
+    throw new Error("照合対象の引落が見つかりません");
+  }
+
+  if (batchRows.length === 0) {
+    throw new Error("紐付け対象のカード明細がありません");
+  }
+
+  const settlementId = "settlement_" + Utilities.getUuid();
+
+  settlementRow[index["settlement_status"]] = "matched";
+
+  settlementRow[index["settlement_id"]] = settlementId;
+
+  for (const row of batchRows) {
+    row[index["settlement_status"]] = "matched";
+
+    row[index["settlement_id"]] = settlementId;
+  }
+
+  sheet
+    .getRange(2, 1, values.length - 1, values[0].length)
+    .setValues(values.slice(1));
+
+  clearTableCache(SHEETS.TRANSACTIONS);
+
+  rebuildAllViews();
+
+  return createJsonResponse_(
+    {
+      matched: true,
+      settlementId,
+      settlementTransactionId,
+      importBatch,
+      detailCount: batchRows.length,
+    },
+    "ok",
+  );
+}
+
 function resolveCreditCardAccount_(tx) {
   const candidates = [tx.merchant, tx.item_name, tx.note]
     .filter(Boolean)
@@ -501,7 +594,7 @@ function applyTransferMetadata_(tx) {
   }
 
   // CSVを取り込んだ口座を移動元として扱う
-  tx.from_account = accountName;
+  tx.from_account = resolveCanonicalAccountName_(accountName);
 
   tx.to_account = String(tx.to_account || "").trim();
 
@@ -516,10 +609,39 @@ function applyTransferMetadata_(tx) {
     return;
   }
 
-  // その他の資金移動
-  tx.settlement_status = "none";
+
+  const destinationAccount = resolveTransferDestinationAccount_(tx);
+
+  tx.to_account = destinationAccount;
+
+  tx.settlement_status = destinationAccount ? "none" : "review";
 }
 
+function resolveTransferDestinationAccount_(tx) {
+  const candidates = [tx.merchant, tx.item_name, tx.note, tx.raw_text]
+    .filter(Boolean)
+    .map((value) => String(value).normalize("NFKC").trim());
+
+  const aliases = loadObjects(SHEETS.ACCOUNT_ALIAS);
+
+  for (const candidate of candidates) {
+    for (const row of aliases) {
+      const raw = String(row.raw_account_name || "")
+        .normalize("NFKC")
+        .trim();
+
+      if (!raw) {
+        continue;
+      }
+
+      if (candidate.includes(raw)) {
+        return String(row.canonical_account_name || "").trim();
+      }
+    }
+  }
+
+  return "";
+}
 
 function getLatestCsvFileFromDrive(folderId) {
   const folder = DriveApp.getFolderById(folderId);

@@ -19,6 +19,8 @@ class TransactionFormResult {
     required this.accountName,
     required this.status,
     this.memo,
+    this.fromAccount,
+    this.toAccount,
   });
 
   final DateTime date;
@@ -31,9 +33,11 @@ class TransactionFormResult {
   final String accountName;
   final String status;
   final String? memo;
+  final String? fromAccount;
+  final String? toAccount;
 }
 
-enum TransactionType { expense, income }
+enum TransactionType { expense, income, transfer }
 
 class TransactionFormPage extends StatefulWidget {
   const TransactionFormPage({
@@ -79,6 +83,12 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
 
   String _selectedAccountId = '';
   String _selectedAccountName = '';
+
+  String _selectedFromAccountId = '';
+  String _selectedFromAccountName = '';
+
+  String _selectedToAccountId = '';
+  String _selectedToAccountName = '';
   bool _isConfirmed = false;
 
   bool _isSaving = false;
@@ -165,9 +175,17 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
       return;
     }
 
-    _selectedType = tx.type == '収入'
-        ? TransactionType.income
-        : TransactionType.expense;
+    _selectedType = switch (tx.type) {
+      '収入' => TransactionType.income,
+      '移動' => TransactionType.transfer,
+      _ => TransactionType.expense,
+    };
+
+    if (_selectedType == TransactionType.transfer) {
+      _selectedFromAccountName = tx.fromAccount.trim();
+
+      _selectedToAccountName = tx.toAccount.trim();
+    }
 
     _selectedDate = DateTime.tryParse(tx.transactionDate) ?? DateTime.now();
 
@@ -214,9 +232,47 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
       _master = master;
 
       _applyMasterDefaults(master);
+
+      _applyInitialTransferAccounts();
     });
 
     return master;
+  }
+
+  void _applyInitialTransferAccounts() {
+    final tx = widget.initialTransaction;
+
+    if (tx == null || _selectedType != TransactionType.transfer) {
+      return;
+    }
+
+    final fromAccountName = tx.fromAccount.trim();
+
+    final toAccountName = tx.toAccount.trim();
+
+    if (fromAccountName.isNotEmpty) {
+      for (final account in _accounts) {
+        if (account.accountName == fromAccountName) {
+          _selectedFromAccountId = account.accountId;
+
+          _selectedFromAccountName = account.accountName;
+
+          break;
+        }
+      }
+    }
+
+    if (toAccountName.isNotEmpty) {
+      for (final account in _accounts) {
+        if (account.accountName == toAccountName) {
+          _selectedToAccountId = account.accountId;
+
+          _selectedToAccountName = account.accountName;
+
+          break;
+        }
+      }
+    }
   }
 
   void _applyMasterDefaults(MasterModel master) {
@@ -280,11 +336,27 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
     }
 
     if (_accounts.isNotEmpty) {
-      final account = _accounts.first;
+      final currentAccountName = transaction?.accountName.trim() ?? '';
+
+      AccountMaster? matchedAccount;
+
+      if (currentAccountName.isNotEmpty) {
+        for (final account in _accounts) {
+          if (account.accountName == currentAccountName) {
+            matchedAccount = account;
+            break;
+          }
+        }
+      }
+
+      final account = matchedAccount ?? _accounts.first;
 
       _selectedAccountId = account.accountId;
       _selectedAccountName = account.accountName;
-      _selectedPaymentMethod = account.paymentMethod;
+
+      if (_selectedType != TransactionType.transfer) {
+        _selectedPaymentMethod = account.paymentMethod;
+      }
     }
   }
 
@@ -396,6 +468,13 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
       memo: _memoController.text.trim().isEmpty
           ? null
           : _memoController.text.trim(),
+      fromAccount: _selectedType == TransactionType.transfer
+          ? _selectedFromAccountName
+          : null,
+
+      toAccount: _selectedType == TransactionType.transfer
+          ? _selectedToAccountName
+          : null,
     );
 
     setState(() {
@@ -538,6 +617,11 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                         value: TransactionType.income,
                         label: Text('収入'),
                         icon: Icon(Icons.arrow_downward_rounded),
+                      ),
+                      ButtonSegment(
+                        value: TransactionType.transfer,
+                        label: Text('移動'),
+                        icon: Icon(Icons.swap_horiz_rounded),
                       ),
                     ],
                     selected: {_selectedType},
@@ -738,37 +822,123 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
 
                   const SizedBox(height: 20),
 
-                  DropdownButtonFormField<String>(
-                    value: _selectedAccountId.isEmpty
-                        ? null
-                        : _selectedAccountId,
-                    decoration: const InputDecoration(
-                      labelText: '利用口座',
-                      prefixIcon: Icon(Icons.account_balance),
-                      border: OutlineInputBorder(),
+                  if (_selectedType == TransactionType.transfer) ...[
+                    DropdownButtonFormField<String>(
+                      value: _selectedFromAccountId.isEmpty
+                          ? null
+                          : _selectedFromAccountId,
+                      decoration: const InputDecoration(
+                        labelText: '移動元口座',
+                        prefixIcon: Icon(Icons.account_balance),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _accounts
+                          .map(
+                            (account) => DropdownMenuItem(
+                              value: account.accountId,
+                              child: Text(account.accountName),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+
+                        final account = _accounts.firstWhere(
+                          (e) => e.accountId == value,
+                        );
+
+                        setState(() {
+                          _selectedFromAccountId = account.accountId;
+                          _selectedFromAccountName = account.accountName;
+                        });
+                      },
+                      validator: (value) {
+                        if (_selectedType == TransactionType.transfer &&
+                            (value == null || value.isEmpty)) {
+                          return '移動元口座を選択してください';
+                        }
+
+                        return null;
+                      },
                     ),
-                    items: _accounts
-                        .map(
-                          (account) => DropdownMenuItem(
-                            value: account.accountId,
-                            child: Text(account.accountName),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value == null) return;
 
-                      final account = _accounts.firstWhere(
-                        (e) => e.accountId == value,
-                      );
+                    const SizedBox(height: 20),
 
-                      setState(() {
-                        _selectedAccountId = account.accountId;
-                        _selectedAccountName = account.accountName;
-                        _selectedPaymentMethod = account.paymentMethod;
-                      });
-                    },
-                  ),
+                    DropdownButtonFormField<String>(
+                      value: _selectedToAccountId.isEmpty
+                          ? null
+                          : _selectedToAccountId,
+                      decoration: const InputDecoration(
+                        labelText: '移動先口座',
+                        prefixIcon: Icon(Icons.account_balance_wallet_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _accounts
+                          .where(
+                            (account) =>
+                                account.accountId != _selectedFromAccountId,
+                          )
+                          .map(
+                            (account) => DropdownMenuItem(
+                              value: account.accountId,
+                              child: Text(account.accountName),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+
+                        final account = _accounts.firstWhere(
+                          (e) => e.accountId == value,
+                        );
+
+                        setState(() {
+                          _selectedToAccountId = account.accountId;
+                          _selectedToAccountName = account.accountName;
+                        });
+                      },
+                      validator: (value) {
+                        if (_selectedType == TransactionType.transfer &&
+                            (value == null || value.isEmpty)) {
+                          return '移動先口座を選択してください';
+                        }
+
+                        return null;
+                      },
+                    ),
+                  ] else ...[
+                    DropdownButtonFormField<String>(
+                      value: _selectedAccountId.isEmpty
+                          ? null
+                          : _selectedAccountId,
+                      decoration: const InputDecoration(
+                        labelText: '利用口座',
+                        prefixIcon: Icon(Icons.account_balance),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _accounts
+                          .map(
+                            (account) => DropdownMenuItem(
+                              value: account.accountId,
+                              child: Text(account.accountName),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+
+                        final account = _accounts.firstWhere(
+                          (e) => e.accountId == value,
+                        );
+
+                        setState(() {
+                          _selectedAccountId = account.accountId;
+                          _selectedAccountName = account.accountName;
+                          _selectedPaymentMethod = account.paymentMethod;
+                        });
+                      },
+                    ),
+                  ],
 
                   const SizedBox(height: 20),
 

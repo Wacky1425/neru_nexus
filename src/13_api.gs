@@ -99,6 +99,7 @@ function doGet(e) {
             keyword: parameters.keyword,
             majorCategory: parameters.majorCategory,
             reviewOnly: parameters.reviewOnly,
+            settlementId: parameters.settlementId,
           }),
           "ok",
         );
@@ -121,6 +122,13 @@ function doGet(e) {
       case "review_count":
         return createJsonResponse_(getReviewTransactionCount(), "ok");
 
+      case "settlement_candidates":
+        return createJsonResponse_(
+          getSettlementCandidatesData({
+            transactionId: parameters.transactionId,
+          }),
+          "ok",
+        );
       default:
         return createJsonErrorResponse_(`未対応のactionです: ${action}`);
     }
@@ -168,6 +176,9 @@ function doPost(e) {
 
       case "category_update":
         return updateCategoryFromApp_(data);
+
+      case "settlement_confirm":
+        return confirmSettlementManually_(data);
 
       default:
         return createJsonErrorResponse_(`未対応のactionです: ${action}`);
@@ -363,6 +374,10 @@ function updateTransactionFromApp_(data) {
 
   const ruleMerchant = String(data.merchant || "").trim();
 
+  const fromAccount = String(data.fromAccount || "").trim();
+
+  const toAccount = String(data.toAccount || "").trim();
+
   if (!id) {
     throw new Error("idは必須です");
   }
@@ -371,8 +386,8 @@ function updateTransactionFromApp_(data) {
     throw new Error("transactionDateは必須です");
   }
 
-  if (type !== "支出" && type !== "収入") {
-    throw new Error("typeは支出または収入を指定してください");
+  if (type !== "支出" && type !== "収入" && type !== "移動") {
+    throw new Error("typeは支出、収入、移動を指定してください");
   }
 
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -433,8 +448,6 @@ function updateTransactionFromApp_(data) {
       "status",
       "wallet",
       "intent",
-      "wallet",
-      "intent",
       "from_account",
       "to_account",
       "settlement_status",
@@ -452,6 +465,20 @@ function updateTransactionFromApp_(data) {
   }
 
   const existingRow = table.rows[rowIndex];
+
+  const existingSettlementStatus = getString(
+    existingRow,
+    table.index,
+    "settlement_status",
+  );
+
+  const existingSettlementId = getString(
+    existingRow,
+    table.index,
+    "settlement_id",
+  );
+
+  const isCreditCardSettlement = subCategory === "クレカ引落";
 
   const purposeType = type === "収入" ? "私用" : guessPurposeType(subCategory);
 
@@ -508,13 +535,30 @@ function updateTransactionFromApp_(data) {
 
     intent,
 
-    from_account: getString(existingRow, table.index, "from_account"),
+    from_account:
+      type === "移動"
+        ? resolveCanonicalAccountName_(
+            fromAccount || getString(existingRow, table.index, "from_account"),
+          )
+        : "",
 
-    to_account: getString(existingRow, table.index, "to_account"),
+    to_account:
+      type === "移動"
+        ? resolveCanonicalAccountName_(
+            toAccount || getString(existingRow, table.index, "to_account"),
+          )
+        : "",
 
-    settlement_status: getString(existingRow, table.index, "settlement_status"),
+    settlement_status:
+      type !== "移動"
+        ? ""
+        : isCreditCardSettlement
+          ? existingSettlementStatus
+          : toAccount || getString(existingRow, table.index, "to_account")
+            ? "none"
+            : "review",
 
-    settlement_id: getString(existingRow, table.index, "settlement_id"),
+    settlement_id: type === "移動" ? existingSettlementId : "",
   };
 
   const recordedAt = existingRow[table.index["recorded_at"]] || new Date();
@@ -739,9 +783,18 @@ function getTransactionsData(options) {
       "wallet",
       "raw_text",
       "intent",
+      "payment_method",
+      "account_name",
+      "settlement_status",
+      "settlement_id",
+      "from_account",
+      "to_account",
+      "import_batch",
     ],
     SHEETS.TRANSACTIONS,
   );
+
+  const settlementId = String(settings.settlementId || "").trim();
 
   const filteredRows = table.rows.filter((row) => {
     if (targetMonth) {
@@ -786,6 +839,14 @@ function getTransactionsData(options) {
       }
     }
 
+    if (settlementId) {
+      const rowSettlementId = getString(row, table.index, "settlement_id");
+
+      if (rowSettlementId !== settlementId) {
+        return false;
+      }
+    }
+
     return true;
   });
 
@@ -823,6 +884,20 @@ function getTransactionsData(options) {
     intent: getString(row, table.index, "intent"),
 
     rawText: getString(row, table.index, "raw_text"),
+
+    paymentMethod: getString(row, table.index, "payment_method"),
+
+    accountName: getString(row, table.index, "account_name"),
+
+    settlementStatus: getString(row, table.index, "settlement_status"),
+
+    settlementId: getString(row, table.index, "settlement_id"),
+
+    fromAccount: getString(row, table.index, "from_account"),
+
+    toAccount: getString(row, table.index, "to_account"),
+
+    importBatch: getString(row, table.index, "import_batch"),
   }));
 
   return {
@@ -872,15 +947,26 @@ function getReviewTransactionsData(options) {
       "wallet",
       "intent",
       "payment_method",
+      "account_name",
       "raw_text",
       "note",
+      "from_account",
+      "to_account",
+      "settlement_status",
+      "settlement_id",
+      "import_batch",
+      "settlement_status",
     ],
     SHEETS.TRANSACTIONS,
   );
 
-  const filteredRows = table.rows.filter(
-    (row) => getString(row, table.index, "status") === "要確認",
-  );
+  const filteredRows = table.rows.filter((row) => {
+    const status = getString(row, table.index, "status");
+
+    const settlementStatus = getString(row, table.index, "settlement_status");
+
+    return status === "要確認" || settlementStatus === "review";
+  });
 
   filteredRows.sort((a, b) => {
     const dateA = new Date(a[table.index["transaction_date"]]);
@@ -917,9 +1003,21 @@ function getReviewTransactionsData(options) {
 
     paymentMethod: getString(row, table.index, "payment_method"),
 
+    accountName: getString(row, table.index, "account_name"),
+
     rawText: getString(row, table.index, "raw_text"),
 
     note: getString(row, table.index, "note"),
+
+    fromAccount: getString(row, table.index, "from_account"),
+
+    toAccount: getString(row, table.index, "to_account"),
+
+    settlementStatus: getString(row, table.index, "settlement_status"),
+
+    settlementId: getString(row, table.index, "settlement_id"),
+
+    importBatch: getString(row, table.index, "import_batch"),
   }));
 
   return {
@@ -952,5 +1050,143 @@ function getReviewTransactionCount() {
 
   return {
     count,
+  };
+}
+
+function getSettlementCandidatesData(options) {
+  const settings = options || {};
+
+  const transactionId = String(settings.transactionId || "").trim();
+
+  if (!transactionId) {
+    throw new Error("transactionIdは必須です");
+  }
+
+  const table = loadTransactions();
+
+  if (table.rows.length === 0) {
+    return {
+      items: [],
+    };
+  }
+
+  assertRequiredColumns(
+    table.index,
+    [
+      "id",
+      "transaction_date",
+      "amount",
+      "type",
+      "account_name",
+      "import_batch",
+      "to_account",
+      "settlement_status",
+      "settlement_id",
+    ],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const targetRow = table.rows.find((row) => {
+    return String(row[table.index["id"]] || "").trim() === transactionId;
+  });
+
+  if (!targetRow) {
+    throw new Error("クレカ引落取引が見つかりません");
+  }
+
+  const targetType = getString(targetRow, table.index, "type");
+
+  if (targetType !== "移動") {
+    throw new Error("移動取引ではありません");
+  }
+
+  const cardAccount = resolveCanonicalAccountName_(
+    getString(targetRow, table.index, "to_account"),
+  );
+
+  if (!cardAccount) {
+    return {
+      items: [],
+    };
+  }
+
+  const settlementAmount = getNumber(targetRow, table.index, "amount");
+
+  const groups = {};
+
+  for (const row of table.rows) {
+    const type = getString(row, table.index, "type");
+
+    // 銀行引落などの移動行は除外
+    if (type === "移動") {
+      continue;
+    }
+
+    const importBatch = getString(row, table.index, "import_batch");
+
+    if (!importBatch) {
+      continue;
+    }
+
+    // すでに別の引落と照合済みなら除外
+    const settlementId = getString(row, table.index, "settlement_id");
+
+    if (settlementId) {
+      continue;
+    }
+
+    const rowAccount = resolveCanonicalAccountName_(
+      getString(row, table.index, "account_name"),
+    );
+
+    if (rowAccount !== cardAccount) {
+      continue;
+    }
+
+    if (!groups[importBatch]) {
+      groups[importBatch] = {
+        importBatch,
+        cardAccount,
+        totalAmount: 0,
+        detailCount: 0,
+        firstDate: "",
+        lastDate: "",
+      };
+    }
+
+    const group = groups[importBatch];
+
+    group.totalAmount += getNumber(row, table.index, "amount");
+
+    group.detailCount++;
+
+    const date = formatApiDate_(row[table.index["transaction_date"]]);
+
+    if (!group.firstDate || date < group.firstDate) {
+      group.firstDate = date;
+    }
+
+    if (!group.lastDate || date > group.lastDate) {
+      group.lastDate = date;
+    }
+  }
+
+  const items = Object.values(groups)
+    .map((group) => ({
+      ...group,
+
+      settlementAmount,
+
+      difference: settlementAmount - group.totalAmount,
+    }))
+    .sort((a, b) => {
+      return Math.abs(a.difference) - Math.abs(b.difference);
+    });
+
+  return {
+    transactionId,
+    cardAccount,
+    settlementAmount,
+    items,
   };
 }

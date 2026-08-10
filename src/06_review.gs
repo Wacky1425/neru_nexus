@@ -6,7 +6,7 @@ const REVIEW_MANUAL_COLUMNS = [
   "expense_ratio_manual",
   "rule_keyword",
   "rule_target",
-  "learn"
+  "learn",
 ];
 
 const REVIEW_QUEUE_HEADERS = [
@@ -26,7 +26,7 @@ const REVIEW_QUEUE_HEADERS = [
   "sub_category",
   "status",
   "duplicate_key",
-  ...REVIEW_MANUAL_COLUMNS
+  ...REVIEW_MANUAL_COLUMNS,
 ];
 
 function loadReviewManualMap_() {
@@ -42,11 +42,7 @@ function loadReviewManualMap_() {
   }
 
   for (const row of table.rows) {
-    const merchant = getString(
-      row,
-      table.index,
-      "merchant"
-    );
+    const merchant = getString(row, table.index, "merchant");
 
     if (!merchant) {
       continue;
@@ -71,63 +67,30 @@ function buildMerchantCountMap_(rows, index) {
   const countMap = new Map();
 
   for (const row of rows) {
-    const merchant = getString(
-      row,
-      index,
-      "merchant"
-    );
+    const merchant = getString(row, index, "merchant");
 
     if (!merchant) {
       continue;
     }
 
-    countMap.set(
-      merchant,
-      (countMap.get(merchant) || 0) + 1
-    );
+    countMap.set(merchant, (countMap.get(merchant) || 0) + 1);
   }
 
   return countMap;
 }
 
-function buildReviewQueueRow_(
-  row,
-  index,
-  merchantCountMap,
-  manualMap
-    ) {
-  const merchant = getString(
-    row,
-    index,
-    "merchant"
-  );
+function buildReviewQueueRow_(row, index, merchantCountMap, manualMap) {
+  const merchant = getString(row, index, "merchant");
 
-  const itemName = getString(
-    row,
-    index,
-    "item_name"
-  );
+  const itemName = getString(row, index, "item_name");
 
-  const note = getString(
-    row,
-    index,
-    "note"
-  );
+  const note = getString(row, index, "note");
 
   const paymentMethod =
-    index["payment_method"] === undefined
-      ? ""
-      : row[index["payment_method"]];
+    index["payment_method"] === undefined ? "" : row[index["payment_method"]];
 
-  const rawTextPreview = [
-    merchant,
-    itemName,
-    note,
-    paymentMethod
-  ]
-    .filter(value =>
-      String(value || "").trim() !== ""
-    )
+  const rawTextPreview = [merchant, itemName, note, paymentMethod]
+    .filter((value) => String(value || "").trim() !== "")
     .join(" / ");
 
   const manual = manualMap.get(merchant) || {};
@@ -159,12 +122,12 @@ function buildReviewQueueRow_(
       : 0,
     manual.rule_keyword || merchant,
     manual.rule_target || "merchant",
-    manual.learn || ""
+    manual.learn || "",
   ];
 }
 
 function rebuildReviewQueue() {
-  const transactionTable = loadTable(SHEETS.TRANSACTIONS)
+  const transactionTable = loadTable(SHEETS.TRANSACTIONS);
 
   // 元の挙動を維持：
   // transactionsに明細がなければreview_queueを変更しない
@@ -187,34 +150,38 @@ function rebuildReviewQueue() {
       "major_category",
       "sub_category",
       "status",
-      "duplicate_key"
+      "settlement_status",
+      "duplicate_key",
     ],
-    "transactions"
+    SHEETS.TRANSACTIONS,
   );
 
   const manualMap = loadReviewManualMap_();
 
   const merchantCountMap = buildMerchantCountMap_(
     transactionTable.rows,
-    transactionTable.index
+    transactionTable.index,
   );
 
-  const targetRows = transactionTable.rows.filter(
-    row =>
-      getString(
-        row,
-        transactionTable.index,
-        "status"
-      ) === "要確認"
-  );
+  const targetRows = transactionTable.rows.filter((row) => {
+    const status = getString(row, transactionTable.index, "status");
 
-  const outputRows = targetRows.map(row =>
+    const settlementStatus = getString(
+      row,
+      transactionTable.index,
+      "settlement_status",
+    );
+
+    return status === "要確認" || settlementStatus === "review";
+  });
+
+  const outputRows = targetRows.map((row) =>
     buildReviewQueueRow_(
       row,
       transactionTable.index,
       merchantCountMap,
-      manualMap
-    )
+      manualMap,
+    ),
   );
 
   writeTable(
@@ -222,7 +189,7 @@ function rebuildReviewQueue() {
     1,
     1,
     REVIEW_QUEUE_HEADERS,
-    outputRows
+    outputRows,
   );
 }
 
@@ -235,13 +202,8 @@ function rebuildReviewSummary() {
       summarySheet,
       1,
       1,
-      [
-        "merchant",
-        "count",
-        "total_amount",
-        "sample_category"
-      ],
-      []
+      ["merchant", "count", "total_amount", "sample_category"],
+      [],
     );
 
     return;
@@ -249,52 +211,31 @@ function rebuildReviewSummary() {
 
   assertRequiredColumns(
     table.index,
-    [
-      "merchant",
-      "amount",
-      "major_category",
-      "sub_category"
-    ],
-    SHEETS.REVIEW_QUEUE
+    ["merchant", "amount", "major_category", "sub_category"],
+    SHEETS.REVIEW_QUEUE,
   );
 
   const summaryMap = new Map();
 
   for (const row of table.rows) {
-    const merchant = getString(
-      row,
-      table.index,
-      "merchant"
-    );
+    const merchant = getString(row, table.index, "merchant");
 
     if (!merchant) {
       continue;
     }
 
-    const amount = getNumber(
-      row,
-      table.index,
-      "amount"
-    );
+    const amount = getNumber(row, table.index, "amount");
 
-    const major = getString(
-      row,
-      table.index,
-      "major_category"
-    );
+    const major = getString(row, table.index, "major_category");
 
-    const sub = getString(
-      row,
-      table.index,
-      "sub_category"
-    );
+    const sub = getString(row, table.index, "sub_category");
 
     if (!summaryMap.has(merchant)) {
       summaryMap.set(merchant, {
         merchant,
         count: 0,
         totalAmount: 0,
-        sampleCategory: `${major} / ${sub}`
+        sampleCategory: `${major} / ${sub}`,
       });
     }
 
@@ -304,27 +245,21 @@ function rebuildReviewSummary() {
     summary.totalAmount += amount;
   }
 
-  const rows = Array
-    .from(summaryMap.values())
+  const rows = Array.from(summaryMap.values())
     .sort((a, b) => b.count - a.count)
-    .map(summary => [
+    .map((summary) => [
       summary.merchant,
       summary.count,
       summary.totalAmount,
-      summary.sampleCategory
+      summary.sampleCategory,
     ]);
 
   writeTable(
     summarySheet,
     1,
     1,
-    [
-      "merchant",
-      "count",
-      "total_amount",
-      "sample_category"
-    ],
-    rows
+    ["merchant", "count", "total_amount", "sample_category"],
+    rows,
   );
 }
 
@@ -345,38 +280,23 @@ function rebuildBulkReview() {
     "expense_ratio_manual",
     "rule_keyword",
     "rule_target",
-    "note"
+    "note",
   ];
 
   if (table.rows.length === 0) {
-    writeTable(
-      bulkSheet,
-      1,
-      1,
-      headers,
-      []
-    );
+    writeTable(bulkSheet, 1, 1, headers, []);
 
     return;
   }
 
   assertRequiredColumns(
     table.index,
-    [
-      "merchant",
-      "count",
-      "total_amount",
-      "sample_category"
-    ],
-    SHEETS.REVIEW_SUMMARY
+    ["merchant", "count", "total_amount", "sample_category"],
+    SHEETS.REVIEW_SUMMARY,
   );
 
-  const rows = table.rows.map(row => {
-    const merchant = getString(
-      row,
-      table.index,
-      "merchant"
-    );
+  const rows = table.rows.map((row) => {
+    const merchant = getString(row, table.index, "merchant");
 
     return [
       merchant,
@@ -391,17 +311,11 @@ function rebuildBulkReview() {
       0,
       merchant,
       "merchant",
-      ""
+      "",
     ];
   });
 
-  writeTable(
-    bulkSheet,
-    1,
-    1,
-    headers,
-    rows
-  );
+  writeTable(bulkSheet, 1, 1, headers, rows);
 }
 
 /**
@@ -413,16 +327,10 @@ function rebuildBulkReview() {
  */
 function getNextRulePriority_(rows, index) {
   const priorities = rows
-    .map(row =>
-      Number(row[index["priority"]] || 0)
-    )
-    .filter(priority =>
-      !isNaN(priority)
-    );
+    .map((row) => Number(row[index["priority"]] || 0))
+    .filter((priority) => !isNaN(priority));
 
-  return priorities.length > 0
-    ? Math.max(...priorities) + 10
-    : 100;
+  return priorities.length > 0 ? Math.max(...priorities) + 10 : 100;
 }
 
 /**
@@ -435,12 +343,10 @@ function getNextRulePriority_(rows, index) {
  * @return {Array<*>}
  */
 function buildRuleRow_(headers, rule) {
-  return headers.map(header => {
+  return headers.map((header) => {
     const columnName = String(header || "").trim();
 
-    return rule[columnName] !== undefined
-      ? rule[columnName]
-      : "";
+    return rule[columnName] !== undefined ? rule[columnName] : "";
   });
 }
 
@@ -474,22 +380,15 @@ function appendRules_(rules) {
       "sub_category",
       "purpose_type",
       "expense_ratio",
-      "status_result"
+      "status_result",
     ],
-    SHEETS.RULES
+    SHEETS.RULES,
   );
 
-  const rows = rules.map(rule =>
-    buildRuleRow_(table.headers, rule)
-  );
+  const rows = rules.map((rule) => buildRuleRow_(table.headers, rule));
 
   sheet
-    .getRange(
-      sheet.getLastRow() + 1,
-      1,
-      rows.length,
-      table.headers.length
-    )
+    .getRange(sheet.getLastRow() + 1, 1, rows.length, table.headers.length)
     .setValues(rows);
 
   return rows.length;
@@ -515,85 +414,44 @@ function learnRulesFromReviewQueue() {
       "expense_ratio_manual",
       "rule_keyword",
       "rule_target",
-      "learn"
+      "learn",
     ],
-    SHEETS.REVIEW_QUEUE
+    SHEETS.REVIEW_QUEUE,
   );
 
-  assertRequiredColumns(
-    ruleTable.index,
-    ["priority"],
-    SHEETS.RULES
-  );
+  assertRequiredColumns(ruleTable.index, ["priority"], SHEETS.RULES);
 
-  let nextPriority = getNextRulePriority_(
-    ruleTable.rows,
-    ruleTable.index
-  );
+  let nextPriority = getNextRulePriority_(ruleTable.rows, ruleTable.index);
 
   const newRules = [];
 
   for (const row of reviewTable.rows) {
-    const learnValue = getString(
-      row,
-      reviewTable.index,
-      "learn"
-    ).toUpperCase();
+    const learnValue = getString(row, reviewTable.index, "learn").toUpperCase();
 
-    if (
-      !["TRUE", "1", "YES"].includes(learnValue)
-    ) {
+    if (!["TRUE", "1", "YES"].includes(learnValue)) {
       continue;
     }
 
-    const merchant = getString(
-      row,
-      reviewTable.index,
-      "merchant"
-    );
+    const merchant = getString(row, reviewTable.index, "merchant");
 
     const keyword =
-      getString(
-        row,
-        reviewTable.index,
-        "rule_keyword"
-      ) || merchant;
+      getString(row, reviewTable.index, "rule_keyword") || merchant;
 
     const matchTarget =
-      getString(
-        row,
-        reviewTable.index,
-        "rule_target"
-      ) || "merchant";
+      getString(row, reviewTable.index, "rule_target") || "merchant";
 
-    const type = getString(
-      row,
-      reviewTable.index,
-      "type_manual"
-    );
+    const type = getString(row, reviewTable.index, "type_manual");
 
-    const major = getString(
-      row,
-      reviewTable.index,
-      "major_manual"
-    );
+    const major = getString(row, reviewTable.index, "major_manual");
 
-    const sub = getString(
-      row,
-      reviewTable.index,
-      "sub_manual"
-    );
+    const sub = getString(row, reviewTable.index, "sub_manual");
 
     if (!keyword || !type || !major || !sub) {
       continue;
     }
 
     const purpose =
-      getString(
-        row,
-        reviewTable.index,
-        "purpose_manual"
-      ) || "私用";
+      getString(row, reviewTable.index, "purpose_manual") || "私用";
 
     newRules.push({
       priority: nextPriority,
@@ -604,16 +462,11 @@ function learnRulesFromReviewQueue() {
       major_category: major,
       sub_category: sub,
       purpose_type: purpose,
-      expense_ratio: getNumber(
-        row,
-        reviewTable.index,
-        "expense_ratio_manual"
-      ),
+      expense_ratio: getNumber(row, reviewTable.index, "expense_ratio_manual"),
       status_result: "確定",
-      wallet_result:
-        purpose === "経費" ? "事業" : "生活",
+      wallet_result: purpose === "経費" ? "事業" : "生活",
       intent_result: guessIntent(sub),
-      note: "review_queueから追加"
+      note: "review_queueから追加",
     });
 
     nextPriority += 10;
@@ -645,92 +498,45 @@ function learnRulesFromBulkReview() {
       "expense_ratio_manual",
       "rule_keyword",
       "rule_target",
-      "note"
+      "note",
     ],
-    SHEETS.BULK_REVIEW
+    SHEETS.BULK_REVIEW,
   );
 
-  assertRequiredColumns(
-    ruleTable.index,
-    ["priority"],
-    SHEETS.RULES
-  );
+  assertRequiredColumns(ruleTable.index, ["priority"], SHEETS.RULES);
 
-  let nextPriority = getNextRulePriority_(
-    ruleTable.rows,
-    ruleTable.index
-  );
+  let nextPriority = getNextRulePriority_(ruleTable.rows, ruleTable.index);
 
   const newRules = [];
 
   for (const row of bulkTable.rows) {
-    const bulkSafe = getString(
-      row,
-      bulkTable.index,
-      "bulk_safe"
-    ).toUpperCase();
+    const bulkSafe = getString(row, bulkTable.index, "bulk_safe").toUpperCase();
 
-    if (
-      !["TRUE", "1", "YES"].includes(bulkSafe)
-    ) {
+    if (!["TRUE", "1", "YES"].includes(bulkSafe)) {
       continue;
     }
 
-    const merchant = getString(
-      row,
-      bulkTable.index,
-      "merchant"
-    );
+    const merchant = getString(row, bulkTable.index, "merchant");
 
-    const keyword =
-      getString(
-        row,
-        bulkTable.index,
-        "rule_keyword"
-      ) || merchant;
+    const keyword = getString(row, bulkTable.index, "rule_keyword") || merchant;
 
     const matchTarget =
-      getString(
-        row,
-        bulkTable.index,
-        "rule_target"
-      ) || "merchant";
+      getString(row, bulkTable.index, "rule_target") || "merchant";
 
-    const type = getString(
-      row,
-      bulkTable.index,
-      "type_manual"
-    );
+    const type = getString(row, bulkTable.index, "type_manual");
 
-    const major = getString(
-      row,
-      bulkTable.index,
-      "major_manual"
-    );
+    const major = getString(row, bulkTable.index, "major_manual");
 
-    const sub = getString(
-      row,
-      bulkTable.index,
-      "sub_manual"
-    );
+    const sub = getString(row, bulkTable.index, "sub_manual");
 
     if (!keyword || !type || !major || !sub) {
       continue;
     }
 
-    const purpose =
-      getString(
-        row,
-        bulkTable.index,
-        "purpose_manual"
-      ) || "私用";
+    const purpose = getString(row, bulkTable.index, "purpose_manual") || "私用";
 
     const note =
-      getString(
-        row,
-        bulkTable.index,
-        "note"
-      ) || "bulk_reviewから追加";
+      getString(row, bulkTable.index, "note") || "bulk_reviewから追加";
 
     newRules.push({
       priority: nextPriority,
@@ -741,16 +547,11 @@ function learnRulesFromBulkReview() {
       major_category: major,
       sub_category: sub,
       purpose_type: purpose,
-      expense_ratio: getNumber(
-        row,
-        bulkTable.index,
-        "expense_ratio_manual"
-      ),
+      expense_ratio: getNumber(row, bulkTable.index, "expense_ratio_manual"),
       status_result: "確定",
-      wallet_result:
-        purpose === "経費" ? "事業" : "生活",
+      wallet_result: purpose === "経費" ? "事業" : "生活",
       intent_result: guessIntent(sub),
-      note
+      note,
     });
 
     nextPriority += 10;
@@ -758,9 +559,7 @@ function learnRulesFromBulkReview() {
 
   const addedCount = appendRules_(newRules);
 
-  Logger.log(
-    `bulk rules追加: ${addedCount}件`
-  );
+  Logger.log(`bulk rules追加: ${addedCount}件`);
 }
 
 function buildRecurringCandidateMap_(transactionTable) {
@@ -774,56 +573,35 @@ function buildRecurringCandidateMap_(transactionTable) {
       "merchant",
       "amount",
       "major_category",
-      "sub_category"
+      "sub_category",
     ],
-    "transactions"
+    "transactions",
   );
 
   for (const row of transactionTable.rows) {
-    const type = getString(
-      row,
-      transactionTable.index,
-      "type"
-    );
+    const type = getString(row, transactionTable.index, "type");
 
     if (type !== "支出") {
       continue;
     }
 
-    const merchant = getString(
-      row,
-      transactionTable.index,
-      "merchant"
-    );
+    const merchant = getString(row, transactionTable.index, "merchant");
 
-    const amount = getNumber(
-      row,
-      transactionTable.index,
-      "amount"
-    );
+    const amount = getNumber(row, transactionTable.index, "amount");
 
     const yearMonth = normalizeYearMonth(
-      row[transactionTable.index["transaction_date"]]
+      row[transactionTable.index["transaction_date"]],
     );
 
     if (!merchant || !amount || !yearMonth) {
       continue;
     }
 
-    const major = getString(
-      row,
-      transactionTable.index,
-      "major_category"
-    );
+    const major = getString(row, transactionTable.index, "major_category");
 
-    const sub = getString(
-      row,
-      transactionTable.index,
-      "sub_category"
-    );
+    const sub = getString(row, transactionTable.index, "sub_category");
 
-    const amountBucket =
-      Math.round(amount / 100) * 100;
+    const amountBucket = Math.round(amount / 100) * 100;
 
     const key = `${merchant}|${amountBucket}`;
 
@@ -833,7 +611,7 @@ function buildRecurringCandidateMap_(transactionTable) {
         amountBucket,
         months: new Set(),
         amounts: [],
-        category: `${major} / ${sub}`
+        category: `${major} / ${sub}`,
       });
     }
 
@@ -848,22 +626,16 @@ function buildRecurringCandidateMap_(transactionTable) {
 
 function buildRecurringCandidateRows_(candidateMap) {
   return Array.from(candidateMap.values())
-    .filter(candidate =>
-      candidate.months.size >= 2
-    )
-    .map(candidate => {
-      const months = Array
-        .from(candidate.months)
-        .sort();
+    .filter((candidate) => candidate.months.size >= 2)
+    .map((candidate) => {
+      const months = Array.from(candidate.months).sort();
 
       const totalAmount = candidate.amounts.reduce(
         (total, amount) => total + amount,
-        0
+        0,
       );
 
-      const averageAmount = Math.round(
-        totalAmount / candidate.amounts.length
-      );
+      const averageAmount = Math.round(totalAmount / candidate.amounts.length);
 
       return [
         candidate.merchant,
@@ -874,7 +646,7 @@ function buildRecurringCandidateRows_(candidateMap) {
         averageAmount,
         candidate.category,
         "候補",
-        ""
+        "",
       ];
     })
     .sort((a, b) => {
@@ -889,15 +661,9 @@ function buildRecurringCandidateRows_(candidateMap) {
 function rebuildRecurringCandidates() {
   const transactionTable = loadTransactions();
 
-  const candidateMap =
-    buildRecurringCandidateMap_(
-      transactionTable
-    );
+  const candidateMap = buildRecurringCandidateMap_(transactionTable);
 
-  const rows =
-    buildRecurringCandidateRows_(
-      candidateMap
-    );
+  const rows = buildRecurringCandidateRows_(candidateMap);
 
   writeTable(
     getRequiredSheet(SHEETS.RECURRING_CANDIDATES),
@@ -912,52 +678,32 @@ function rebuildRecurringCandidates() {
       "avg_amount",
       "category",
       "status",
-      "note"
+      "note",
     ],
-    rows
+    rows,
   );
 
-  Logger.log(
-    `定期支払い候補: ${rows.length}件`
-  );
+  Logger.log(`定期支払い候補: ${rows.length}件`);
 }
 
 function addRuleFromTransaction_(data) {
-  const merchant = String(
-    data.merchant || ""
-  ).trim();
+  const merchant = String(data.merchant || "").trim();
 
-  const type = String(
-    data.type || ""
-  ).trim();
+  const type = String(data.type || "").trim();
 
-  const majorCategory = String(
-    data.majorCategory || ""
-  ).trim();
+  const majorCategory = String(data.majorCategory || "").trim();
 
-  const subCategory = String(
-    data.subCategory || ""
-  ).trim();
+  const subCategory = String(data.subCategory || "").trim();
 
   if (!merchant) {
-    throw new Error(
-      "ルール登録にはmerchantが必要です"
-    );
+    throw new Error("ルール登録にはmerchantが必要です");
   }
 
-  if (
-    !type ||
-    !majorCategory ||
-    !subCategory
-  ) {
-    throw new Error(
-      "ルール登録には分類情報が必要です"
-    );
+  if (!type || !majorCategory || !subCategory) {
+    throw new Error("ルール登録には分類情報が必要です");
   }
 
-  const ruleTable = loadTable(
-    SHEETS.RULES
-  );
+  const ruleTable = loadTable(SHEETS.RULES);
 
   assertRequiredColumns(
     ruleTable.index,
@@ -974,62 +720,33 @@ function addRuleFromTransaction_(data) {
       "status_result",
       "note",
       "wallet_result",
-      "intent_result"
+      "intent_result",
     ],
-    SHEETS.RULES
+    SHEETS.RULES,
   );
 
   const duplicate = ruleTable.rows.some(
-    row =>
-      getString(
-        row,
-        ruleTable.index,
-        "match_target"
-      ) === "merchant" &&
-      getString(
-        row,
-        ruleTable.index,
-        "keyword"
-      ) === merchant &&
-      getString(
-        row,
-        ruleTable.index,
-        "rule_type"
-      ) === "equals"
+    (row) =>
+      getString(row, ruleTable.index, "match_target") === "merchant" &&
+      getString(row, ruleTable.index, "keyword") === merchant &&
+      getString(row, ruleTable.index, "rule_type") === "equals",
   );
 
   if (duplicate) {
     return {
       added: false,
-      reason: "duplicate"
+      reason: "duplicate",
     };
   }
 
-  const priority = getNextRulePriority_(
-    ruleTable.rows,
-    ruleTable.index
-  );
+  const priority = getNextRulePriority_(ruleTable.rows, ruleTable.index);
 
-  const purpose =
-    String(
-      data.purposeType || "私用"
-    ).trim() || "私用";
+  const purpose = String(data.purposeType || "私用").trim() || "私用";
 
   const wallet =
-    String(
-      data.wallet || ""
-    ).trim() ||
-    (
-      purpose === "経費"
-        ? "事業"
-        : "生活"
-    );
+    String(data.wallet || "").trim() || (purpose === "経費" ? "事業" : "生活");
 
-  const intent =
-    String(
-      data.intent || ""
-    ).trim() ||
-    guessIntent(subCategory);
+  const intent = String(data.intent || "").trim() || guessIntent(subCategory);
 
   const addedCount = appendRules_([
     {
@@ -1041,21 +758,16 @@ function addRuleFromTransaction_(data) {
       major_category: majorCategory,
       sub_category: subCategory,
       purpose_type: purpose,
-      expense_ratio: Number(
-        data.expenseRatio || 0
-      ),
+      expense_ratio: Number(data.expenseRatio || 0),
       status_result: "確定",
       note: "アプリの要確認から追加",
       wallet_result: wallet,
-      intent_result: intent
-    }
+      intent_result: intent,
+    },
   ]);
 
   return {
     added: addedCount > 0,
-    reason:
-      addedCount > 0
-        ? "added"
-        : "not_added"
+    reason: addedCount > 0 ? "added" : "not_added",
   };
 }

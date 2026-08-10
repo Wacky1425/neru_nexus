@@ -128,6 +128,8 @@ class _ReviewPageState extends State<ReviewPage> {
                     );
                   }
                   final transaction = items[index - 1];
+                  final isSettlementReview =
+                      transaction.settlementStatus == 'review';
 
                   final displayName = transaction.itemName.trim().isNotEmpty
                       ? transaction.itemName.trim()
@@ -140,18 +142,32 @@ class _ReviewPageState extends State<ReviewPage> {
                       horizontal: 8,
                       vertical: 6,
                     ),
-                    leading: const CircleAvatar(
-                      child: Icon(Icons.warning_amber_rounded),
+                    leading: CircleAvatar(
+                      child: Icon(
+                        isSettlementReview
+                            ? Icons.swap_horiz_rounded
+                            : Icons.warning_amber_rounded,
+                      ),
                     ),
                     title: Text(
                       displayName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    subtitle: Text(
-                      '${transaction.majorCategory}'
-                      ' / '
-                      '${transaction.subCategory}',
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${transaction.majorCategory}'
+                          ' / '
+                          '${transaction.subCategory}',
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          isSettlementReview ? '移動先またはクレカ照合を確認' : 'カテゴリを確認',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                     ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -170,7 +186,7 @@ class _ReviewPageState extends State<ReviewPage> {
                             MaterialPageRoute(
                               builder: (_) => TransactionDetailPage(
                                 transaction: transaction,
-                                 fromReview: true,
+                                fromReview: true,
                               ),
                             ),
                           );

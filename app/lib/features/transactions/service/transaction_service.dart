@@ -1,7 +1,5 @@
 import 'dart:convert';
-
 import 'package:http/http.dart' as http;
-
 import '../../../core/constants/api_constants.dart';
 import '../transaction_form_page.dart';
 import '../model/transaction_model.dart';
@@ -14,6 +12,7 @@ class TransactionService {
     String? yearMonth,
     String? keyword,
     String? majorCategory,
+    String? settlementId,
     bool reviewOnly = false,
   }) async {
     final queryParameters = <String, String>{
@@ -32,6 +31,10 @@ class TransactionService {
 
     if (majorCategory != null && majorCategory.trim().isNotEmpty) {
       queryParameters['majorCategory'] = majorCategory.trim();
+    }
+
+    if (settlementId != null && settlementId.trim().isNotEmpty) {
+      queryParameters['settlementId'] = settlementId.trim();
     }
 
     queryParameters['reviewOnly'] = reviewOnly.toString();
@@ -199,7 +202,11 @@ class TransactionService {
         'key': ApiConstants.apiKey,
         'id': id,
         'transactionDate': _formatDate(transaction.date),
-        'type': transaction.type == TransactionType.expense ? '支出' : '収入',
+        'type': switch (transaction.type) {
+          TransactionType.expense => '支出',
+          TransactionType.income => '収入',
+          TransactionType.transfer => '移動',
+        },
         'amount': transaction.amount,
         'majorCategory': transaction.majorCategory,
         'subCategory': transaction.subCategory,
@@ -209,6 +216,8 @@ class TransactionService {
         'memo': transaction.memo ?? '',
         'saveRule': saveRule,
         'merchant': merchant,
+        'fromAccount': transaction.fromAccount ?? '',
+        'toAccount': transaction.toAccount ?? '',
       });
 
       final streamedResponse = await client.send(request);
@@ -386,5 +395,145 @@ class TransactionService {
     }
 
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  Future<void> confirmSettlement({
+    required String settlementTransactionId,
+    required String importBatch,
+  }) async {
+    if (settlementTransactionId.trim().isEmpty) {
+      throw Exception('引落取引IDがありません');
+    }
+
+    if (importBatch.trim().isEmpty) {
+      throw Exception('カード明細の取込情報がありません');
+    }
+
+    final uri = Uri.parse(ApiConstants.baseUrl);
+    final client = http.Client();
+
+    try {
+      final request = http.Request('POST', uri);
+
+      request.followRedirects = false;
+
+      request.headers.addAll({'Content-Type': 'application/json'});
+
+      request.body = jsonEncode({
+        'action': 'settlement_confirm',
+        'key': ApiConstants.apiKey,
+        'settlementTransactionId': settlementTransactionId,
+        'importBatch': importBatch,
+      });
+
+      final streamedResponse = await client.send(request);
+
+      final response = await _resolveResponse(client, streamedResponse);
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          '手動照合に失敗しました: '
+          '${response.statusCode}',
+        );
+      }
+
+      final dynamic decodedValue;
+
+      try {
+        decodedValue = jsonDecode(response.body);
+      } on FormatException {
+        throw Exception('手動照合APIから不正なレスポンスが返されました');
+      }
+
+      if (decodedValue is! Map) {
+        throw Exception('手動照合APIの形式が正しくありません');
+      }
+
+      final decoded = Map<String, dynamic>.from(decodedValue);
+
+      if (decoded['success'] != true) {
+        final error = decoded['error'];
+
+        if (error is Map) {
+          throw Exception(error['message']?.toString() ?? '手動照合に失敗しました');
+        }
+
+        throw Exception(error?.toString() ?? '手動照合に失敗しました');
+      }
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<List<SettlementCandidate>> fetchSettlementCandidates({
+    required String transactionId,
+  }) async {
+    if (transactionId.trim().isEmpty) {
+      return [];
+    }
+
+    final uri = Uri.parse(ApiConstants.baseUrl).replace(
+      queryParameters: {
+        'action': 'settlement_candidates',
+        'key': ApiConstants.apiKey,
+        'transactionId': transactionId.trim(),
+      },
+    );
+
+    final response = await http.get(uri);
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        '照合候補の取得に失敗しました: '
+        '${response.statusCode}',
+      );
+    }
+
+    final dynamic decodedValue;
+
+    try {
+      decodedValue = jsonDecode(response.body);
+    } on FormatException {
+      throw Exception(
+        '照合候補APIから'
+        '不正なレスポンスが返されました',
+      );
+    }
+
+    if (decodedValue is! Map) {
+      throw Exception('照合候補APIの形式が正しくありません');
+    }
+
+    final decoded = Map<String, dynamic>.from(decodedValue);
+
+    if (decoded['success'] != true) {
+      final error = decoded['error'];
+
+      if (error is Map) {
+        throw Exception(error['message']?.toString() ?? '照合候補の取得に失敗しました');
+      }
+
+      throw Exception(error?.toString() ?? '照合候補の取得に失敗しました');
+    }
+
+    final data = decoded['data'];
+
+    if (data is! Map) {
+      return [];
+    }
+
+    final items = data['items'];
+
+    if (items is! List) {
+      return [];
+    }
+
+    return items
+        .whereType<Map>()
+        .map(
+          (item) =>
+              SettlementCandidate.fromJson(Map<String, dynamic>.from(item)),
+        )
+        .toList();
   }
 }
