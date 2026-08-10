@@ -259,3 +259,34 @@ function clearTableCache(sheetName) {
     delete TABLE_CACHE[name];
   });
 }
+
+function resolveCanonicalAccountName_(rawName) {
+  const target = String(rawName || "")
+    .normalize("NFKC")
+    .trim();
+
+  if (!target) {
+    return "";
+  }
+
+  const rows = loadObjects(
+    SHEETS.ACCOUNT_ALIAS
+  );
+
+  for (const row of rows) {
+    const raw = String(
+      row.raw_account_name || ""
+    )
+      .normalize("NFKC")
+      .trim();
+
+    if (raw === target) {
+      return String(
+        row.canonical_account_name || ""
+      ).trim();
+    }
+  }
+
+  // マスタに無ければ元の名前を返す
+  return target;
+}

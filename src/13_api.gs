@@ -16,19 +16,16 @@ function getHomeData() {
     recentTransactions: getTransactionsData({
       limit: 3,
     }).items,
-    generatedAt: new Date().toISOString()
+    generatedAt: new Date().toISOString(),
   };
 }
 
 function getApiKey_() {
-  const apiKey = PropertiesService
-    .getScriptProperties()
-    .getProperty("NERU_API_KEY");
+  const apiKey =
+    PropertiesService.getScriptProperties().getProperty("NERU_API_KEY");
 
   if (!apiKey) {
-    throw new Error(
-      "スクリプトプロパティ NERU_API_KEY が設定されていません"
-    );
+    throw new Error("スクリプトプロパティ NERU_API_KEY が設定されていません");
   }
 
   return apiKey;
@@ -42,60 +39,45 @@ function isApiAuthorized_(requestKey) {
 }
 
 function createJsonResponse_(data, status) {
-  return ContentService
-    .createTextOutput(
-      JSON.stringify({
-        success: status !== "error",
-        status,
-        data
-      })
-    )
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(
+    JSON.stringify({
+      success: status !== "error",
+      status,
+      data,
+    }),
+  ).setMimeType(ContentService.MimeType.JSON);
 }
 
 function createJsonErrorResponse_(message) {
-  return ContentService
-    .createTextOutput(
-      JSON.stringify({
-        success: false,
-        status: "error",
-        error: {
-          message: String(message || "不明なエラー")
-        }
-      })
-    )
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(
+    JSON.stringify({
+      success: false,
+      status: "error",
+      error: {
+        message: String(message || "不明なエラー"),
+      },
+    }),
+  ).setMimeType(ContentService.MimeType.JSON);
 }
 
 function doGet(e) {
   try {
-    const parameters = e && e.parameter
-      ? e.parameter
-      : {};
+    const parameters = e && e.parameter ? e.parameter : {};
 
     if (!isApiAuthorized_(parameters.key)) {
-      return createJsonErrorResponse_(
-        "認証に失敗しました"
-      );
+      return createJsonErrorResponse_("認証に失敗しました");
     }
 
-    const action = String(
-      parameters.action || ""
-    ).trim();
+    const action = String(parameters.action || "").trim();
 
     switch (action) {
       case "home":
-        return createJsonResponse_(
-          getHomeData(),
-          "ok"
-        );
+        return createJsonResponse_(getHomeData(), "ok");
 
       case "analytics":
         return createJsonResponse_(
-          getAnalyticsData(
-            parameters.yearMonth
-          ),
-          "ok"
+          getAnalyticsData(parameters.yearMonth),
+          "ok",
         );
 
       case "health":
@@ -103,70 +85,50 @@ function doGet(e) {
           {
             service: "Neru Nexus API",
             running: true,
-            generatedAt: new Date().toISOString()
+            generatedAt: new Date().toISOString(),
           },
-          "ok"
+          "ok",
         );
 
-        case "transactions":
-  return createJsonResponse_(
-    getTransactionsData({
-      limit:
-        parameters.limit,
-      offset:
-        parameters.offset,
-      yearMonth:
-        parameters.yearMonth,
-      keyword:
-        parameters.keyword,
-      majorCategory:
-        parameters.majorCategory,
-      reviewOnly:
-        parameters.reviewOnly
-    }),
-    "ok"
-  );
+      case "transactions":
+        return createJsonResponse_(
+          getTransactionsData({
+            limit: parameters.limit,
+            offset: parameters.offset,
+            yearMonth: parameters.yearMonth,
+            keyword: parameters.keyword,
+            majorCategory: parameters.majorCategory,
+            reviewOnly: parameters.reviewOnly,
+          }),
+          "ok",
+        );
 
-        case "categories":
-          return createJsonResponse_(
-            getCategoriesData(),
-            "ok"
-          );
+      case "categories":
+        return createJsonResponse_(getCategoriesData(), "ok");
 
-        case "master":
-          return createJsonResponse_(
-            getMasterData(),
-            "ok"
-          );
+      case "master":
+        return createJsonResponse_(getMasterData(), "ok");
 
-        case "review_transactions":
-          return createJsonResponse_(
-            getReviewTransactionsData({
-              limit: parameters.limit,
-              offset: parameters.offset
-            }),
-            "ok"
-          );
+      case "review_transactions":
+        return createJsonResponse_(
+          getReviewTransactionsData({
+            limit: parameters.limit,
+            offset: parameters.offset,
+          }),
+          "ok",
+        );
 
-        case "review_count":
-          return createJsonResponse_(
-            getReviewTransactionCount(),
-            "ok"
-          );
+      case "review_count":
+        return createJsonResponse_(getReviewTransactionCount(), "ok");
 
       default:
-        return createJsonErrorResponse_(
-          `未対応のactionです: ${action}`
-        );
+        return createJsonErrorResponse_(`未対応のactionです: ${action}`);
     }
-
   } catch (error) {
     console.error(error);
 
     return createJsonErrorResponse_(
-      error && error.message
-        ? error.message
-        : error
+      error && error.message ? error.message : error,
     );
   }
 }
@@ -174,26 +136,16 @@ function doGet(e) {
 function doPost(e) {
   try {
     const data = JSON.parse(
-      e &&
-      e.postData &&
-      e.postData.contents
-        ? e.postData.contents
-        : "{}"
+      e && e.postData && e.postData.contents ? e.postData.contents : "{}",
     );
 
-    const key = String(
-      data.key || ""
-    ).trim();
+    const key = String(data.key || "").trim();
 
     if (!isApiAuthorized_(key)) {
-      return createJsonErrorResponse_(
-        "認証に失敗しました"
-      );
+      return createJsonErrorResponse_("認証に失敗しました");
     }
 
-    const action = String(
-      data.action || ""
-    ).trim();
+    const action = String(data.action || "").trim();
 
     switch (action) {
       case "transaction_create":
@@ -218,220 +170,134 @@ function doPost(e) {
         return updateCategoryFromApp_(data);
 
       default:
-        return createJsonErrorResponse_(
-          `未対応のactionです: ${action}`
-        );
+        return createJsonErrorResponse_(`未対応のactionです: ${action}`);
     }
-
   } catch (error) {
     console.error(error);
 
     return createJsonErrorResponse_(
-      error && error.message
-        ? error.message
-        : String(error)
+      error && error.message ? error.message : String(error),
     );
   }
 }
 
 function createTransactionFromApp_(data) {
-  const transactionDate = String(
-    data.transactionDate || ""
-  ).trim();
+  const transactionDate = String(data.transactionDate || "").trim();
 
-  const type = String(
-    data.type || ""
-  ).trim();
+  const type = String(data.type || "").trim();
 
-  const amount = Number(
-    data.amount || 0
-  );
+  const amount = Number(data.amount || 0);
 
-  const majorCategory = String(
-    data.majorCategory || ""
-  ).trim();
+  const majorCategory = String(data.majorCategory || "").trim();
 
-  const subCategory = String(
-    data.subCategory || ""
-  ).trim();
+  const subCategory = String(data.subCategory || "").trim();
 
-  const title = String(
-    data.title || ""
-  ).trim();
+  const title = String(data.title || "").trim();
 
-  const paymentMethod = String(
-    data.paymentMethod || ""
-  ).trim();
+  const paymentMethod = String(data.paymentMethod || "").trim();
 
-  const status = String(
-    data.status || "要確認"
-  ).trim();
+  const status = String(data.status || "要確認").trim();
 
-  const accountName = String(
-  data.accountName || ""
-  ).trim();
+  const accountName = String(data.accountName || "").trim();
 
-  const memo = String(
-    data.memo || ""
-  ).trim();
+  const memo = String(data.memo || "").trim();
 
   if (!transactionDate) {
-    throw new Error(
-      "transactionDateは必須です"
-    );
+    throw new Error("transactionDateは必須です");
   }
 
-  const parsedDate = new Date(
-    `${transactionDate}T00:00:00+09:00`
-  );
+  const parsedDate = new Date(`${transactionDate}T00:00:00+09:00`);
 
   if (isNaN(parsedDate.getTime())) {
-    throw new Error(
-      "transactionDateの形式が不正です"
-    );
+    throw new Error("transactionDateの形式が不正です");
   }
 
-  if (
-    type !== "支出" &&
-    type !== "収入"
-  ) {
-    throw new Error(
-      "typeは支出または収入を指定してください"
-    );
+  if (type !== "支出" && type !== "収入") {
+    throw new Error("typeは支出または収入を指定してください");
   }
 
-  if (
-    !Number.isFinite(amount) ||
-    amount <= 0
-  ) {
-    throw new Error(
-      "amountは1以上で指定してください"
-    );
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("amountは1以上で指定してください");
   }
 
   if (!majorCategory) {
-  throw new Error(
-    "majorCategoryは必須です"
-  );
+    throw new Error("majorCategoryは必須です");
   }
 
   if (!subCategory) {
-    throw new Error(
-      "subCategoryは必須です"
-    );
+    throw new Error("subCategoryは必須です");
   }
 
   if (!title) {
-    throw new Error(
-      "titleは必須です"
-    );
+    throw new Error("titleは必須です");
   }
 
   if (!paymentMethod) {
-    throw new Error(
-      "paymentMethodは必須です"
-    );
+    throw new Error("paymentMethodは必須です");
   }
 
-  if (
-  status !== "確定" &&
-  status !== "要確認"
-  ) {
-    throw new Error(
-      "statusは確定または要確認を指定してください"
-    );
+  if (status !== "確定" && status !== "要確認") {
+    throw new Error("statusは確定または要確認を指定してください");
   }
 
-  const purposeType =
-  type === "収入"
-    ? "私用"
-    : guessPurposeType(subCategory);
+  const purposeType = type === "収入" ? "私用" : guessPurposeType(subCategory);
 
-  const wallet =
-    purposeType === "経費"
-      ? "事業"
-      : "生活";
+  const wallet = purposeType === "経費" ? "事業" : "生活";
 
   const tx = {
-    transaction_date:
-      transactionDate,
+    transaction_date: transactionDate,
 
-    merchant:
-      normalizeMerchant(title),
+    merchant: normalizeMerchant(title),
 
-    item_name:
-      title,
+    item_name: title,
 
     amount,
 
-    note:
-      memo,
+    note: memo,
 
-    source_type:
-      "Neru Nexus App",
+    source_type: "Neru Nexus App",
 
-    payment_method:
-      paymentMethod,
+    payment_method: paymentMethod,
 
-    account_name:
-      "App Manual",
+    account_name: "App Manual",
 
-    evidence_url:
-      "",
+    evidence_url: "",
 
-    original_image_url:
-      "",
+    original_image_url: "",
 
-    import_batch:
-      Utilities.formatDate(
-        new Date(),
-        "Asia/Tokyo",
-        "yyyyMMdd_HHmmss"
-      ),
+    import_batch: Utilities.formatDate(
+      new Date(),
+      "Asia/Tokyo",
+      "yyyyMMdd_HHmmss",
+    ),
 
     type,
 
-    major_category:
-    majorCategory,
+    major_category: majorCategory,
 
-  sub_category:
-  subCategory,
+    sub_category: subCategory,
 
-    purpose_type:
-      purposeType,
+    purpose_type: purposeType,
 
-    expense_ratio:
-  type === "支出"
-    ? guessExpenseRatio(subCategory)
-    : 0,
+    expense_ratio: type === "支出" ? guessExpenseRatio(subCategory) : 0,
 
-    status:
-      status,
+    status: status,
 
     account_name: accountName,
 
     wallet,
 
-    intent:
-      type === "収入"
-        ? "収入"
-        : guessIntent(subCategory)
+    intent: type === "収入" ? "収入" : guessIntent(subCategory),
   };
 
-  const result = addTransactions([
-    tx
-  ]);
+  const result = addTransactions([tx]);
 
   if (result.addedCount === 0) {
     if (result.skippedCount > 0) {
-      throw new Error(
-        "同じ内容の取引がすでに登録されています"
-      );
+      throw new Error("同じ内容の取引がすでに登録されています");
     }
 
-    throw new Error(
-      "取引を登録できませんでした"
-    );
+    throw new Error("取引を登録できませんでした");
   }
 
   rebuildReviewQueue();
@@ -440,168 +306,103 @@ function createTransactionFromApp_(data) {
 
   return createJsonResponse_(
     {
-      addedCount:
-        result.addedCount,
+      addedCount: result.addedCount,
 
-      skippedCount:
-        result.skippedCount,
+      skippedCount: result.skippedCount,
 
-      source:
-        "app",
+      source: "app",
 
       transaction: {
-        transactionDate:
-          tx.transaction_date,
+        transactionDate: tx.transaction_date,
 
-        type:
-          tx.type,
+        type: tx.type,
 
-        amount:
-          tx.amount,
+        amount: tx.amount,
 
-        majorCategory:
-  tx.major_category,
+        majorCategory: tx.major_category,
 
-  subCategory:
-  tx.sub_category,
+        subCategory: tx.sub_category,
 
-        title:
-          tx.item_name,
+        title: tx.item_name,
 
-        paymentMethod:
-          tx.payment_method,
+        paymentMethod: tx.payment_method,
 
-        memo:
-          tx.note,
+        memo: tx.note,
 
-        wallet:
-          tx.wallet,
+        wallet: tx.wallet,
 
-        purposeType:
-          tx.purpose_type
-      }
+        purposeType: tx.purpose_type,
+      },
     },
-    "ok"
+    "ok",
   );
 }
 
 function updateTransactionFromApp_(data) {
-  const id = String(
-    data.id || ""
-  ).trim();
+  const id = String(data.id || "").trim();
 
-  const transactionDate = String(
-    data.transactionDate || ""
-  ).trim();
+  const transactionDate = String(data.transactionDate || "").trim();
 
-  const type = String(
-    data.type || ""
-  ).trim();
+  const type = String(data.type || "").trim();
 
-  const amount = Number(
-    data.amount || 0
-  );
+  const amount = Number(data.amount || 0);
 
-  const majorCategory = String(
-    data.majorCategory || ""
-  ).trim();
+  const majorCategory = String(data.majorCategory || "").trim();
 
-  const subCategory = String(
-    data.subCategory || ""
-  ).trim();
+  const subCategory = String(data.subCategory || "").trim();
 
-  const title = String(
-    data.title || ""
-  ).trim();
+  const title = String(data.title || "").trim();
 
-  const paymentMethod = String(
-    data.paymentMethod || ""
-  ).trim();
+  const paymentMethod = String(data.paymentMethod || "").trim();
 
-  const status = String(
-    data.status || "要確認"
-  ).trim();
+  const status = String(data.status || "要確認").trim();
 
-  const memo = String(
-    data.memo || ""
-  ).trim();
+  const memo = String(data.memo || "").trim();
 
-  const saveRule = toBoolean_(
-  data.saveRule,
-  false
-);
+  const saveRule = toBoolean_(data.saveRule, false);
 
-const ruleMerchant = String(
-  data.merchant || ""
-).trim();
+  const ruleMerchant = String(data.merchant || "").trim();
 
   if (!id) {
     throw new Error("idは必須です");
   }
 
   if (!transactionDate) {
-    throw new Error(
-      "transactionDateは必須です"
-    );
+    throw new Error("transactionDateは必須です");
   }
 
-  if (
-    type !== "支出" &&
-    type !== "収入"
-  ) {
-    throw new Error(
-      "typeは支出または収入を指定してください"
-    );
+  if (type !== "支出" && type !== "収入") {
+    throw new Error("typeは支出または収入を指定してください");
   }
 
-  if (
-    !Number.isFinite(amount) ||
-    amount <= 0
-  ) {
-    throw new Error(
-      "amountは1以上で指定してください"
-    );
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("amountは1以上で指定してください");
   }
 
   if (!majorCategory) {
-    throw new Error(
-      "majorCategoryは必須です"
-    );
+    throw new Error("majorCategoryは必須です");
   }
 
   if (!subCategory) {
-    throw new Error(
-      "subCategoryは必須です"
-    );
+    throw new Error("subCategoryは必須です");
   }
 
   if (!title) {
-    throw new Error(
-      "titleは必須です"
-    );
+    throw new Error("titleは必須です");
   }
 
   if (!paymentMethod) {
-    throw new Error(
-      "paymentMethodは必須です"
-    );
+    throw new Error("paymentMethodは必須です");
   }
 
-  if (
-  status !== "確定" &&
-  status !== "要確認"
-  ) {
-    throw new Error(
-      "statusは確定または要確認を指定してください"
-    );
+  if (status !== "確定" && status !== "要確認") {
+    throw new Error("statusは確定または要確認を指定してください");
   }
 
   const table = loadTransactions();
 
   if (table.rows.length === 0) {
-    throw new Error(
-      "更新対象の取引が見つかりません"
-    );
+    throw new Error("更新対象の取引が見つかりません");
   }
 
   assertRequiredColumns(
@@ -631,218 +432,144 @@ const ruleMerchant = String(
       "duplicate_key",
       "status",
       "wallet",
-      "intent"
+      "intent",
+      "wallet",
+      "intent",
+      "from_account",
+      "to_account",
+      "settlement_status",
+      "settlement_id",
     ],
-    SHEETS.TRANSACTIONS
+    SHEETS.TRANSACTIONS,
   );
 
   const rowIndex = table.rows.findIndex(
-    row =>
-      String(
-        row[table.index["id"]] || ""
-      ).trim() === id
+    (row) => String(row[table.index["id"]] || "").trim() === id,
   );
 
   if (rowIndex === -1) {
-    throw new Error(
-      "更新対象の取引が見つかりません"
-    );
+    throw new Error("更新対象の取引が見つかりません");
   }
 
-  const existingRow =
-    table.rows[rowIndex];
+  const existingRow = table.rows[rowIndex];
 
-  const purposeType =
-    type === "収入"
-      ? "私用"
-      : guessPurposeType(
-          subCategory
-        );
+  const purposeType = type === "収入" ? "私用" : guessPurposeType(subCategory);
 
-  const expenseRatio =
-    type === "支出"
-      ? guessExpenseRatio(
-          subCategory
-        )
-      : 0;
+  const expenseRatio = type === "支出" ? guessExpenseRatio(subCategory) : 0;
 
-  const wallet =
-    purposeType === "経費"
-      ? "事業"
-      : "生活";
+  const wallet = purposeType === "経費" ? "事業" : "生活";
 
-  const intent =
-    type === "収入"
-      ? "収入"
-      : guessIntent(
-          subCategory
-        );
+  const intent = type === "収入" ? "収入" : guessIntent(subCategory);
 
   const updatedTransaction = {
-    transaction_date:
-      transactionDate,
+    transaction_date: transactionDate,
 
     type,
 
     source_type:
-      getString(
-        existingRow,
-        table.index,
-        "source_type"
-      ) || "Neru Nexus App",
+      getString(existingRow, table.index, "source_type") || "Neru Nexus App",
 
-    payment_method:
-      paymentMethod,
+    payment_method: paymentMethod,
 
     account_name:
-      getString(
-        existingRow,
-        table.index,
-        "account_name"
-      ) || "App Manual",
+      getString(existingRow, table.index, "account_name") || "App Manual",
 
-    merchant:
-      normalizeMerchant(title),
+    merchant: normalizeMerchant(title),
 
-    item_name:
-      title,
+    item_name: title,
 
-    raw_text:
-  getString(
-    existingRow,
-    table.index,
-    "raw_text"
-  ),
+    raw_text: getString(existingRow, table.index, "raw_text"),
 
     amount,
 
-    major_category:
-      majorCategory,
+    major_category: majorCategory,
 
-    sub_category:
-      subCategory,
+    sub_category: subCategory,
 
-    purpose_type:
-      purposeType,
+    purpose_type: purposeType,
 
-    expense_ratio:
-      expenseRatio,
+    expense_ratio: expenseRatio,
 
-    note:
-      memo,
+    note: memo,
 
-    evidence_url:
-      getString(
-        existingRow,
-        table.index,
-        "evidence_url"
-      ),
+    evidence_url: getString(existingRow, table.index, "evidence_url"),
 
-    original_image_url:
-      getString(
-        existingRow,
-        table.index,
-        "original_image_url"
-      ),
-
-    import_batch:
-      getString(
-        existingRow,
-        table.index,
-        "import_batch"
-      ),
-
-    status:
-      status,
-
-    wallet,
-
-    intent
-  };
-
-  const recordedAt =
-    existingRow[
-      table.index["recorded_at"]
-    ] || new Date();
-
-  const yearMonth =
-    resolveTransactionYearMonth(
-      transactionDate,
-      recordedAt
-    );
-
-  const duplicateKey =
-    buildDuplicateKey(
-      updatedTransaction
-    );
-
-  const updatedRow =
-    buildTransactionRow(
-      updatedTransaction,
-      id,
-      recordedAt,
-      yearMonth,
-      duplicateKey
-    );
-
-  const sheet = SS.getSheetByName(
-    SHEETS.TRANSACTIONS
-  );
-
-  if (!sheet) {
-    throw new Error(
-      "transactionsシートがありません"
-    );
-  }
-
-  const sheetRowNumber =
-    rowIndex + 2;
-
-  sheet.getRange(
-    sheetRowNumber,
-    1,
-    1,
-    updatedRow.length
-  ).setValues([
-    updatedRow
-  ]);
-
-  clearTableCache(
-  SHEETS.TRANSACTIONS
-);
-
-let ruleResult = null;
-
-if (saveRule) {
-  const merchantForRule =
-    ruleMerchant ||
-    getString(
+    original_image_url: getString(
       existingRow,
       table.index,
-      "merchant"
-    );
+      "original_image_url",
+    ),
 
-  if (!merchantForRule) {
-    throw new Error(
-      "ルール登録対象の取引先を取得できません"
-    );
+    import_batch: getString(existingRow, table.index, "import_batch"),
+
+    status: status,
+
+    wallet,
+
+    intent,
+
+    from_account: getString(existingRow, table.index, "from_account"),
+
+    to_account: getString(existingRow, table.index, "to_account"),
+
+    settlement_status: getString(existingRow, table.index, "settlement_status"),
+
+    settlement_id: getString(existingRow, table.index, "settlement_id"),
+  };
+
+  const recordedAt = existingRow[table.index["recorded_at"]] || new Date();
+
+  const yearMonth = resolveTransactionYearMonth(transactionDate, recordedAt);
+
+  const duplicateKey = buildDuplicateKey(updatedTransaction);
+
+  const updatedRow = buildTransactionRow(
+    updatedTransaction,
+    id,
+    recordedAt,
+    yearMonth,
+    duplicateKey,
+  );
+
+  const sheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
+
+  if (!sheet) {
+    throw new Error("transactionsシートがありません");
   }
 
-  ruleResult = addRuleFromTransaction_({
-    merchant: merchantForRule,
-    type,
-    majorCategory,
-    subCategory,
-    purposeType,
-    expenseRatio,
-    wallet,
-    intent
-  });
-}
+  const sheetRowNumber = rowIndex + 2;
 
-rebuildReviewQueue();
-rebuildReviewSummary();
-rebuildAllViews();
+  sheet
+    .getRange(sheetRowNumber, 1, 1, updatedRow.length)
+    .setValues([updatedRow]);
+
+  clearTableCache(SHEETS.TRANSACTIONS);
+
+  let ruleResult = null;
+
+  if (saveRule) {
+    const merchantForRule =
+      ruleMerchant || getString(existingRow, table.index, "merchant");
+
+    if (!merchantForRule) {
+      throw new Error("ルール登録対象の取引先を取得できません");
+    }
+
+    ruleResult = addRuleFromTransaction_({
+      merchant: merchantForRule,
+      type,
+      majorCategory,
+      subCategory,
+      purposeType,
+      expenseRatio,
+      wallet,
+      intent,
+    });
+  }
+
+  rebuildReviewQueue();
+  rebuildReviewSummary();
+  rebuildAllViews();
 
   return createJsonResponse_(
     {
@@ -858,129 +585,89 @@ rebuildAllViews();
         paymentMethod,
         memo,
         wallet,
-        purposeType
-      }
+        purposeType,
+      },
     },
-    "ok"
+    "ok",
   );
 }
 
 function deleteTransactionFromApp_(data) {
-
   const id = String(data.id || "").trim();
 
   if (!id) {
     throw new Error("idは必須です");
   }
 
-  const sheet =
-    SS.getSheetByName(
-      SHEETS.TRANSACTIONS
-    );
+  const sheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
 
   if (!sheet) {
-    throw new Error(
-      `${SHEETS.TRANSACTIONS}シートがありません`
-    );
+    throw new Error(`${SHEETS.TRANSACTIONS}シートがありません`);
   }
 
-  const values =
-    sheet.getDataRange().getValues();
+  const values = sheet.getDataRange().getValues();
 
   if (values.length <= 1) {
-    throw new Error(
-      "データがありません"
-    );
+    throw new Error("データがありません");
   }
 
   const headers = values[0];
 
-  const idIndex =
-    headers.indexOf("id");
+  const idIndex = headers.indexOf("id");
 
   if (idIndex == -1) {
-    throw new Error(
-      "id列がありません"
-    );
+    throw new Error("id列がありません");
   }
 
-  for (
-    let i = 1;
-    i < values.length;
-    i++
-  ) {
-
-    if (
-      String(values[i][idIndex]).trim()
-      === id
-    ) {
-
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][idIndex]).trim() === id) {
       sheet.deleteRow(i + 1);
 
-  clearTableCache(
-    SHEETS.TRANSACTIONS
-  );
+      clearTableCache(SHEETS.TRANSACTIONS);
 
-  /*
-  * 取引そのものの削除は完了済み。
-  * 派生シートの再構築に失敗しても、
-  * 削除API自体は成功として返す。
-  */
-  const rebuildErrors = [];
+      /*
+       * 取引そのものの削除は完了済み。
+       * 派生シートの再構築に失敗しても、
+       * 削除API自体は成功として返す。
+       */
+      const rebuildErrors = [];
 
-  try {
-    rebuildReviewQueue();
-  } catch (error) {
-    console.error(
-      "rebuildReviewQueue失敗",
-      error
-    );
+      try {
+        rebuildReviewQueue();
+      } catch (error) {
+        console.error("rebuildReviewQueue失敗", error);
 
-    rebuildErrors.push(
-      "reviewQueue"
-    );
-  }
-
-  try {
-    rebuildReviewSummary();
-  } catch (error) {
-    console.error(
-      "rebuildReviewSummary失敗",
-      error
-    );
-
-    rebuildErrors.push(
-      "reviewSummary"
-    );
-  }
-
-  try {
-    rebuildAllViews();
-  } catch (error) {
-    console.error(
-      "rebuildAllViews失敗",
-      error
-    );
-
-    rebuildErrors.push(
-      "allViews"
-    );
-  }
-
-  return createJsonResponse_(
-    {
-      deleted: true,
-      id,
-      rebuildErrors
-    },
-    "ok"
-  );
+        rebuildErrors.push("reviewQueue");
       }
-    }
 
-    throw new Error(
-      "削除対象が見つかりません"
-    );
+      try {
+        rebuildReviewSummary();
+      } catch (error) {
+        console.error("rebuildReviewSummary失敗", error);
+
+        rebuildErrors.push("reviewSummary");
+      }
+
+      try {
+        rebuildAllViews();
+      } catch (error) {
+        console.error("rebuildAllViews失敗", error);
+
+        rebuildErrors.push("allViews");
+      }
+
+      return createJsonResponse_(
+        {
+          deleted: true,
+          id,
+          rebuildErrors,
+        },
+        "ok",
+      );
+    }
+  }
+
+  throw new Error("削除対象が見つかりません");
 }
 
 function formatApiDate_(value) {
@@ -988,27 +675,14 @@ function formatApiDate_(value) {
     return "";
   }
 
-  if (
-    value instanceof Date &&
-    !isNaN(value.getTime())
-  ) {
-    return Utilities.formatDate(
-      value,
-      "Asia/Tokyo",
-      "yyyy-MM-dd"
-    );
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, "Asia/Tokyo", "yyyy-MM-dd");
   }
 
-  const parsedDate = new Date(
-    String(value).replace(/\./g, "/")
-  );
+  const parsedDate = new Date(String(value).replace(/\./g, "/"));
 
   if (!isNaN(parsedDate.getTime())) {
-    return Utilities.formatDate(
-      parsedDate,
-      "Asia/Tokyo",
-      "yyyy-MM-dd"
-    );
+    return Utilities.formatDate(parsedDate, "Asia/Tokyo", "yyyy-MM-dd");
   }
 
   return String(value);
@@ -1017,45 +691,26 @@ function formatApiDate_(value) {
 function getTransactionsData(options) {
   const settings = options || {};
 
-  const requestedLimit = Number(
-    settings.limit || 50
-  );
+  const requestedLimit = Number(settings.limit || 50);
 
-  const requestedOffset = Number(
-    settings.offset || 0
-  );
+  const requestedOffset = Number(settings.offset || 0);
 
-  const limit = Math.min(
-    Math.max(requestedLimit, 1),
-    200
-  );
+  const limit = Math.min(Math.max(requestedLimit, 1), 200);
 
-  const offset = Math.max(
-    requestedOffset,
-    0
-  );
+  const offset = Math.max(requestedOffset, 0);
 
   const targetMonth = settings.yearMonth
-    ? normalizeBudgetYearMonth(
-        settings.yearMonth
-      )
+    ? normalizeBudgetYearMonth(settings.yearMonth)
     : "";
 
-  const keyword = String(
-    settings.keyword || ""
-  )
+  const keyword = String(settings.keyword || "")
     .normalize("NFKC")
     .trim()
     .toLowerCase();
 
-  const majorCategory = String(
-    settings.majorCategory || ""
-  ).trim();
+  const majorCategory = String(settings.majorCategory || "").trim();
 
-  const reviewOnly = toBoolean_(
-    settings.reviewOnly,
-    false
-  );
+  const reviewOnly = toBoolean_(settings.reviewOnly, false);
 
   const table = loadTransactions();
 
@@ -1065,7 +720,7 @@ function getTransactionsData(options) {
       total: 0,
       limit,
       offset,
-      hasMore: false
+      hasMore: false,
     };
   }
 
@@ -1083,18 +738,14 @@ function getTransactionsData(options) {
       "status",
       "wallet",
       "raw_text",
-      "intent"
+      "intent",
     ],
-    SHEETS.TRANSACTIONS
+    SHEETS.TRANSACTIONS,
   );
 
-  const filteredRows = table.rows.filter(row => {
+  const filteredRows = table.rows.filter((row) => {
     if (targetMonth) {
-      const rowMonth = normalizeYearMonth(
-        row[
-          table.index["transaction_date"]
-        ]
-      );
+      const rowMonth = normalizeYearMonth(row[table.index["transaction_date"]]);
 
       if (rowMonth !== targetMonth) {
         return false;
@@ -1102,26 +753,15 @@ function getTransactionsData(options) {
     }
 
     if (majorCategory) {
-      const rowMajorCategory = getString(
-        row,
-        table.index,
-        "major_category"
-      );
+      const rowMajorCategory = getString(row, table.index, "major_category");
 
-      if (
-        rowMajorCategory !==
-        majorCategory
-      ) {
+      if (rowMajorCategory !== majorCategory) {
         return false;
       }
     }
 
     if (reviewOnly) {
-      const status = getString(
-        row,
-        table.index,
-        "status"
-      );
+      const status = getString(row, table.index, "status");
 
       if (status !== "要確認") {
         return false;
@@ -1130,44 +770,18 @@ function getTransactionsData(options) {
 
     if (keyword) {
       const searchableText = [
-        getString(
-          row,
-          table.index,
-          "merchant"
-        ),
-        getString(
-          row,
-          table.index,
-          "item_name"
-        ),
-        getString(
-          row,
-          table.index,
-          "major_category"
-        ),
-        getString(
-          row,
-          table.index,
-          "sub_category"
-        ),
-        getString(
-          row,
-          table.index,
-          "wallet"
-        ),
-        getString(
-          row,
-          table.index,
-          "intent"
-        )
+        getString(row, table.index, "merchant"),
+        getString(row, table.index, "item_name"),
+        getString(row, table.index, "major_category"),
+        getString(row, table.index, "sub_category"),
+        getString(row, table.index, "wallet"),
+        getString(row, table.index, "intent"),
       ]
         .join(" ")
         .normalize("NFKC")
         .toLowerCase();
 
-      if (
-        !searchableText.includes(keyword)
-      ) {
+      if (!searchableText.includes(keyword)) {
         return false;
       }
     }
@@ -1176,137 +790,60 @@ function getTransactionsData(options) {
   });
 
   filteredRows.sort((a, b) => {
-    const dateA = new Date(
-      a[
-        table.index["transaction_date"]
-      ]
-    );
+    const dateA = new Date(a[table.index["transaction_date"]]);
 
-    const dateB = new Date(
-      b[
-        table.index["transaction_date"]
-      ]
-    );
+    const dateB = new Date(b[table.index["transaction_date"]]);
 
-    return (
-      dateB.getTime() -
-      dateA.getTime()
-    );
+    return dateB.getTime() - dateA.getTime();
   });
 
   const total = filteredRows.length;
 
-  const items = filteredRows
-    .slice(
-      offset,
-      offset + limit
-    )
-    .map(row => ({
-      id: getString(
-        row,
-        table.index,
-        "id"
-      ),
+  const items = filteredRows.slice(offset, offset + limit).map((row) => ({
+    id: getString(row, table.index, "id"),
 
-      transactionDate: formatApiDate_(
-        row[
-          table.index[
-            "transaction_date"
-          ]
-        ]
-      ),
+    transactionDate: formatApiDate_(row[table.index["transaction_date"]]),
 
-      merchant: getString(
-        row,
-        table.index,
-        "merchant"
-      ),
+    merchant: getString(row, table.index, "merchant"),
 
-      itemName: getString(
-        row,
-        table.index,
-        "item_name"
-      ),
+    itemName: getString(row, table.index, "item_name"),
 
-      amount: getNumber(
-        row,
-        table.index,
-        "amount"
-      ),
+    amount: getNumber(row, table.index, "amount"),
 
-      type: getString(
-        row,
-        table.index,
-        "type"
-      ),
+    type: getString(row, table.index, "type"),
 
-      majorCategory: getString(
-        row,
-        table.index,
-        "major_category"
-      ),
+    majorCategory: getString(row, table.index, "major_category"),
 
-      subCategory: getString(
-        row,
-        table.index,
-        "sub_category"
-      ),
+    subCategory: getString(row, table.index, "sub_category"),
 
-      status: getString(
-        row,
-        table.index,
-        "status"
-      ),
+    status: getString(row, table.index, "status"),
 
-      wallet: getString(
-        row,
-        table.index,
-        "wallet"
-      ),
+    wallet: getString(row, table.index, "wallet"),
 
-      intent: getString(
-        row,
-        table.index,
-        "intent"
-      ),
+    intent: getString(row, table.index, "intent"),
 
-      rawText: getString(
-        row,
-        table.index,
-        "raw_text"
-      ),
-    }));
+    rawText: getString(row, table.index, "raw_text"),
+  }));
 
   return {
     items,
     total,
     limit,
     offset,
-    hasMore:
-      offset + items.length < total
+    hasMore: offset + items.length < total,
   };
 }
 
 function getReviewTransactionsData(options) {
   const settings = options || {};
 
-  const requestedLimit = Number(
-    settings.limit || 100
-  );
+  const requestedLimit = Number(settings.limit || 100);
 
-  const requestedOffset = Number(
-    settings.offset || 0
-  );
+  const requestedOffset = Number(settings.offset || 0);
 
-  const limit = Math.min(
-    Math.max(requestedLimit, 1),
-    200
-  );
+  const limit = Math.min(Math.max(requestedLimit, 1), 200);
 
-  const offset = Math.max(
-    requestedOffset,
-    0
-  );
+  const offset = Math.max(requestedOffset, 0);
 
   const table = loadTransactions();
 
@@ -1316,7 +853,7 @@ function getReviewTransactionsData(options) {
       total: 0,
       limit,
       offset,
-      hasMore: false
+      hasMore: false,
     };
   }
 
@@ -1336,126 +873,61 @@ function getReviewTransactionsData(options) {
       "intent",
       "payment_method",
       "raw_text",
-      "note"
+      "note",
     ],
-    SHEETS.TRANSACTIONS
+    SHEETS.TRANSACTIONS,
   );
 
   const filteredRows = table.rows.filter(
-    row =>
-      getString(
-        row,
-        table.index,
-        "status"
-      ) === "要確認"
+    (row) => getString(row, table.index, "status") === "要確認",
   );
 
   filteredRows.sort((a, b) => {
-    const dateA = new Date(
-      a[table.index["transaction_date"]]
-    );
+    const dateA = new Date(a[table.index["transaction_date"]]);
 
-    const dateB = new Date(
-      b[table.index["transaction_date"]]
-    );
+    const dateB = new Date(b[table.index["transaction_date"]]);
 
     return dateB.getTime() - dateA.getTime();
   });
 
   const total = filteredRows.length;
 
-  const items = filteredRows
-    .slice(offset, offset + limit)
-    .map(row => ({
-      id: getString(
-        row,
-        table.index,
-        "id"
-      ),
+  const items = filteredRows.slice(offset, offset + limit).map((row) => ({
+    id: getString(row, table.index, "id"),
 
-      transactionDate: formatApiDate_(
-        row[table.index["transaction_date"]]
-      ),
+    transactionDate: formatApiDate_(row[table.index["transaction_date"]]),
 
-      merchant: getString(
-        row,
-        table.index,
-        "merchant"
-      ),
+    merchant: getString(row, table.index, "merchant"),
 
-      itemName: getString(
-        row,
-        table.index,
-        "item_name"
-      ),
+    itemName: getString(row, table.index, "item_name"),
 
-      amount: getNumber(
-        row,
-        table.index,
-        "amount"
-      ),
+    amount: getNumber(row, table.index, "amount"),
 
-      type: getString(
-        row,
-        table.index,
-        "type"
-      ),
+    type: getString(row, table.index, "type"),
 
-      majorCategory: getString(
-        row,
-        table.index,
-        "major_category"
-      ),
+    majorCategory: getString(row, table.index, "major_category"),
 
-      subCategory: getString(
-        row,
-        table.index,
-        "sub_category"
-      ),
+    subCategory: getString(row, table.index, "sub_category"),
 
-      status: getString(
-        row,
-        table.index,
-        "status"
-      ),
+    status: getString(row, table.index, "status"),
 
-      wallet: getString(
-        row,
-        table.index,
-        "wallet"
-      ),
+    wallet: getString(row, table.index, "wallet"),
 
-      intent: getString(
-        row,
-        table.index,
-        "intent"
-      ),
+    intent: getString(row, table.index, "intent"),
 
-      paymentMethod: getString(
-        row,
-        table.index,
-        "payment_method"
-      ),
+    paymentMethod: getString(row, table.index, "payment_method"),
 
-      rawText: getString(
-        row,
-        table.index,
-        "raw_text"
-      ),
+    rawText: getString(row, table.index, "raw_text"),
 
-      note: getString(
-        row,
-        table.index,
-        "note"
-      )
-    }));
+    note: getString(row, table.index, "note"),
+  }));
 
   return {
     items,
     total,
     limit,
     offset,
-    hasMore: offset + items.length < total
+    hasMore: offset + items.length < total,
   };
 }
 
@@ -1464,33 +936,21 @@ function getReviewTransactionCount() {
 
   if (table.rows.length === 0) {
     return {
-      count: 0
+      count: 0,
     };
   }
 
-  assertRequiredColumns(
-    table.index,
-    [
-      "status"
-    ],
-    SHEETS.TRANSACTIONS
-  );
+  assertRequiredColumns(table.index, ["status"], SHEETS.TRANSACTIONS);
 
   let count = 0;
 
   for (const row of table.rows) {
-    if (
-      getString(
-        row,
-        table.index,
-        "status"
-      ) === "要確認"
-    ) {
+    if (getString(row, table.index, "status") === "要確認") {
       count++;
     }
   }
 
   return {
-    count
+    count,
   };
 }

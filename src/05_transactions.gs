@@ -20,10 +20,10 @@ function summarizeTransactionsByField(
   yearMonth,
   groupColumn,
   options,
-  transactionTable
-    ) {
-    const table = transactionTable || loadTransactions();
-    const settings = options || {};
+  transactionTable,
+) {
+  const table = transactionTable || loadTransactions();
+  const settings = options || {};
 
   if (table.rows.length === 0) {
     return [];
@@ -34,82 +34,61 @@ function summarizeTransactionsByField(
     "type",
     "wallet",
     "amount",
-    groupColumn
+    groupColumn,
   ];
 
-  assertRequiredColumns(
-    table.index,
-    requiredColumns,
-    SHEETS.TRANSACTIONS
-  );
+  assertRequiredColumns(table.index, requiredColumns, SHEETS.TRANSACTIONS);
 
-  const targetMonth =
-    normalizeBudgetYearMonth(yearMonth);
+  const targetMonth = normalizeBudgetYearMonth(yearMonth);
 
-  const targetType =
-    String(settings.type || "").trim();
+  const targetType = String(settings.type || "").trim();
 
-  const targetWallet =
-    String(settings.wallet || "").trim();
+  const targetWallet = String(settings.wallet || "").trim();
 
-  const skipBlank =
-    settings.skipBlank === true;
+  const skipBlank = settings.skipBlank === true;
 
   const amountMap = new Map();
 
   for (const row of table.rows) {
     const transactionMonth = normalizeYearMonth(
-      row[table.index["transaction_date"]]
+      row[table.index["transaction_date"]],
     );
 
     if (transactionMonth !== targetMonth) {
       continue;
     }
 
-    const type = String(
-      row[table.index["type"]] || ""
-    ).trim();
+    const type = String(row[table.index["type"]] || "").trim();
 
     if (targetType && type !== targetType) {
       continue;
     }
 
-    const wallet = String(
-      row[table.index["wallet"]] || ""
-    ).trim();
+    const wallet = String(row[table.index["wallet"]] || "").trim();
 
     if (targetWallet && wallet !== targetWallet) {
       continue;
     }
 
-    const groupName = String(
-      row[table.index[groupColumn]] || ""
-    ).trim();
+    const groupName = String(row[table.index[groupColumn]] || "").trim();
 
     if (skipBlank && !groupName) {
       continue;
     }
 
-    const amount = Number(
-      row[table.index["amount"]] || 0
-    );
+    const amount = Number(row[table.index["amount"]] || 0);
 
     if (amount === 0) {
       continue;
     }
 
-    amountMap.set(
-      groupName,
-      (amountMap.get(groupName) || 0) + amount
-    );
+    amountMap.set(groupName, (amountMap.get(groupName) || 0) + amount);
   }
 
-  return Array.from(amountMap.entries())
-    .sort((a, b) => b[1] - a[1]);
+  return Array.from(amountMap.entries()).sort((a, b) => b[1] - a[1]);
 }
 
 function filterTransactions(options) {
-
   const table = loadTable(SHEETS.TRANSACTIONS);
 
   if (table.rows.length === 0) {
@@ -118,46 +97,29 @@ function filterTransactions(options) {
 
   const opt = options || {};
 
-  return table.rows.filter(row => {
-
+  return table.rows.filter((row) => {
     if (opt.yearMonth) {
-
-      const month = normalizeYearMonth(
-        row[table.index["transaction_date"]]
-      );
+      const month = normalizeYearMonth(row[table.index["transaction_date"]]);
 
       if (month !== opt.yearMonth) {
         return false;
       }
-
     }
 
     if (opt.type) {
-
-      if (
-        String(row[table.index["type"]]).trim()
-        !== opt.type
-      ) {
+      if (String(row[table.index["type"]]).trim() !== opt.type) {
         return false;
       }
-
     }
 
     if (opt.wallet) {
-
-      if (
-        String(row[table.index["wallet"]]).trim()
-        !== opt.wallet
-      ) {
+      if (String(row[table.index["wallet"]]).trim() !== opt.wallet) {
         return false;
       }
-
     }
 
     return true;
-
   });
-
 }
 
 /**
@@ -185,50 +147,33 @@ function filterTransactionRows(options, transactionTable) {
   if (table.rows.length === 0) {
     return {
       rows: [],
-      index: table.index
+      index: table.index,
     };
   }
 
   assertRequiredColumns(
     table.index,
-    [
-      "transaction_date",
-      "type",
-      "wallet"
-    ],
-    SHEETS.TRANSACTIONS
+    ["transaction_date", "type", "wallet"],
+    SHEETS.TRANSACTIONS,
   );
 
   const targetMonth = settings.yearMonth
     ? normalizeBudgetYearMonth(settings.yearMonth)
     : "";
 
-  const targetType = String(
-    settings.type || ""
-  ).trim();
+  const targetType = String(settings.type || "").trim();
 
-  const targetWallet = String(
-    settings.wallet || ""
-  ).trim();
+  const targetWallet = String(settings.wallet || "").trim();
 
-  const targetIntent = String(
-    settings.intent || ""
-  ).trim();
+  const targetIntent = String(settings.intent || "").trim();
 
-  if (
-    targetIntent &&
-    table.index["intent"] === undefined
-  ) {
-    throw new Error(
-      "transactions に intent 列がありません"
-    );
+  if (targetIntent && table.index["intent"] === undefined) {
+    throw new Error("transactions に intent 列がありません");
   }
 
-  const rows = table.rows.filter(row => {
+  const rows = table.rows.filter((row) => {
     if (targetMonth) {
-      const rowMonth = normalizeYearMonth(
-        row[table.index["transaction_date"]]
-      );
+      const rowMonth = normalizeYearMonth(row[table.index["transaction_date"]]);
 
       if (rowMonth !== targetMonth) {
         return false;
@@ -236,11 +181,7 @@ function filterTransactionRows(options, transactionTable) {
     }
 
     if (targetType) {
-      const rowType = getString(
-        row,
-        table.index,
-        "type"
-      );
+      const rowType = getString(row, table.index, "type");
 
       if (rowType !== targetType) {
         return false;
@@ -248,11 +189,7 @@ function filterTransactionRows(options, transactionTable) {
     }
 
     if (targetWallet) {
-      const rowWallet = getString(
-        row,
-        table.index,
-        "wallet"
-      );
+      const rowWallet = getString(row, table.index, "wallet");
 
       if (rowWallet !== targetWallet) {
         return false;
@@ -260,11 +197,7 @@ function filterTransactionRows(options, transactionTable) {
     }
 
     if (targetIntent) {
-      const rowIntent = getString(
-        row,
-        table.index,
-        "intent"
-      );
+      const rowIntent = getString(row, table.index, "intent");
 
       if (rowIntent !== targetIntent) {
         return false;
@@ -276,33 +209,25 @@ function filterTransactionRows(options, transactionTable) {
 
   return {
     rows,
-    index: table.index
+    index: table.index,
   };
 }
 
-function getMonthlyLivingExpense(yearMonth,table) {
-  const filtered = filterTransactionRows({
-    yearMonth,
-    type: "支出",
-    wallet: "生活"
-  },
-  table
+function getMonthlyLivingExpense(yearMonth, table) {
+  const filtered = filterTransactionRows(
+    {
+      yearMonth,
+      type: "支出",
+      wallet: "生活",
+    },
+    table,
   );
 
-  assertRequiredColumns(
-    filtered.index,
-    ["amount"],
-    SHEETS.TRANSACTIONS
-  );
+  assertRequiredColumns(filtered.index, ["amount"], SHEETS.TRANSACTIONS);
 
   return filtered.rows.reduce(
-    (total, row) =>
-      total + getNumber(
-        row,
-        filtered.index,
-        "amount"
-      ),
-    0
+    (total, row) => total + getNumber(row, filtered.index, "amount"),
+    0,
   );
 }
 
@@ -310,13 +235,13 @@ function getMonthlyLivingExpenseBreakdown(yearMonth) {
   const filtered = filterTransactionRows({
     yearMonth,
     type: "支出",
-    wallet: "生活"
+    wallet: "生活",
   });
 
   const result = {
     fixedExpense: 0,
     variableExpense: 0,
-    totalExpense: 0
+    totalExpense: 0,
   };
 
   if (filtered.rows.length === 0) {
@@ -325,32 +250,16 @@ function getMonthlyLivingExpenseBreakdown(yearMonth) {
 
   assertRequiredColumns(
     filtered.index,
-    [
-      "major_category",
-      "sub_category",
-      "amount"
-    ],
-    SHEETS.TRANSACTIONS
+    ["major_category", "sub_category", "amount"],
+    SHEETS.TRANSACTIONS,
   );
 
   for (const row of filtered.rows) {
-    const major = getString(
-      row,
-      filtered.index,
-      "major_category"
-    );
+    const major = getString(row, filtered.index, "major_category");
 
-    const sub = getString(
-      row,
-      filtered.index,
-      "sub_category"
-    );
+    const sub = getString(row, filtered.index, "sub_category");
 
-    const amount = getNumber(
-      row,
-      filtered.index,
-      "amount"
-    );
+    const amount = getNumber(row, filtered.index, "amount");
 
     result.totalExpense += amount;
 
@@ -368,7 +277,7 @@ function getExpenseCategoryBreakdown(yearMonth) {
   const filtered = filterTransactionRows({
     yearMonth,
     type: "支出",
-    wallet: "生活"
+    wallet: "生活",
   });
 
   if (filtered.rows.length === 0) {
@@ -377,30 +286,18 @@ function getExpenseCategoryBreakdown(yearMonth) {
 
   assertRequiredColumns(
     filtered.index,
-    [
-      "major_category",
-      "amount"
-    ],
-    SHEETS.TRANSACTIONS
+    ["major_category", "amount"],
+    SHEETS.TRANSACTIONS,
   );
 
   const categoryTotals = {};
 
   for (const row of filtered.rows) {
-    const category = getString(
-      row,
-      filtered.index,
-      "major_category"
-    );
+    const category = getString(row, filtered.index, "major_category");
 
-    const amount = getNumber(
-      row,
-      filtered.index,
-      "amount"
-    );
+    const amount = getNumber(row, filtered.index, "amount");
 
-    const categoryName =
-      category.trim() || "未分類";
+    const categoryName = category.trim() || "未分類";
 
     if (!categoryTotals[categoryName]) {
       categoryTotals[categoryName] = 0;
@@ -412,7 +309,7 @@ function getExpenseCategoryBreakdown(yearMonth) {
   return Object.entries(categoryTotals)
     .map(([category, amount]) => ({
       category,
-      amount
+      amount,
     }))
     .sort((a, b) => b.amount - a.amount);
 }
@@ -420,7 +317,7 @@ function getExpenseCategoryBreakdown(yearMonth) {
 function getSideBusinessProfit(yearMonth) {
   const filtered = filterTransactionRows({
     yearMonth,
-    wallet: "事業"
+    wallet: "事業",
   });
 
   if (filtered.rows.length === 0) {
@@ -430,24 +327,16 @@ function getSideBusinessProfit(yearMonth) {
   assertRequiredColumns(
     filtered.index,
     ["type", "amount"],
-    SHEETS.TRANSACTIONS
+    SHEETS.TRANSACTIONS,
   );
 
   let income = 0;
   let expense = 0;
 
   for (const row of filtered.rows) {
-    const type = getString(
-      row,
-      filtered.index,
-      "type"
-    );
+    const type = getString(row, filtered.index, "type");
 
-    const amount = getNumber(
-      row,
-      filtered.index,
-      "amount"
-    );
+    const amount = getNumber(row, filtered.index, "amount");
 
     if (type === "収入") {
       income += amount;
@@ -463,13 +352,7 @@ function loadTransactions() {
   return loadTable(SHEETS.TRANSACTIONS);
 }
 
-function buildTransactionRow(
-  tx,
-  id,
-  createdAt,
-  yearMonth,
-  duplicateKey
-    ) {
+function buildTransactionRow(tx, id, createdAt, yearMonth, duplicateKey) {
   const amount = Number(tx.amount || 0);
   const expenseRatio = Number(tx.expense_ratio || 0);
 
@@ -498,37 +381,31 @@ function buildTransactionRow(
     duplicateKey,
     tx.status || "",
     tx.wallet || "生活",
-    tx.intent || "その他"
+    tx.intent || "その他",
+
+    tx.from_account || "",
+    tx.to_account || "",
+    tx.settlement_status || "",
+    tx.settlement_id || "",
   ];
 }
 
 function appendTransactionRow(row) {
-  getRequiredSheet(SHEETS.TRANSACTIONS)
-    .appendRow(row);
+  getRequiredSheet(SHEETS.TRANSACTIONS).appendRow(row);
 
-    clearTableCache();
+  clearTableCache();
 }
 
 function resolveTransactionYearMonth(transactionDate, fallbackDate) {
   if (transactionDate) {
-    const parsedDate = new Date(
-      String(transactionDate).replace(/\./g, "/")
-    );
+    const parsedDate = new Date(String(transactionDate).replace(/\./g, "/"));
 
     if (!isNaN(parsedDate.getTime())) {
-      return Utilities.formatDate(
-        parsedDate,
-        "Asia/Tokyo",
-        "yyyy-MM"
-      );
+      return Utilities.formatDate(parsedDate, "Asia/Tokyo", "yyyy-MM");
     }
   }
 
-  return Utilities.formatDate(
-    fallbackDate,
-    "Asia/Tokyo",
-    "yyyy-MM"
-  );
+  return Utilities.formatDate(fallbackDate, "Asia/Tokyo", "yyyy-MM");
 }
 
 function createTransactionAccessor(row, index) {
@@ -539,7 +416,7 @@ function createTransactionAccessor(row, index) {
 
     number(name) {
       return getNumber(row, index, name);
-    }
+    },
   };
 }
 
@@ -548,7 +425,7 @@ function buildDuplicateKey(tx) {
     tx.source_type || "",
     tx.transaction_date || "",
     tx.amount || 0,
-    tx.merchant || ""
+    tx.merchant || "",
   ].join("|");
 }
 
@@ -562,8 +439,9 @@ function getExistingDuplicateKeys() {
   const duplicateKeyIndex = headers.indexOf("duplicate_key");
 
   if (duplicateKeyIndex === -1) {
-    throw new Error(`${SHEETS.TRANSACTIONS}シートに`
-  + "duplicate_key列がありません");
+    throw new Error(
+      `${SHEETS.TRANSACTIONS}シートに` + "duplicate_key列がありません",
+    );
   }
 
   const rows = values.slice(1);
@@ -604,9 +482,9 @@ function reclassifyAllTransactions() {
       "expense_amount",
       "status",
       "wallet",
-      "intent"
+      "intent",
     ],
-    SHEETS.TRANSACTIONS
+    SHEETS.TRANSACTIONS,
   );
 
   let updatedCount = 0;
@@ -617,7 +495,7 @@ function reclassifyAllTransactions() {
     const transaction = {
       merchant: row[index["merchant"]] || "",
       item_name: row[index["item_name"]] || "",
-      note: row[index["note"]] || ""
+      note: row[index["note"]] || "",
     };
 
     const classified = classifyTransaction(transaction, rules);
@@ -638,12 +516,7 @@ function reclassifyAllTransactions() {
   }
 
   txSheet
-    .getRange(
-      2,
-      1,
-      values.length - 1,
-      values[0].length
-    )
+    .getRange(2, 1, values.length - 1, values[0].length)
     .setValues(values.slice(1));
 
   Logger.log(`再分類完了: ${updatedCount}件`);
@@ -679,14 +552,15 @@ function normalizeAllTransactions() {
 
   const headers = values[0];
   const idx = {};
-  headers.forEach((h, i) => idx[h] = i);
+  headers.forEach((h, i) => (idx[h] = i));
 
   for (let i = 1; i < values.length; i++) {
     const merchant = values[i][idx["merchant"]];
     values[i][idx["merchant"]] = normalizeMerchant(merchant);
   }
 
-  sheet.getRange(2, 1, values.length - 1, values[0].length)
+  sheet
+    .getRange(2, 1, values.length - 1, values[0].length)
     .setValues(values.slice(1));
 }
 
@@ -708,7 +582,7 @@ function loadMerchantAliases() {
 
   const headers = values[0];
   const idx = {};
-  headers.forEach((h, i) => idx[h] = i);
+  headers.forEach((h, i) => (idx[h] = i));
 
   const map = new Map();
 
@@ -743,7 +617,7 @@ function normalizeAllTransactionsWithAlias() {
 
   const headers = values[0];
   const idx = {};
-  headers.forEach((h, i) => idx[h] = i);
+  headers.forEach((h, i) => (idx[h] = i));
 
   for (let i = 1; i < values.length; i++) {
     let merchant = values[i][idx["merchant"]];
@@ -754,7 +628,8 @@ function normalizeAllTransactionsWithAlias() {
     values[i][idx["merchant"]] = merchant;
   }
 
-  sheet.getRange(2, 1, values.length - 1, values[0].length)
+  sheet
+    .getRange(2, 1, values.length - 1, values[0].length)
     .setValues(values.slice(1));
 }
 
@@ -766,7 +641,7 @@ function buildMerchantFrequencyMap() {
 
   const headers = values[0];
   const idx = {};
-  headers.forEach((h, i) => idx[h] = i);
+  headers.forEach((h, i) => (idx[h] = i));
 
   const map = {};
 
@@ -827,9 +702,7 @@ function validateTransactionAccounts() {
   const validAccounts = new Set();
 
   for (const row of accountValues.slice(1)) {
-    const accountName = String(
-      row[accountIdx["account_name"]] || ""
-    ).trim();
+    const accountName = String(row[accountIdx["account_name"]] || "").trim();
 
     if (accountName) {
       validAccounts.add(accountName);
@@ -839,23 +712,15 @@ function validateTransactionAccounts() {
   const unknownMap = new Map();
 
   for (const row of txValues.slice(1)) {
-    const accountName = String(
-      row[txIdx["account_name"]] || ""
-    ).trim();
+    const accountName = String(row[txIdx["account_name"]] || "").trim();
 
     if (!accountName) {
-      unknownMap.set(
-        "(空欄)",
-        (unknownMap.get("(空欄)") || 0) + 1
-      );
+      unknownMap.set("(空欄)", (unknownMap.get("(空欄)") || 0) + 1);
       continue;
     }
 
     if (!validAccounts.has(accountName)) {
-      unknownMap.set(
-        accountName,
-        (unknownMap.get(accountName) || 0) + 1
-      );
+      unknownMap.set(accountName, (unknownMap.get(accountName) || 0) + 1);
     }
   }
 
@@ -870,9 +735,7 @@ function validateTransactionAccounts() {
     Logger.log(`${accountName}: ${count}件`);
   }
 
-  throw new Error(
-    `未登録の account_name が ${unknownMap.size}種類あります`
-  );
+  throw new Error(`未登録の account_name が ${unknownMap.size}種類あります`);
 }
 
 function normalizeAccountName(accountName) {
@@ -912,12 +775,7 @@ function appendTransactionRows(rows) {
   const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
 
   sheet
-    .getRange(
-      sheet.getLastRow() + 1,
-      1,
-      rows.length,
-      rows[0].length
-    )
+    .getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length)
     .setValues(rows);
 
   clearTableCache(SHEETS.TRANSACTIONS);
@@ -926,13 +784,10 @@ function appendTransactionRows(rows) {
 }
 
 function addTransactions(transactions) {
-  if (
-    !Array.isArray(transactions) ||
-    transactions.length === 0
-  ) {
+  if (!Array.isArray(transactions) || transactions.length === 0) {
     return {
       addedCount: 0,
-      skippedCount: 0
+      skippedCount: 0,
     };
   }
 
@@ -944,17 +799,13 @@ function addTransactions(transactions) {
   for (const originalTransaction of transactions) {
     const tx = {
       ...originalTransaction,
-      account_name: normalizeAccountName(
-        originalTransaction.account_name
-      )
+      account_name: normalizeAccountName(originalTransaction.account_name),
     };
 
     const duplicateKey = buildDuplicateKey(tx);
 
     if (existingKeys.has(duplicateKey)) {
-      Logger.log(
-        "重複のためスキップ: " + duplicateKey
-      );
+      Logger.log("重複のためスキップ: " + duplicateKey);
 
       skippedCount++;
       continue;
@@ -967,7 +818,7 @@ function addTransactions(transactions) {
 
     const yearMonth = resolveTransactionYearMonth(
       tx.transaction_date,
-      createdAt
+      createdAt,
     );
 
     rows.push(
@@ -976,8 +827,8 @@ function addTransactions(transactions) {
         Utilities.getUuid(),
         createdAt,
         yearMonth,
-        duplicateKey
-      )
+        duplicateKey,
+      ),
     );
   }
 
@@ -985,6 +836,6 @@ function addTransactions(transactions) {
 
   return {
     addedCount,
-    skippedCount
+    skippedCount,
   };
 }

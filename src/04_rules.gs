@@ -4,7 +4,7 @@ function normalizeTextForRule(value) {
     .trim();
 
   // 全角英数字を半角へ
-  text = text.replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(s) {
+  text = text.replace(/[Ａ-Ｚａ-ｚ０-９]/g, function (s) {
     return String.fromCharCode(s.charCodeAt(0) - 65248);
   });
 
@@ -28,18 +28,12 @@ function normalizeTextForRule(value) {
   return text;
 }
 
-
 function getRules() {
-  const rules = loadObjects(SHEETS.RULES)
-    .filter(rule =>
-      String(rule.keyword || "").trim() !== ""
-    );
-
-  rules.sort(
-    (a, b) =>
-      Number(a.priority || 0) -
-      Number(b.priority || 0)
+  const rules = loadObjects(SHEETS.RULES).filter(
+    (rule) => String(rule.keyword || "").trim() !== "",
   );
+
+  rules.sort((a, b) => Number(a.priority || 0) - Number(b.priority || 0));
 
   return rules;
 }
@@ -48,7 +42,7 @@ function matchRule(transaction, rules) {
   const targetText = [
     transaction.merchant,
     transaction.item_name,
-    transaction.note
+    transaction.note,
   ]
     .filter(Boolean)
     .join(" ");
@@ -60,13 +54,7 @@ function matchRule(transaction, rules) {
       continue;
     }
 
-    if (
-      isRuleMatched(
-        targetText,
-        keyword,
-        rule.rule_type
-      )
-    ) {
+    if (isRuleMatched(targetText, keyword, rule.rule_type)) {
       return rule;
     }
   }
@@ -83,7 +71,7 @@ function buildClassification(rule) {
     expense_ratio: Number(rule.expense_ratio || 0),
     status: rule.status_result,
     wallet: rule.wallet_result || "生活",
-    intent: rule.intent_result || "その他"
+    intent: rule.intent_result || "その他",
   };
 }
 
@@ -96,21 +84,18 @@ function createDefaultClassification() {
     expense_ratio: 0,
     status: "要確認",
     wallet: "生活",
-    intent: "その他"
+    intent: "その他",
   };
 }
 
 function classifyTransaction(transaction, rules) {
-
-  const matchedRule =
-    matchRule(transaction, rules);
+  const matchedRule = matchRule(transaction, rules);
 
   if (!matchedRule) {
     return createDefaultClassification();
   }
 
   return buildClassification(matchedRule);
-
 }
 
 function isRuleMatched(targetText, keyword, ruleType) {
@@ -135,55 +120,38 @@ function isRuleMatched(targetText, keyword, ruleType) {
   return false;
 }
 
-function classifyMoneyTransaction(
-  row,
-  txBase,
-  rules,
-  configName
-    ) {
+function classifyMoneyTransaction(row, txBase, rules, configName) {
   let inAmount = 0;
   let outAmount = 0;
 
   if (configName === "jpbank_v1") {
-    inAmount = parseAmount(
-      row["受入金額（円）"]
-    );
+    inAmount = parseAmount(row["受入金額（円）"]);
 
-    outAmount = parseAmount(
-      row["払出金額（円）"]
-    );
-
+    outAmount = parseAmount(row["払出金額（円）"]);
   } else if (configName === "smbc_bank_v1") {
-    inAmount = parseAmount(
-      row["お預入れ"]
-    );
+    inAmount = parseAmount(row["お預入れ"]);
 
-    outAmount = parseAmount(
-      row["お引出し"]
-    );
-
+    outAmount = parseAmount(row["お引出し"]);
   } else if (configName === "paypay_v1") {
-    inAmount = parseAmount(
-      row["入金金額（円）"]
-    );
+    inAmount = parseAmount(row["入金金額（円）"]);
 
-    outAmount = parseAmount(
-      row["出金金額（円）"]
-    );
+    outAmount = parseAmount(row["出金金額（円）"]);
   }
 
-  const classified = classifyTransaction(
-    txBase,
-    rules
-  );
+  const classified = classifyTransaction(txBase, rules);
 
-  const isRuleConfirmed =
-    classified.status === "確定";
+  const creditCardAccount = resolveCreditCardAccount_(txBase);
+
+  const isCreditCardSettlement = outAmount > 0 && creditCardAccount;
+
+  const isRuleConfirmed = classified.status === "確定";
 
   let transactionType = "";
 
   if (isRuleConfirmed) {
     transactionType = classified.type;
+  } else if (isCreditCardSettlement) {
+    transactionType = "移動";
   } else if (inAmount > 0) {
     transactionType = "収入";
   } else if (outAmount > 0) {
@@ -192,9 +160,23 @@ function classifyMoneyTransaction(
     transactionType = classified.type || "支出";
   }
 
+  if (isCreditCardSettlement && !isRuleConfirmed) {
+    return {
+      ...classified,
+      type: "移動",
+      major_category: "移動",
+      sub_category: "クレカ引落",
+      purpose_type: "私用",
+      expense_ratio: 0,
+      status: "確定",
+      wallet: "生活",
+      intent: "移動",
+    };
+  }
+
   return {
     ...classified,
-    type: transactionType
+    type: transactionType,
   };
 }
 
@@ -234,13 +216,7 @@ function guessExpenseRatio(subCategory) {
 function guessIntent(subCategory) {
   const major = mapMajorCategory(subCategory);
 
-  if ([
-    "食費",
-    "住居",
-    "通信",
-    "交通",
-    "生活用品"
-  ].includes(major)) {
+  if (["食費", "住居", "通信", "交通", "生活用品"].includes(major)) {
     return "生活維持";
   }
 
@@ -256,10 +232,7 @@ function guessIntent(subCategory) {
     return "贈与・交際";
   }
 
-  if (
-    major === "配信" ||
-    guessPurposeType(subCategory) === "経費"
-  ) {
+  if (major === "配信" || guessPurposeType(subCategory) === "経費") {
     return "事業活動";
   }
 
@@ -268,66 +241,66 @@ function guessIntent(subCategory) {
 
 function mapMajorCategory(subCategory) {
   const map = {
-    "スーパー": "食費",
-    "コンビニ": "食費",
-    "外食": "食費",
-    "カフェ": "食費",
+    スーパー: "食費",
+    コンビニ: "食費",
+    外食: "食費",
+    カフェ: "食費",
 
-    "日用品": "生活費",
-    "消耗品": "生活費",
-    "雑貨": "生活費",
+    日用品: "生活費",
+    消耗品: "生活費",
+    雑貨: "生活費",
 
-    "家賃": "固定費",
-    "通信費": "固定費",
-    "サブスク": "固定費",
-    "保険": "固定費",
-    "水道光熱費": "固定費",
-    "税金": "固定費",
+    家賃: "固定費",
+    通信費: "固定費",
+    サブスク: "固定費",
+    保険: "固定費",
+    水道光熱費: "固定費",
+    税金: "固定費",
 
-    "電車": "交通",
-    "バス": "交通",
-    "タクシー": "交通",
-    "ガソリン": "交通",
-    "駐車場": "交通",
+    電車: "交通",
+    バス: "交通",
+    タクシー: "交通",
+    ガソリン: "交通",
+    駐車場: "交通",
 
-    "ゲーム": "趣味娯楽",
-    "グッズ": "趣味娯楽",
-    "イベント": "趣味娯楽",
-    "娯楽その他": "趣味娯楽",
+    ゲーム: "趣味娯楽",
+    グッズ: "趣味娯楽",
+    イベント: "趣味娯楽",
+    娯楽その他: "趣味娯楽",
 
-    "衣服": "美容衣服",
-    "美容": "美容衣服",
-    "理容": "美容衣服",
+    衣服: "美容衣服",
+    美容: "美容衣服",
+    理容: "美容衣服",
 
-    "病院": "医療健康",
-    "薬": "医療健康",
-    "健康用品": "医療健康",
+    病院: "医療健康",
+    薬: "医療健康",
+    健康用品: "医療健康",
 
-    "書籍": "仕事・学業",
-    "ソフト": "仕事・学業",
-    "研究用品": "仕事・学業",
-    "講座": "仕事・学業",
-    "事務用品": "仕事・学業",
+    書籍: "仕事・学業",
+    ソフト: "仕事・学業",
+    研究用品: "仕事・学業",
+    講座: "仕事・学業",
+    事務用品: "仕事・学業",
 
-    "配信機材": "配信活動",
-    "イラスト依頼": "配信活動",
-    "配信ソフト": "配信活動",
-    "素材": "配信活動",
-    "外注費": "配信活動",
-    "広告宣伝": "配信活動",
-    "配信サブスク": "配信活動",
+    配信機材: "配信活動",
+    イラスト依頼: "配信活動",
+    配信ソフト: "配信活動",
+    素材: "配信活動",
+    外注費: "配信活動",
+    広告宣伝: "配信活動",
+    配信サブスク: "配信活動",
 
-    "給与": "収入",
-    "配信収益": "収入",
-    "アフィリエイト": "収入",
-    "その他収入": "収入",
+    給与: "収入",
+    配信収益: "収入",
+    アフィリエイト: "収入",
+    その他収入: "収入",
 
-    "クレカ引落": "振替",
-    "電子マネー補充": "振替",
-    "口座移動": "振替",
-    "証券口座入金": "振替",
+    クレカ引落: "振替",
+    電子マネー補充: "振替",
+    口座移動: "振替",
+    証券口座入金: "振替",
 
-    "要確認": "その他",
+    要確認: "その他",
   };
 
   return map[subCategory] || "その他";
@@ -336,13 +309,7 @@ function mapMajorCategory(subCategory) {
 function guessIntent(subCategory) {
   const major = mapMajorCategory(subCategory);
 
-  if ([
-    "食費",
-    "住居",
-    "通信",
-    "交通",
-    "生活用品"
-  ].includes(major)) {
+  if (["食費", "住居", "通信", "交通", "生活用品"].includes(major)) {
     return "生活維持";
   }
 
@@ -358,10 +325,7 @@ function guessIntent(subCategory) {
     return "贈与・交際";
   }
 
-  if (
-    major === "配信" ||
-    guessPurposeType(subCategory) === "経費"
-  ) {
+  if (major === "配信" || guessPurposeType(subCategory) === "経費") {
     return "事業活動";
   }
 
@@ -369,18 +333,13 @@ function guessIntent(subCategory) {
 }
 
 function getCategoriesData() {
-  const sheet = SS.getSheetByName(
-    SHEETS.CATEGORIES
-  );
+  const sheet = SS.getSheetByName(SHEETS.CATEGORIES);
 
   if (!sheet) {
-    throw new Error(
-      "categoriesシートがありません"
-    );
+    throw new Error("categoriesシートがありません");
   }
 
-  const values =
-    sheet.getDataRange().getValues();
+  const values = sheet.getDataRange().getValues();
 
   if (values.length <= 1) {
     return {
@@ -388,13 +347,11 @@ function getCategoriesData() {
       mapsByType: {},
       mapsByTypeId: {},
       expenseMap: {},
-      incomeMap: {}
+      incomeMap: {},
     };
   }
 
-  const headers = values[0].map(
-    value => String(value || "").trim()
-  );
+  const headers = values[0].map((value) => String(value || "").trim());
 
   const index = {};
 
@@ -410,14 +367,12 @@ function getCategoriesData() {
     "sub_category",
     "is_expense_target",
     "active",
-    "sort_order"
+    "sort_order",
   ];
 
   for (const column of requiredColumns) {
     if (index[column] === undefined) {
-      throw new Error(
-        `categoriesシートに${column}列がありません`
-      );
+      throw new Error(`categoriesシートに${column}列がありません`);
     }
   }
 
@@ -453,57 +408,38 @@ function getCategoriesData() {
   const mapsByTypeId = {};
 
   for (const row of values.slice(1)) {
-    const type = String(
-      row[index["type"]] || ""
-    ).trim();
+    const type = String(row[index["type"]] || "").trim();
 
     const majorCategoryId = String(
-      row[index["major_category_id"]] || ""
+      row[index["major_category_id"]] || "",
     ).trim();
 
-    const majorCategory = String(
-      row[index["major_category"]] || ""
-    ).trim();
+    const majorCategory = String(row[index["major_category"]] || "").trim();
 
-    const subCategoryId = String(
-      row[index["sub_category_id"]] || ""
-    ).trim();
+    const subCategoryId = String(row[index["sub_category_id"]] || "").trim();
 
-    const subCategory = String(
-      row[index["sub_category"]] || ""
-    ).trim();
+    const subCategory = String(row[index["sub_category"]] || "").trim();
 
-    const expenseTargetValue =
-      row[index["is_expense_target"]];
+    const expenseTargetValue = row[index["is_expense_target"]];
 
     const isExpenseTarget =
       expenseTargetValue === true ||
       Number(expenseTargetValue) === 1 ||
-      String(expenseTargetValue)
-        .trim()
-        .toLowerCase() === "true";
+      String(expenseTargetValue).trim().toLowerCase() === "true";
 
-    const activeValue =
-      row[index["active"]];
+    const activeValue = row[index["active"]];
 
     const active =
       activeValue === true ||
       Number(activeValue) === 1 ||
-      String(activeValue)
-        .trim()
-        .toLowerCase() === "true";
+      String(activeValue).trim().toLowerCase() === "true";
 
-    const sortOrder =
-      Number(
-        row[index["sort_order"]]
-      ) || 999;
+    const sortOrder = Number(row[index["sort_order"]]) || 999;
 
     const note =
       index["note"] === undefined
         ? ""
-        : String(
-            row[index["note"]] || ""
-          ).trim();
+        : String(row[index["note"]] || "").trim();
 
     if (
       !active ||
@@ -525,7 +461,7 @@ function getCategoriesData() {
       isExpenseTarget,
       active,
       sortOrder,
-      note
+      note,
     });
 
     /*
@@ -539,12 +475,8 @@ function getCategoriesData() {
       mapsByType[type][majorCategory] = [];
     }
 
-    if (
-      !mapsByType[type][majorCategory]
-        .includes(subCategory)
-    ) {
-      mapsByType[type][majorCategory]
-        .push(subCategory);
+    if (!mapsByType[type][majorCategory].includes(subCategory)) {
+      mapsByType[type][majorCategory].push(subCategory);
     }
 
     /*
@@ -554,30 +486,20 @@ function getCategoriesData() {
       mapsByTypeId[type] = {};
     }
 
-    if (
-      !mapsByTypeId[type][majorCategoryId]
-    ) {
-      mapsByTypeId[type][
-        majorCategoryId
-      ] = {
+    if (!mapsByTypeId[type][majorCategoryId]) {
+      mapsByTypeId[type][majorCategoryId] = {
         majorCategoryId,
         majorCategory,
         sortOrder,
-        subCategories: []
+        subCategories: [],
       };
     }
 
-    const subCategories =
-      mapsByTypeId[type][
-        majorCategoryId
-      ].subCategories;
+    const subCategories = mapsByTypeId[type][majorCategoryId].subCategories;
 
-    const alreadyExists =
-      subCategories.some(
-        item =>
-          item.subCategoryId ===
-          subCategoryId
-      );
+    const alreadyExists = subCategories.some(
+      (item) => item.subCategoryId === subCategoryId,
+    );
 
     if (!alreadyExists) {
       subCategories.push({
@@ -585,32 +507,22 @@ function getCategoriesData() {
         subCategory,
         sortOrder,
         isExpenseTarget,
-        note
+        note,
       });
     }
   }
 
   items.sort((a, b) => {
     if (a.type !== b.type) {
-      return a.type.localeCompare(
-        b.type,
-        "ja"
-      );
+      return a.type.localeCompare(b.type, "ja");
     }
 
     return a.sortOrder - b.sortOrder;
   });
 
-  Object.values(
-    mapsByTypeId
-  ).forEach(typeMap => {
-    Object.values(
-      typeMap
-    ).forEach(major => {
-      major.subCategories.sort(
-        (a, b) =>
-          a.sortOrder - b.sortOrder
-      );
+  Object.values(mapsByTypeId).forEach((typeMap) => {
+    Object.values(typeMap).forEach((major) => {
+      major.subCategories.sort((a, b) => a.sortOrder - b.sortOrder);
     });
   });
 
@@ -620,67 +532,44 @@ function getCategoriesData() {
     mapsByTypeId,
 
     // 移行中のFlutter互換用
-    expenseMap:
-      mapsByType["支出"] || {},
+    expenseMap: mapsByType["支出"] || {},
 
-    incomeMap:
-      mapsByType["収入"] || {}
+    incomeMap: mapsByType["収入"] || {},
   };
 }
 
 function createCategoryFromApp_(data) {
-  const type = String(
-    data.type || ""
-  ).trim();
+  const type = String(data.type || "").trim();
 
-  const majorCategory = String(
-    data.majorCategory || ""
-  ).trim();
+  const majorCategory = String(data.majorCategory || "").trim();
 
-  const subCategory = String(
-    data.subCategory || ""
-  ).trim();
+  const subCategory = String(data.subCategory || "").trim();
 
   if (!type) {
-    throw new Error(
-      "typeは必須です"
-    );
+    throw new Error("typeは必須です");
   }
 
   if (!majorCategory) {
-    throw new Error(
-      "majorCategoryは必須です"
-    );
+    throw new Error("majorCategoryは必須です");
   }
 
   if (!subCategory) {
-    throw new Error(
-      "subCategoryは必須です"
-    );
+    throw new Error("subCategoryは必須です");
   }
 
-  const sheet = SS.getSheetByName(
-    SHEETS.CATEGORIES
-  );
+  const sheet = SS.getSheetByName(SHEETS.CATEGORIES);
 
   if (!sheet) {
-    throw new Error(
-      "categoriesシートがありません"
-    );
+    throw new Error("categoriesシートがありません");
   }
 
-  const values =
-    sheet.getDataRange().getValues();
+  const values = sheet.getDataRange().getValues();
 
   if (values.length === 0) {
-    throw new Error(
-      "categoriesシートにヘッダーがありません"
-    );
+    throw new Error("categoriesシートにヘッダーがありません");
   }
 
-  const headers = values[0].map(
-    value => String(value || "").trim()
-  );
+  const headers = values[0].map((value) => String(value || "").trim());
 
   const index = {};
 
@@ -697,20 +586,18 @@ function createCategoryFromApp_(data) {
     "is_expense_target",
     "active",
     "sort_order",
-    "note"
+    "note",
   ];
 
   for (const column of requiredColumns) {
     if (index[column] === undefined) {
-      throw new Error(
-        `categoriesシートに${column}列がありません`
-      );
+      throw new Error(`categoriesシートに${column}列がありません`);
     }
   }
 
   const existingRows = values.slice(1);
 
-  const duplicate = existingRows.some(row => {
+  const duplicate = existingRows.some((row) => {
     return (
       String(row[index["type"]] || "").trim() === type &&
       String(row[index["major_category"]] || "").trim() === majorCategory &&
@@ -719,12 +606,10 @@ function createCategoryFromApp_(data) {
   });
 
   if (duplicate) {
-    throw new Error(
-      "同じカテゴリがすでに存在します"
-    );
+    throw new Error("同じカテゴリがすでに存在します");
   }
 
-  const sameMajorRow = existingRows.find(row => {
+  const sameMajorRow = existingRows.find((row) => {
     return (
       String(row[index["type"]] || "").trim() === type &&
       String(row[index["major_category"]] || "").trim() === majorCategory
@@ -735,64 +620,45 @@ function createCategoryFromApp_(data) {
 
   if (sameMajorRow) {
     majorCategoryId = String(
-      sameMajorRow[index["major_category_id"]] || ""
+      sameMajorRow[index["major_category_id"]] || "",
     ).trim();
   }
 
   if (!majorCategoryId) {
-    majorCategoryId =
-      createNextCategoryId_(
-        existingRows,
-        index["major_category_id"],
-        "major"
-      );
+    majorCategoryId = createNextCategoryId_(
+      existingRows,
+      index["major_category_id"],
+      "major",
+    );
   }
 
-  const subCategoryId =
-    createNextCategoryId_(
-      existingRows,
-      index["sub_category_id"],
-      "sub"
-    );
-
-  const maxSortOrder = existingRows.reduce(
-    (maximum, row) => {
-      const value = Number(
-        row[index["sort_order"]] || 0
-      );
-
-      return value > maximum
-        ? value
-        : maximum;
-    },
-    0
+  const subCategoryId = createNextCategoryId_(
+    existingRows,
+    index["sub_category_id"],
+    "sub",
   );
 
-  const row = new Array(
-    headers.length
-  ).fill("");
+  const maxSortOrder = existingRows.reduce((maximum, row) => {
+    const value = Number(row[index["sort_order"]] || 0);
+
+    return value > maximum ? value : maximum;
+  }, 0);
+
+  const row = new Array(headers.length).fill("");
 
   row[index["type"]] = type;
-  row[index["major_category_id"]] =
-    majorCategoryId;
-  row[index["major_category"]] =
-    majorCategory;
-  row[index["sub_category_id"]] =
-    subCategoryId;
-  row[index["sub_category"]] =
-    subCategory;
-  row[index["is_expense_target"]] =
-    type === "支出" ? 1 : 0;
+  row[index["major_category_id"]] = majorCategoryId;
+  row[index["major_category"]] = majorCategory;
+  row[index["sub_category_id"]] = subCategoryId;
+  row[index["sub_category"]] = subCategory;
+  row[index["is_expense_target"]] = type === "支出" ? 1 : 0;
   row[index["active"]] = 1;
-  row[index["sort_order"]] =
-    maxSortOrder + 1;
+  row[index["sort_order"]] = maxSortOrder + 1;
   row[index["note"]] = "アプリ追加";
 
   sheet.appendRow(row);
 
-  clearTableCache(
-    SHEETS.CATEGORIES
-  );
+  clearTableCache(SHEETS.CATEGORIES);
 
   return createJsonResponse_(
     {
@@ -800,70 +666,46 @@ function createCategoryFromApp_(data) {
       majorCategoryId,
       majorCategory,
       subCategoryId,
-      subCategory
+      subCategory,
     },
-    "ok"
+    "ok",
   );
 }
 
 function updateCategoryFromApp_(data) {
-  const subCategoryId = String(
-    data.subCategoryId || ""
-  ).trim();
+  const subCategoryId = String(data.subCategoryId || "").trim();
 
-  const majorCategory = String(
-    data.majorCategory || ""
-  ).trim();
+  const majorCategory = String(data.majorCategory || "").trim();
 
-  const subCategory = String(
-    data.subCategory || ""
-  ).trim();
+  const subCategory = String(data.subCategory || "").trim();
 
-  const active = toBoolean_(
-    data.active,
-    true
-  );
+  const active = toBoolean_(data.active, true);
 
   if (!subCategoryId) {
-    throw new Error(
-      "subCategoryIdは必須です"
-    );
+    throw new Error("subCategoryIdは必須です");
   }
 
   if (!majorCategory) {
-    throw new Error(
-      "majorCategoryは必須です"
-    );
+    throw new Error("majorCategoryは必須です");
   }
 
   if (!subCategory) {
-    throw new Error(
-      "subCategoryは必須です"
-    );
+    throw new Error("subCategoryは必須です");
   }
 
-  const sheet = SS.getSheetByName(
-    SHEETS.CATEGORIES
-  );
+  const sheet = SS.getSheetByName(SHEETS.CATEGORIES);
 
   if (!sheet) {
-    throw new Error(
-      "categoriesシートがありません"
-    );
+    throw new Error("categoriesシートがありません");
   }
 
-  const values =
-    sheet.getDataRange().getValues();
+  const values = sheet.getDataRange().getValues();
 
   if (values.length <= 1) {
-    throw new Error(
-      "更新対象のカテゴリがありません"
-    );
+    throw new Error("更新対象のカテゴリがありません");
   }
 
-  const headers = values[0].map(
-    value => String(value || "").trim()
-  );
+  const headers = values[0].map((value) => String(value || "").trim());
 
   const index = {};
 
@@ -875,130 +717,77 @@ function updateCategoryFromApp_(data) {
     "sub_category_id",
     "major_category",
     "sub_category",
-    "active"
+    "active",
   ];
 
   for (const column of requiredColumns) {
     if (index[column] === undefined) {
-      throw new Error(
-        `categoriesシートに${column}列がありません`
-      );
+      throw new Error(`categoriesシートに${column}列がありません`);
     }
   }
 
   let targetRowIndex = -1;
 
-  for (
-    let rowIndex = 1;
-    rowIndex < values.length;
-    rowIndex++
-  ) {
+  for (let rowIndex = 1; rowIndex < values.length; rowIndex++) {
     const rowSubCategoryId = String(
-      values[rowIndex][
-        index["sub_category_id"]
-      ] || ""
+      values[rowIndex][index["sub_category_id"]] || "",
     ).trim();
 
-    if (
-      rowSubCategoryId ===
-      subCategoryId
-    ) {
+    if (rowSubCategoryId === subCategoryId) {
       targetRowIndex = rowIndex;
       break;
     }
   }
 
   if (targetRowIndex === -1) {
-    throw new Error(
-      "更新対象のカテゴリが見つかりません"
-    );
+    throw new Error("更新対象のカテゴリが見つかりません");
   }
 
-  const type = String(
-    values[targetRowIndex][
-      index["type"]
-    ] || ""
-  ).trim();
+  const type = String(values[targetRowIndex][index["type"]] || "").trim();
 
-  const duplicateExists = values
-    .slice(1)
-    .some((row, indexInSlice) => {
-      const actualRowIndex =
-        indexInSlice + 1;
+  const duplicateExists = values.slice(1).some((row, indexInSlice) => {
+    const actualRowIndex = indexInSlice + 1;
 
-      if (
-        actualRowIndex ===
-        targetRowIndex
-      ) {
-        return false;
-      }
+    if (actualRowIndex === targetRowIndex) {
+      return false;
+    }
 
-      return (
-        String(
-          row[index["type"]] || ""
-        ).trim() === type &&
-        String(
-          row[index["major_category"]] || ""
-        ).trim() === majorCategory &&
-        String(
-          row[index["sub_category"]] || ""
-        ).trim() === subCategory
-      );
-    });
+    return (
+      String(row[index["type"]] || "").trim() === type &&
+      String(row[index["major_category"]] || "").trim() === majorCategory &&
+      String(row[index["sub_category"]] || "").trim() === subCategory
+    );
+  });
 
   if (duplicateExists) {
-    throw new Error(
-      "同じカテゴリがすでに存在します"
-    );
+    throw new Error("同じカテゴリがすでに存在します");
   }
 
-  values[targetRowIndex][
-    index["major_category"]
-  ] = majorCategory;
+  values[targetRowIndex][index["major_category"]] = majorCategory;
 
-  values[targetRowIndex][
-    index["sub_category"]
-  ] = subCategory;
+  values[targetRowIndex][index["sub_category"]] = subCategory;
 
-  values[targetRowIndex][
-    index["active"]
-  ] = active ? 1 : 0;
+  values[targetRowIndex][index["active"]] = active ? 1 : 0;
 
   sheet
-    .getRange(
-      targetRowIndex + 1,
-      1,
-      1,
-      headers.length
-    )
-    .setValues([
-      values[targetRowIndex]
-    ]);
+    .getRange(targetRowIndex + 1, 1, 1, headers.length)
+    .setValues([values[targetRowIndex]]);
 
-  clearTableCache(
-    SHEETS.CATEGORIES
-  );
+  clearTableCache(SHEETS.CATEGORIES);
 
   return createJsonResponse_(
     {
       subCategoryId,
       majorCategory,
       subCategory,
-      active
+      active,
     },
-    "ok"
+    "ok",
   );
 }
 
-function toBoolean_(
-  value,
-  defaultValue
-  ) {
-  if (
-    value === null ||
-    value === undefined ||
-    value === ""
-  ) {
+function toBoolean_(value, defaultValue) {
+  if (value === null || value === undefined || value === "") {
     return defaultValue;
   }
 
@@ -1010,76 +799,48 @@ function toBoolean_(
     return value !== 0;
   }
 
-  const text = String(
-    value
-  ).trim().toLowerCase();
+  const text = String(value).trim().toLowerCase();
 
-  if (
-    text === "true" ||
-    text === "1"
-  ) {
+  if (text === "true" || text === "1") {
     return true;
   }
 
-  if (
-    text === "false" ||
-    text === "0"
-  ) {
+  if (text === "false" || text === "0") {
     return false;
   }
 
   return defaultValue;
 }
 
-function createNextCategoryId_(
-  rows,
-  columnIndex,
-  prefix
-  ) {
+function createNextCategoryId_(rows, columnIndex, prefix) {
   let maximum = 0;
 
   for (const row of rows) {
-    const value = String(
-      row[columnIndex] || ""
-    ).trim();
+    const value = String(row[columnIndex] || "").trim();
 
-    const match = value.match(
-      new RegExp(
-        `^${prefix}_(\\d+)$`
-      )
-    );
+    const match = value.match(new RegExp(`^${prefix}_(\\d+)$`));
 
     if (!match) {
       continue;
     }
 
-    const number = Number(
-      match[1]
-    );
+    const number = Number(match[1]);
 
     if (number > maximum) {
       maximum = number;
     }
   }
 
-  return `${prefix}_${String(
-    maximum + 1
-  ).padStart(3, "0")}`;
+  return `${prefix}_${String(maximum + 1).padStart(3, "0")}`;
 }
 
 function getMasterData() {
   const categories = getCategoriesData();
   const accounts = getAccountsData_();
 
-  const transactionTypes =
-    buildTransactionTypes_(
-      categories.items
-    );
+  const transactionTypes = buildTransactionTypes_(categories.items);
 
-  const transactionStatuses = [
-    "要確認",
-    "確定"
-  ];
+  const transactionStatuses = ["要確認", "確定"];
 
   return {
     categories,
@@ -1087,34 +848,26 @@ function getMasterData() {
     transactionTypes,
     transactionStatuses,
     settings: {},
-    generatedAt:
-      new Date().toISOString()
+    generatedAt: new Date().toISOString(),
   };
 }
 
 function getAccountsData_() {
-  const sheet = SS.getSheetByName(
-    SHEETS.ACCOUNTS
-  );
+  const sheet = SS.getSheetByName(SHEETS.ACCOUNTS);
 
   if (!sheet) {
-    throw new Error(
-      "accountsシートがありません"
-    );
+    throw new Error("accountsシートがありません");
   }
 
-  const values =
-    sheet.getDataRange().getValues();
+  const values = sheet.getDataRange().getValues();
 
   if (values.length <= 1) {
     return {
-      items: []
+      items: [],
     };
   }
 
-  const headers = values[0].map(
-    value => String(value || "").trim()
-  );
+  const headers = values[0].map((value) => String(value || "").trim());
 
   const index = {};
 
@@ -1127,55 +880,38 @@ function getAccountsData_() {
     "account_name",
     "payment_method",
     "wallet",
-    "active"
+    "active",
   ];
 
   for (const column of requiredColumns) {
     if (index[column] === undefined) {
-      throw new Error(
-        `accountsシートに${column}列がありません`
-      );
+      throw new Error(`accountsシートに${column}列がありません`);
     }
   }
 
   const items = [];
 
   for (const row of values.slice(1)) {
-    const activeValue =
-      row[index["active"]];
+    const activeValue = row[index["active"]];
 
     const active =
       activeValue === true ||
       Number(activeValue) === 1 ||
-      String(activeValue)
-        .trim()
-        .toLowerCase() === "true";
+      String(activeValue).trim().toLowerCase() === "true";
 
     if (!active) {
       continue;
     }
 
-    const accountId = String(
-      row[index["account_id"]] || ""
-    ).trim();
+    const accountId = String(row[index["account_id"]] || "").trim();
 
-    const accountName = String(
-      row[index["account_name"]] || ""
-    ).trim();
+    const accountName = String(row[index["account_name"]] || "").trim();
 
-    const paymentMethod = String(
-      row[index["payment_method"]] || ""
-    ).trim();
+    const paymentMethod = String(row[index["payment_method"]] || "").trim();
 
-    const wallet = String(
-      row[index["wallet"]] || ""
-    ).trim();
+    const wallet = String(row[index["wallet"]] || "").trim();
 
-    if (
-      !accountId ||
-      !accountName ||
-      !paymentMethod
-    ) {
+    if (!accountId || !accountName || !paymentMethod) {
       continue;
     }
 
@@ -1187,62 +923,45 @@ function getAccountsData_() {
       institution:
         index["institution"] === undefined
           ? ""
-          : String(
-              row[index["institution"]] || ""
-            ).trim(),
+          : String(row[index["institution"]] || "").trim(),
 
       isAsset:
         index["is_asset"] === undefined
           ? false
-          : Number(
-              row[index["is_asset"]] || 0
-            ) === 1,
+          : Number(row[index["is_asset"]] || 0) === 1,
 
       isLiability:
         index["is_liability"] === undefined
           ? false
-          : Number(
-              row[index["is_liability"]] || 0
-            ) === 1,
+          : Number(row[index["is_liability"]] || 0) === 1,
       active,
 
       note:
         index["note"] === undefined
           ? ""
-          : String(
-              row[index["note"]] || ""
-            ).trim(),
+          : String(row[index["note"]] || "").trim(),
 
       sortOrder:
         index["sort_order"] === undefined
           ? 999
-          : Number(
-              row[index["sort_order"]] || 999
-            ),
+          : Number(row[index["sort_order"]] || 999),
     });
   }
   items.sort((a, b) => {
     return a.sortOrder - b.sortOrder;
   });
   return {
-    items
+    items,
   };
 }
 
-function buildTransactionTypes_(
-  categoryItems
-  ) {
+function buildTransactionTypes_(categoryItems) {
   const types = [];
 
   for (const item of categoryItems) {
-    const value = String(
-      item.type || ""
-    ).trim();
+    const value = String(item.type || "").trim();
 
-    if (
-      value &&
-      !types.includes(value)
-    ) {
+    if (value && !types.includes(value)) {
       types.push(value);
     }
   }
@@ -1251,26 +970,19 @@ function buildTransactionTypes_(
 }
 
 function initializeCategoryIds() {
-  const sheet = SS.getSheetByName(
-    SHEETS.CATEGORIES
-  );
+  const sheet = SS.getSheetByName(SHEETS.CATEGORIES);
 
   if (!sheet) {
-    throw new Error(
-      "categoriesシートがありません"
-    );
+    throw new Error("categoriesシートがありません");
   }
 
-  const values =
-    sheet.getDataRange().getValues();
+  const values = sheet.getDataRange().getValues();
 
   if (values.length <= 1) {
     return;
   }
 
-  const headers = values[0].map(
-    value => String(value || "").trim()
-  );
+  const headers = values[0].map((value) => String(value || "").trim());
 
   const requiredHeaders = [
     "type",
@@ -1281,14 +993,12 @@ function initializeCategoryIds() {
     "is_expense_target",
     "active",
     "sort_order",
-    "note"
+    "note",
   ];
 
   for (const header of requiredHeaders) {
     if (!headers.includes(header)) {
-      throw new Error(
-        `categoriesシートに${header}列がありません`
-      );
+      throw new Error(`categoriesシートに${header}列がありません`);
     }
   }
 
@@ -1307,31 +1017,18 @@ function initializeCategoryIds() {
 
   // 既に入っているIDを先に記憶
   for (const row of values.slice(1)) {
-    const type = String(
-      row[index["type"]] || ""
-    ).trim();
+    const type = String(row[index["type"]] || "").trim();
 
-    const majorCategory = String(
-      row[index["major_category"]] || ""
-    ).trim();
+    const majorCategory = String(row[index["major_category"]] || "").trim();
 
     const majorCategoryId = String(
-      row[index["major_category_id"]] || ""
+      row[index["major_category_id"]] || "",
     ).trim();
 
-    const subCategoryId = String(
-      row[index["sub_category_id"]] || ""
-    ).trim();
+    const subCategoryId = String(row[index["sub_category_id"]] || "").trim();
 
-    if (
-      type &&
-      majorCategory &&
-      majorCategoryId
-    ) {
-      majorIdMap.set(
-        `${type}|${majorCategory}`,
-        majorCategoryId
-      );
+    if (type && majorCategory && majorCategoryId) {
+      majorIdMap.set(`${type}|${majorCategory}`, majorCategoryId);
 
       usedMajorIds.add(majorCategoryId);
     }
@@ -1345,9 +1042,7 @@ function initializeCategoryIds() {
     let id;
 
     do {
-      id = `major_${String(
-        nextMajorNumber++
-      ).padStart(3, "0")}`;
+      id = `major_${String(nextMajorNumber++).padStart(3, "0")}`;
     } while (usedMajorIds.has(id));
 
     usedMajorIds.add(id);
@@ -1359,9 +1054,7 @@ function initializeCategoryIds() {
     let id;
 
     do {
-      id = `sub_${String(
-        nextSubNumber++
-      ).padStart(3, "0")}`;
+      id = `sub_${String(nextSubNumber++).padStart(3, "0")}`;
     } while (usedSubIds.has(id));
 
     usedSubIds.add(id);
@@ -1369,97 +1062,53 @@ function initializeCategoryIds() {
     return id;
   }
 
-  for (
-    let rowIndex = 1;
-    rowIndex < values.length;
-    rowIndex++
-  ) {
+  for (let rowIndex = 1; rowIndex < values.length; rowIndex++) {
     const row = values[rowIndex];
 
-    const type = String(
-      row[index["type"]] || ""
-    ).trim();
+    const type = String(row[index["type"]] || "").trim();
 
-    const majorCategory = String(
-      row[index["major_category"]] || ""
-    ).trim();
+    const majorCategory = String(row[index["major_category"]] || "").trim();
 
-    const subCategory = String(
-      row[index["sub_category"]] || ""
-    ).trim();
+    const subCategory = String(row[index["sub_category"]] || "").trim();
 
-    if (
-      !type ||
-      !majorCategory ||
-      !subCategory
-    ) {
+    if (!type || !majorCategory || !subCategory) {
       continue;
     }
 
-    const majorKey =
-      `${type}|${majorCategory}`;
+    const majorKey = `${type}|${majorCategory}`;
 
-    let majorCategoryId = String(
-      row[index["major_category_id"]] || ""
-    ).trim();
+    let majorCategoryId = String(row[index["major_category_id"]] || "").trim();
 
     if (!majorCategoryId) {
-      majorCategoryId =
-        majorIdMap.get(majorKey) ||
-        createMajorId();
+      majorCategoryId = majorIdMap.get(majorKey) || createMajorId();
 
-      majorIdMap.set(
-        majorKey,
-        majorCategoryId
-      );
+      majorIdMap.set(majorKey, majorCategoryId);
 
-      row[index["major_category_id"]] =
-        majorCategoryId;
+      row[index["major_category_id"]] = majorCategoryId;
     }
 
-    let subCategoryId = String(
-      row[index["sub_category_id"]] || ""
-    ).trim();
+    let subCategoryId = String(row[index["sub_category_id"]] || "").trim();
 
     if (!subCategoryId) {
       subCategoryId = createSubId();
 
-      row[index["sub_category_id"]] =
-        subCategoryId;
+      row[index["sub_category_id"]] = subCategoryId;
     }
 
-    const activeValue =
-      row[index["active"]];
+    const activeValue = row[index["active"]];
 
-    if (
-      activeValue === "" ||
-      activeValue === null
-    ) {
+    if (activeValue === "" || activeValue === null) {
       row[index["active"]] = 1;
     }
 
-    const sortOrderValue =
-      row[index["sort_order"]];
+    const sortOrderValue = row[index["sort_order"]];
 
-    if (
-      sortOrderValue === "" ||
-      sortOrderValue === null
-    ) {
-      row[index["sort_order"]] =
-        rowIndex;
+    if (sortOrderValue === "" || sortOrderValue === null) {
+      row[index["sort_order"]] = rowIndex;
     }
   }
 
-  sheet
-    .getRange(
-      1,
-      1,
-      values.length,
-      headers.length
-    )
-    .setValues(values);
+  sheet.getRange(1, 1, values.length, headers.length).setValues(values);
 
-  clearTableCache(
-    SHEETS.CATEGORIES
-  );
+  clearTableCache(SHEETS.CATEGORIES);
 }
