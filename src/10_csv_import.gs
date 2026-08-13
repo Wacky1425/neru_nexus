@@ -404,6 +404,7 @@ function reconcileCardSettlementForBatch_(importBatch, rawAccountName) {
         .setValues(values.slice(1));
 
       clearTableCache(SHEETS.TRANSACTIONS);
+      clearAccountBalanceCache_();
     }
     let candidateAmount = null;
     let difference = null;
@@ -447,6 +448,7 @@ function reconcileCardSettlementForBatch_(importBatch, rawAccountName) {
     .setValues(values.slice(1));
 
   clearTableCache(SHEETS.TRANSACTIONS);
+  clearAccountBalanceCache_();
 
   return {
     matched: true,
@@ -535,6 +537,7 @@ function confirmSettlementManually_(data) {
     .setValues(values.slice(1));
 
   clearTableCache(SHEETS.TRANSACTIONS);
+  clearAccountBalanceCache_();
 
   rebuildAllViews();
 

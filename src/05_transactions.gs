@@ -779,7 +779,7 @@ function appendTransactionRows(rows) {
     .setValues(rows);
 
   clearTableCache(SHEETS.TRANSACTIONS);
-
+  clearAccountBalanceCache_();
   return rows.length;
 }
 

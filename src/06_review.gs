@@ -263,6 +263,96 @@ function rebuildReviewSummary() {
   );
 }
 
+function rebuildReviewViews() {
+  const transactionTable =
+    loadTable(SHEETS.TRANSACTIONS);
+
+  if (transactionTable.rows.length === 0) {
+    return;
+  }
+
+  assertRequiredColumns(
+    transactionTable.index,
+    [
+      "id",
+      "transaction_date",
+      "type",
+      "source_type",
+      "account_name",
+      "merchant",
+      "item_name",
+      "note",
+      "amount",
+      "major_category",
+      "sub_category",
+      "status",
+      "settlement_status",
+      "duplicate_key"
+    ],
+    SHEETS.TRANSACTIONS
+  );
+
+  const manualMap =
+    loadReviewManualMap_();
+
+  const merchantCountMap =
+    buildMerchantCountMap_(
+      transactionTable.rows,
+      transactionTable.index
+    );
+
+  const targetRows =
+    transactionTable.rows.filter(
+      row => {
+        const status = getString(
+          row,
+          transactionTable.index,
+          "status"
+        );
+
+        const settlementStatus =
+          getString(
+            row,
+            transactionTable.index,
+            "settlement_status"
+          );
+
+        return (
+          status === "要確認" ||
+          settlementStatus === "review"
+        );
+      }
+    );
+
+  const reviewRows =
+    targetRows.map(
+      row =>
+        buildReviewQueueRow_(
+          row,
+          transactionTable.index,
+          merchantCountMap,
+          manualMap
+        )
+    );
+
+  // Review Queueを書き込む
+  writeTable(
+    getRequiredSheet(
+      SHEETS.REVIEW_QUEUE
+    ),
+    1,
+    1,
+    REVIEW_QUEUE_HEADERS,
+    reviewRows
+  );
+
+  // 同じreviewRowsをそのまま使って
+  // Summaryも作る
+  rebuildReviewSummaryFromRows_(
+    reviewRows
+  );
+}
+
 function rebuildBulkReview() {
   const table = loadTable(SHEETS.REVIEW_SUMMARY);
   const bulkSheet = getRequiredSheet(SHEETS.BULK_REVIEW);

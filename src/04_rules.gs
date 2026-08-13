@@ -941,6 +941,16 @@ function getAccountsData_() {
           ? ""
           : String(row[index["note"]] || "").trim(),
 
+      openingBalance:
+        index["opening_balance"] === undefined
+          ? 0
+          : Number(row[index["opening_balance"]] || 0),
+
+      openingBalanceDate:
+        index["opening_balance_date"] === undefined
+          ? ""
+          : formatApiDate_(row[index["opening_balance_date"]]),
+
       sortOrder:
         index["sort_order"] === undefined
           ? 999
@@ -952,6 +962,161 @@ function getAccountsData_() {
   });
   return {
     items,
+  };
+}
+
+function getAccountBalancesData_() {
+  const accountsResult = getAccountsData_();
+
+  const transactionTable = loadTransactions();
+
+  const accounts = accountsResult.items || [];
+
+  if (accounts.length === 0) {
+    return {
+      items: [],
+      totalAssets: 0,
+      totalLiabilities: 0,
+      netAssets: 0,
+    };
+  }
+
+  if (transactionTable.rows.length === 0) {
+    const items = accounts.map((account) => {
+      const currentBalance = Number(account.openingBalance || 0);
+
+      return {
+        ...account,
+        currentBalance,
+      };
+    });
+
+    return buildAccountBalanceResult_(items);
+  }
+
+  assertRequiredColumns(
+    transactionTable.index,
+    [
+      "transaction_date",
+      "type",
+      "amount",
+      "account_name",
+      "from_account",
+      "to_account",
+    ],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const items = accounts.map((account) => {
+    let currentBalance = Number(account.openingBalance || 0);
+
+    const openingDate = String(account.openingBalanceDate || "").trim();
+
+    const accountName = String(account.accountName || "").trim();
+
+    const isAsset = account.isAsset === true;
+
+    const isLiability = account.isLiability === true;
+
+    for (const row of transactionTable.rows) {
+      const transactionDate = formatApiDate_(
+        row[transactionTable.index["transaction_date"]],
+      );
+
+      // 基準日より前の取引は使わない
+      if (openingDate && transactionDate && transactionDate <= openingDate) {
+        continue;
+      }
+
+      const type = getString(row, transactionTable.index, "type");
+
+      const amount = getNumber(row, transactionTable.index, "amount");
+
+      const rowAccount = resolveCanonicalAccountName_(
+        getString(row, transactionTable.index, "account_name"),
+      );
+
+      const fromAccount = resolveCanonicalAccountName_(
+        getString(row, transactionTable.index, "from_account"),
+      );
+
+      const toAccount = resolveCanonicalAccountName_(
+        getString(row, transactionTable.index, "to_account"),
+      );
+
+      if (type === "収入") {
+        if (rowAccount === accountName) {
+          if (isLiability) {
+            currentBalance -= amount;
+          } else {
+            currentBalance += amount;
+          }
+        }
+
+        continue;
+      }
+
+      if (type === "支出") {
+        if (rowAccount === accountName) {
+          if (isLiability) {
+            currentBalance += amount;
+          } else {
+            currentBalance -= amount;
+          }
+        }
+
+        continue;
+      }
+
+      if (type === "移動" || type === "振替") {
+        if (fromAccount === accountName) {
+          if (isLiability) {
+            currentBalance += amount;
+          } else {
+            currentBalance -= amount;
+          }
+        }
+
+        if (toAccount === accountName) {
+          if (isLiability) {
+            currentBalance -= amount;
+          } else {
+            currentBalance += amount;
+          }
+        }
+      }
+    }
+
+    return {
+      ...account,
+      currentBalance,
+    };
+  });
+
+  return buildAccountBalanceResult_(items);
+}
+
+function buildAccountBalanceResult_(items) {
+  let totalAssets = 0;
+  let totalLiabilities = 0;
+
+  for (const account of items) {
+    const balance = Number(account.currentBalance || 0);
+
+    if (account.isAsset) {
+      totalAssets += balance;
+    }
+
+    if (account.isLiability) {
+      totalLiabilities += balance;
+    }
+  }
+
+  return {
+    items,
+    totalAssets,
+    totalLiabilities,
+    netAssets: totalAssets - totalLiabilities,
   };
 }
 

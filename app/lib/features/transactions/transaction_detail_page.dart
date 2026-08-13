@@ -157,6 +157,8 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                 _ => transaction.settlementStatus,
               },
             ),
+          if (transaction.note.trim().isNotEmpty)
+            _Item(title: 'メモ', value: transaction.note),
 
           if (_settlementDetailsFuture != null) ...[
             const SizedBox(height: 24),

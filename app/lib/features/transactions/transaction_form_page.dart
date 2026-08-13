@@ -218,7 +218,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
 
     _isConfirmed = tx.status == '確定';
 
-    _memoController.text = "";
+    _memoController.text = tx.note;
   }
 
   Future<MasterModel> _loadMaster() async {

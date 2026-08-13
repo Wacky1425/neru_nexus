@@ -110,6 +110,9 @@ function doGet(e) {
       case "master":
         return createJsonResponse_(getMasterData(), "ok");
 
+      case "account_balances":
+        return createJsonResponse_(getAccountBalancesData(), "ok");
+
       case "review_transactions":
         return createJsonResponse_(
           getReviewTransactionsData({
@@ -466,6 +469,26 @@ function updateTransactionFromApp_(data) {
 
   const existingRow = table.rows[rowIndex];
 
+  const oldStatus = getString(existingRow, table.index, "status");
+
+  const oldTransactionDate = existingRow[table.index["transaction_date"]];
+
+  const oldType = getString(existingRow, table.index, "type");
+
+  const oldAmount = getNumber(existingRow, table.index, "amount");
+
+  const oldMajorCategory = getString(
+    existingRow,
+    table.index,
+    "major_category",
+  );
+
+  const oldExpenseAmount = getNumber(
+    existingRow,
+    table.index,
+    "expense_amount",
+  );
+
   const existingSettlementStatus = getString(
     existingRow,
     table.index,
@@ -561,6 +584,13 @@ function updateTransactionFromApp_(data) {
     settlement_id: type === "移動" ? existingSettlementId : "",
   };
 
+  const needsReviewRefresh =
+    oldStatus === "要確認" ||
+    status === "要確認" ||
+    existingSettlementStatus === "review" ||
+    updatedTransaction.settlement_status === "review" ||
+    saveRule;
+
   const recordedAt = existingRow[table.index["recorded_at"]] || new Date();
 
   const yearMonth = resolveTransactionYearMonth(transactionDate, recordedAt);
@@ -578,7 +608,7 @@ function updateTransactionFromApp_(data) {
   const sheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
 
   if (!sheet) {
-    throw new Error("transactionsシートがありません");
+    throw new Error(`${SHEETS.TRANSACTIONS}シートがありません`);
   }
 
   const sheetRowNumber = rowIndex + 2;
@@ -588,6 +618,7 @@ function updateTransactionFromApp_(data) {
     .setValues([updatedRow]);
 
   clearTableCache(SHEETS.TRANSACTIONS);
+  clearAccountBalanceCache_();
 
   let ruleResult = null;
 
@@ -611,9 +642,30 @@ function updateTransactionFromApp_(data) {
     });
   }
 
-  rebuildReviewQueue();
-  rebuildReviewSummary();
-  rebuildAllViews();
+  const newExpenseAmount = amount * expenseRatio;
+
+  const needsSummaryRefresh =
+    normalizeYearMonth(oldTransactionDate) !== yearMonth ||
+    oldType !== type ||
+    oldAmount !== amount ||
+    oldMajorCategory !== majorCategory ||
+    oldExpenseAmount !== newExpenseAmount;
+
+  if (needsReviewRefresh) {
+    rebuildReviewViews();
+  }
+
+  if (needsSummaryRefresh) {
+    const oldYearMonth = normalizeYearMonth(oldTransactionDate);
+
+    if (oldYearMonth) {
+      rebuildSummariesForMonth_(oldYearMonth);
+    }
+
+    if (yearMonth && yearMonth !== oldYearMonth) {
+      rebuildSummariesForMonth_(yearMonth);
+    }
+  }
 
   return createJsonResponse_(
     {
@@ -668,6 +720,7 @@ function deleteTransactionFromApp_(data) {
       sheet.deleteRow(i + 1);
 
       clearTableCache(SHEETS.TRANSACTIONS);
+      clearAccountBalanceCache_();
 
       /*
        * 取引そのものの削除は完了済み。
@@ -790,6 +843,7 @@ function getTransactionsData(options) {
       "from_account",
       "to_account",
       "import_batch",
+      "note",
     ],
     SHEETS.TRANSACTIONS,
   );
@@ -898,6 +952,8 @@ function getTransactionsData(options) {
     toAccount: getString(row, table.index, "to_account"),
 
     importBatch: getString(row, table.index, "import_batch"),
+
+    note: getString(row, table.index, "note"),
   }));
 
   return {

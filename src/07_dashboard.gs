@@ -780,3 +780,38 @@ function getFeaturedDreamFund() {
 
   return candidates[0];
 }
+
+const ACCOUNT_BALANCE_CACHE_KEY =
+  "account_balances_v1";
+
+function getAccountBalancesData() {
+  const cache =
+    CacheService.getScriptCache();
+
+  const cached = cache.get(
+    ACCOUNT_BALANCE_CACHE_KEY
+  );
+
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  const result =
+    getAccountBalancesData_();
+
+  cache.put(
+    ACCOUNT_BALANCE_CACHE_KEY,
+    JSON.stringify(result),
+    21600
+  );
+
+  return result;
+}
+
+function clearAccountBalanceCache_() {
+  CacheService
+    .getScriptCache()
+    .remove(
+      ACCOUNT_BALANCE_CACHE_KEY
+    );
+}

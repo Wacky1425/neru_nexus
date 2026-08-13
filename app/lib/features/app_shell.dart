@@ -5,6 +5,7 @@ import 'home/home_page.dart';
 import 'import/import_page.dart';
 import 'settings/settings_page.dart';
 import 'transactions/transactions_page.dart';
+import 'accounts/account_balance_page.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -21,6 +22,7 @@ class _AppShellState extends State<AppShell> {
     TransactionsPage(),
     ImportPage(),
     AnalyticsPage(),
+    AccountBalancePage(),
     SettingsPage(),
   ];
 
@@ -55,6 +57,11 @@ class _AppShellState extends State<AppShell> {
             icon: Icon(Icons.bar_chart_outlined),
             selectedIcon: Icon(Icons.bar_chart),
             label: '分析',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            selectedIcon: Icon(Icons.account_balance_wallet),
+            label: '資産',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),

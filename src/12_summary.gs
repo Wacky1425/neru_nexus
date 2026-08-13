@@ -190,6 +190,88 @@ function rebuildSummaries() {
   );
 }
 
+function rebuildSummariesForMonth_(yearMonth) {
+  const targetMonth = normalizeBudgetYearMonth(yearMonth);
+
+  if (!targetMonth) {
+    return;
+  }
+
+  const transactionTable = loadTransactions();
+
+  if (transactionTable.rows.length === 0) {
+    return;
+  }
+
+  assertRequiredColumns(
+    transactionTable.index,
+    ["transaction_date", "type", "major_category", "amount", "expense_amount"],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const targetRows = transactionTable.rows.filter((row) => {
+    const rowMonth = normalizeYearMonth(
+      row[transactionTable.index["transaction_date"]],
+    );
+
+    return rowMonth === targetMonth;
+  });
+
+  const targetTable = {
+    ...transactionTable,
+    rows: targetRows,
+  };
+
+  const { monthlyMap, categoryMap } =
+    aggregateTransactionSummaries_(targetTable);
+
+  const monthlyRows = buildMonthlySummaryRows_(monthlyMap);
+
+  const categoryRows = buildCategorySummaryRows_(categoryMap);
+
+  replaceSummaryMonth_(SHEETS.MONTHLY_SUMMARY, targetMonth, monthlyRows);
+
+  replaceSummaryMonth_(SHEETS.CATEGORY_SUMMARY, targetMonth, categoryRows);
+
+  clearTableCache(SHEETS.MONTHLY_SUMMARY);
+
+  clearTableCache(SHEETS.CATEGORY_SUMMARY);
+}
+
+function replaceSummaryMonth_(sheetName, yearMonth, newRows) {
+  const sheet = getRequiredSheet(sheetName);
+
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length === 0) {
+    return;
+  }
+
+  const headers = values[0];
+
+  const yearMonthIndex = headers.indexOf("year_month");
+
+  if (yearMonthIndex === -1) {
+    throw new Error(`${sheetName}にyear_month列がありません`);
+  }
+
+  const remainingRows = values.slice(1).filter((row) => {
+    return String(row[yearMonthIndex] || "").trim() !== yearMonth;
+  });
+
+  const outputRows = [...remainingRows, ...newRows];
+
+  sheet.clearContents();
+
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+  if (outputRows.length > 0) {
+    sheet
+      .getRange(2, 1, outputRows.length, headers.length)
+      .setValues(outputRows);
+  }
+}
+
 function getCategorySummary(yearMonth) {
   const sheet = SS.getSheetByName(SHEETS.CATEGORY_SUMMARY);
 
@@ -220,4 +302,82 @@ function getCategorySummary(yearMonth) {
   result.sort((a, b) => b.amount - a.amount);
 
   return result;
+}
+
+function rebuildReviewSummaryFromRows_(reviewRows) {
+  const summarySheet = getRequiredSheet(SHEETS.REVIEW_SUMMARY);
+
+  if (!Array.isArray(reviewRows) || reviewRows.length === 0) {
+    writeTable(
+      summarySheet,
+      1,
+      1,
+      ["merchant", "count", "total_amount", "sample_category"],
+      [],
+    );
+
+    return;
+  }
+
+  const index = createHeaderIndex(REVIEW_QUEUE_HEADERS);
+
+  const requiredColumns = [
+    "merchant",
+    "amount",
+    "major_category",
+    "sub_category",
+  ];
+
+  for (const column of requiredColumns) {
+    if (index[column] === undefined) {
+      throw new Error(`Review Queueに${column}列がありません`);
+    }
+  }
+
+  const summaryMap = new Map();
+
+  for (const row of reviewRows) {
+    const merchant = String(row[index["merchant"]] || "").trim();
+
+    if (!merchant) {
+      continue;
+    }
+
+    const amount = Number(row[index["amount"]] || 0);
+
+    const major = String(row[index["major_category"]] || "").trim();
+
+    const sub = String(row[index["sub_category"]] || "").trim();
+
+    if (!summaryMap.has(merchant)) {
+      summaryMap.set(merchant, {
+        merchant,
+        count: 0,
+        totalAmount: 0,
+        sampleCategory: `${major} / ${sub}`,
+      });
+    }
+
+    const summary = summaryMap.get(merchant);
+
+    summary.count += 1;
+    summary.totalAmount += amount;
+  }
+
+  const rows = Array.from(summaryMap.values())
+    .sort((a, b) => b.count - a.count)
+    .map((summary) => [
+      summary.merchant,
+      summary.count,
+      summary.totalAmount,
+      summary.sampleCategory,
+    ]);
+
+  writeTable(
+    summarySheet,
+    1,
+    1,
+    ["merchant", "count", "total_amount", "sample_category"],
+    rows,
+  );
 }

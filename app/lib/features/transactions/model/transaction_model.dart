@@ -19,6 +19,7 @@ class TransactionModel {
     required this.fromAccount,
     required this.toAccount,
     required this.importBatch,
+    required this.note,
   });
 
   final String id;
@@ -40,6 +41,7 @@ class TransactionModel {
   final String toAccount;
   final String importBatch;
   final String accountName;
+  final String note;
 
   factory TransactionModel.fromJson(Map<String, dynamic> json) {
     return TransactionModel(
@@ -62,6 +64,7 @@ class TransactionModel {
       toAccount: json['toAccount'] ?? '',
       importBatch: json['importBatch'] ?? '',
       accountName: json['accountName'] ?? '',
+      note: json['note'] ?? '',
     );
   }
 }
