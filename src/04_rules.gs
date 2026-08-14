@@ -1120,6 +1120,89 @@ function buildAccountBalanceResult_(items) {
   };
 }
 
+function updateAccountOpeningBalanceFromApp_(data) {
+  const accountId = String(data.accountId || "").trim();
+
+  const openingBalanceValue = data.openingBalance;
+
+  const openingBalanceDate = String(data.openingBalanceDate || "").trim();
+
+  if (!accountId) {
+    throw new Error("accountIdは必須です");
+  }
+
+  if (
+    openingBalanceValue === null ||
+    openingBalanceValue === undefined ||
+    openingBalanceValue === ""
+  ) {
+    throw new Error("openingBalanceは必須です");
+  }
+
+  const openingBalance = Number(openingBalanceValue);
+
+  if (!Number.isFinite(openingBalance)) {
+    throw new Error("openingBalanceが不正です");
+  }
+
+  if (!openingBalanceDate) {
+    throw new Error("openingBalanceDateは必須です");
+  }
+
+  const sheet = getRequiredSheet(SHEETS.ACCOUNTS);
+
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) {
+    throw new Error("口座データがありません");
+  }
+
+  const index = createHeaderIndex(values[0]);
+
+  assertRequiredColumns(
+    index,
+    ["account_id", "opening_balance", "opening_balance_date"],
+    SHEETS.ACCOUNTS,
+  );
+
+  let targetRow = -1;
+
+  for (let i = 1; i < values.length; i++) {
+    const rowAccountId = String(values[i][index["account_id"]] || "").trim();
+
+    if (rowAccountId === accountId) {
+      targetRow = i + 1;
+      break;
+    }
+  }
+
+  if (targetRow === -1) {
+    throw new Error("対象の口座が見つかりません");
+  }
+
+  sheet
+    .getRange(targetRow, index["opening_balance"] + 1)
+    .setValue(openingBalance);
+
+  sheet
+    .getRange(targetRow, index["opening_balance_date"] + 1)
+    .setValue(openingBalanceDate);
+
+  clearTableCache(SHEETS.ACCOUNTS);
+
+  clearAccountBalanceCache_();
+
+  return createJsonResponse_(
+    {
+      updated: true,
+      accountId,
+      openingBalance,
+      openingBalanceDate,
+    },
+    "ok",
+  );
+}
+
 function buildTransactionTypes_(categoryItems) {
   const types = [];
 

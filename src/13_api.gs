@@ -183,6 +183,9 @@ function doPost(e) {
       case "settlement_confirm":
         return confirmSettlementManually_(data);
 
+      case "update_account_opening_balance":
+        return updateAccountOpeningBalanceFromApp_(data);
+
       default:
         return createJsonErrorResponse_(`未対応のactionです: ${action}`);
     }
