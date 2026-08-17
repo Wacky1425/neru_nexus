@@ -25,6 +25,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
   final TransactionService _transactionService = const TransactionService();
 
   Future<List<TransactionModel>>? _transactionsFuture;
+  List<TransactionModel> _transactions = [];
   final ReviewService _reviewService = const ReviewService();
 
   Future<int>? _reviewCountFuture;
@@ -52,8 +53,8 @@ class _TransactionsPageState extends State<TransactionsPage> {
     });
   }
 
-  Future<List<TransactionModel>> _fetchTransactions() {
-    return _transactionService.fetchTransactions(
+  Future<List<TransactionModel>> _fetchTransactions() async {
+    final transactions = await _transactionService.fetchTransactions(
       limit: 100,
       offset: 0,
       keyword: _searchKeyword,
@@ -61,6 +62,10 @@ class _TransactionsPageState extends State<TransactionsPage> {
       majorCategory: _selectedMajorCategory,
       reviewOnly: _reviewOnly,
     );
+
+    _transactions = transactions;
+
+    return transactions;
   }
 
   Future<void> _reload() async {
@@ -74,8 +79,123 @@ class _TransactionsPageState extends State<TransactionsPage> {
     await transactionsFuture;
   }
 
+  Future<void> _applyTransactionResult(
+    TransactionModel original,
+    TransactionDetailResult result,
+  ) async {
+    final oldNeedsReview =
+        original.status == '要確認' || original.settlementStatus == 'review';
+
+    switch (result.type) {
+      case TransactionDetailResultType.updated:
+        final updated = result.transaction;
+
+        if (updated == null) {
+          return;
+        }
+
+        final index = _transactions.indexWhere(
+          (item) => item.id == original.id,
+        );
+
+        if (index == -1) {
+          return;
+        }
+
+        _transactions[index] = updated;
+
+        // 日付変更時などの表示順も維持する
+        _transactions.sort(
+          (a, b) => b.transactionDate.compareTo(a.transactionDate),
+        );
+
+        final newNeedsReview =
+            updated.status == '要確認' || updated.settlementStatus == 'review';
+
+        setState(() {
+          _transactionsFuture = Future.value(
+            List<TransactionModel>.from(_transactions),
+          );
+
+          // 要確認状態に影響した場合だけ件数取得
+          if (oldNeedsReview != newNeedsReview) {
+            _reviewCountFuture = _reviewService.fetchReviewCount();
+          }
+        });
+
+        break;
+
+      case TransactionDetailResultType.deleted:
+        _transactions.removeWhere((item) => item.id == original.id);
+
+        setState(() {
+          _transactionsFuture = Future.value(
+            List<TransactionModel>.from(_transactions),
+          );
+
+          if (oldNeedsReview) {
+            _reviewCountFuture = _reviewService.fetchReviewCount();
+          }
+        });
+
+        break;
+    }
+  }
+
+  bool _matchesCurrentFilters(TransactionModel transaction) {
+    if (_reviewOnly) {
+      final needsReview =
+          transaction.status == '要確認' ||
+          transaction.settlementStatus == 'review';
+
+      if (!needsReview) {
+        return false;
+      }
+    }
+
+    final selectedYearMonth = _selectedYearMonth;
+
+    if (selectedYearMonth != null && selectedYearMonth.isNotEmpty) {
+      final transactionYearMonth = transaction.transactionDate.length >= 7
+          ? transaction.transactionDate.substring(0, 7)
+          : '';
+
+      if (transactionYearMonth != selectedYearMonth) {
+        return false;
+      }
+    }
+
+    final selectedCategory = _selectedMajorCategory;
+
+    if (selectedCategory != null &&
+        selectedCategory.isNotEmpty &&
+        transaction.majorCategory != selectedCategory) {
+      return false;
+    }
+
+    final keyword = _searchKeyword.trim().toLowerCase();
+
+    if (keyword.isNotEmpty) {
+      final searchable = [
+        transaction.merchant,
+        transaction.itemName,
+        transaction.majorCategory,
+        transaction.subCategory,
+        transaction.paymentMethod,
+        transaction.accountName,
+        transaction.note,
+      ].join(' ').toLowerCase();
+
+      if (!searchable.contains(keyword)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   Future<void> _openTransactionForm() async {
-    final result = await Navigator.of(context).push<TransactionFormResult>(
+    final result = await Navigator.of(context).push<TransactionFormPageResult>(
       MaterialPageRoute(
         builder: (context) {
           return const TransactionFormPage();
@@ -87,7 +207,29 @@ class _TransactionsPageState extends State<TransactionsPage> {
       return;
     }
 
-    await _reload();
+    final created = result.transaction;
+
+    if (created != null) {
+      final shouldShow = _matchesCurrentFilters(created);
+
+      if (shouldShow) {
+        _transactions.insert(0, created);
+
+        _transactions.sort(
+          (a, b) => b.transactionDate.compareTo(a.transactionDate),
+        );
+      }
+
+      setState(() {
+        _transactionsFuture = Future.value(
+          List<TransactionModel>.from(_transactions),
+        );
+
+        if (created.status == '要確認' || created.settlementStatus == 'review') {
+          _reviewCountFuture = _reviewService.fetchReviewCount();
+        }
+      });
+    }
 
     if (!mounted) {
       return;
@@ -551,7 +693,12 @@ class _TransactionsPageState extends State<TransactionsPage> {
               ) ...[
                 _TransactionTile(
                   transaction: dailyTransactions[index],
-                  onUpdated: _reload,
+                  onResult: (result) {
+                    return _applyTransactionResult(
+                      dailyTransactions[index],
+                      result,
+                    );
+                  },
                 ),
                 if (index < dailyTransactions.length - 1)
                   const Divider(height: 1, indent: 68),
@@ -733,10 +880,11 @@ class _SummaryValue extends StatelessWidget {
 }
 
 class _TransactionTile extends StatelessWidget {
-  const _TransactionTile({required this.transaction, required this.onUpdated});
+  const _TransactionTile({required this.transaction, required this.onResult});
 
   final TransactionModel transaction;
-  final Future<void> Function() onUpdated;
+
+  final Future<void> Function(TransactionDetailResult result) onResult;
 
   @override
   Widget build(BuildContext context) {
@@ -776,7 +924,7 @@ class _TransactionTile extends StatelessWidget {
             );
 
         if (result != null) {
-          await onUpdated();
+          await onResult(result);
         }
       },
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),

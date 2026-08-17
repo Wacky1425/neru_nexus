@@ -186,6 +186,9 @@ function doPost(e) {
       case "update_account_opening_balance":
         return updateAccountOpeningBalanceFromApp_(data);
 
+      case "account_create":
+        return createAccountFromApp_(data);
+
       default:
         return createJsonErrorResponse_(`未対応のactionです: ${action}`);
     }
@@ -199,6 +202,9 @@ function doPost(e) {
 }
 
 function createTransactionFromApp_(data) {
+  const perfStart = Date.now();
+  const perf = {};
+
   const transactionDate = String(data.transactionDate || "").trim();
 
   const type = String(data.type || "").trim();
@@ -276,8 +282,6 @@ function createTransactionFromApp_(data) {
 
     payment_method: paymentMethod,
 
-    account_name: "App Manual",
-
     evidence_url: "",
 
     original_image_url: "",
@@ -307,7 +311,12 @@ function createTransactionFromApp_(data) {
     intent: type === "収入" ? "収入" : guessIntent(subCategory),
   };
 
+  const writeStart = Date.now();
+
   const result = addTransactions([tx]);
+
+  perf.writeMs = Date.now() - writeStart;
+  perf.writeDetail = result.perf || {};
 
   if (result.addedCount === 0) {
     if (result.skippedCount > 0) {
@@ -317,9 +326,22 @@ function createTransactionFromApp_(data) {
     throw new Error("取引を登録できませんでした");
   }
 
-  rebuildReviewQueue();
-  rebuildReviewSummary();
-  rebuildAllViews();
+  const createdId =
+    result.addedIds && result.addedIds.length > 0 ? result.addedIds[0] : "";
+
+  if (status === "要確認") {
+    const reviewStart = Date.now();
+
+    rebuildReviewViews();
+
+    perf.reviewMs = Date.now() - reviewStart;
+  } else {
+    perf.reviewMs = 0;
+  }
+
+  perf.summaryMs = 0;
+
+  perf.totalMs = Date.now() - perfStart;
 
   return createJsonResponse_(
     {
@@ -329,26 +351,48 @@ function createTransactionFromApp_(data) {
 
       source: "app",
 
+      perf,
+
       transaction: {
+        id: createdId,
+
         transactionDate: tx.transaction_date,
 
-        type: tx.type,
+        merchant: tx.merchant || "",
+
+        itemName: tx.item_name || "",
 
         amount: tx.amount,
+
+        type: tx.type,
 
         majorCategory: tx.major_category,
 
         subCategory: tx.sub_category,
 
-        title: tx.item_name,
-
-        paymentMethod: tx.payment_method,
-
-        memo: tx.note,
+        status: tx.status,
 
         wallet: tx.wallet,
 
-        purposeType: tx.purpose_type,
+        intent: tx.intent || "",
+
+        paymentMethod: tx.payment_method,
+
+        accountName: tx.account_name || "",
+
+        rawText: tx.raw_text || "",
+
+        settlementStatus: "",
+
+        settlementId: "",
+
+        fromAccount: "",
+
+        toAccount: "",
+
+        importBatch: tx.import_batch || "",
+
+        note: tx.note || "",
       },
     },
     "ok",
@@ -675,16 +719,45 @@ function updateTransactionFromApp_(data) {
       updated: true,
       id,
       transaction: {
+        id,
+
         transactionDate,
-        type,
+
+        merchant: updatedTransaction.merchant || "",
+
+        itemName: updatedTransaction.item_name || "",
+
         amount,
+
+        type,
+
         majorCategory,
+
         subCategory,
-        title,
-        paymentMethod,
-        memo,
+
+        status,
+
         wallet,
-        purposeType,
+
+        intent: updatedTransaction.intent || "",
+
+        paymentMethod,
+
+        accountName: updatedTransaction.account_name || "",
+
+        rawText: updatedTransaction.raw_text || "",
+
+        settlementStatus: updatedTransaction.settlement_status || "",
+
+        settlementId: updatedTransaction.settlement_id || "",
+
+        fromAccount: updatedTransaction.from_account || "",
+
+        toAccount: updatedTransaction.to_account || "",
+
+        importBatch: updatedTransaction.import_batch || "",
+
+        note: updatedTransaction.note || "",
       },
     },
     "ok",
@@ -698,76 +771,100 @@ function deleteTransactionFromApp_(data) {
     throw new Error("idは必須です");
   }
 
-  const sheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
+  const table = loadTransactions();
 
-  if (!sheet) {
-    throw new Error(`${SHEETS.TRANSACTIONS}シートがありません`);
-  }
-
-  const values = sheet.getDataRange().getValues();
-
-  if (values.length <= 1) {
+  if (table.rows.length === 0) {
     throw new Error("データがありません");
   }
 
-  const headers = values[0];
+  assertRequiredColumns(
+    table.index,
+    ["id", "transaction_date", "status", "settlement_status"],
+    SHEETS.TRANSACTIONS,
+  );
 
-  const idIndex = headers.indexOf("id");
+  const rowIndex = table.rows.findIndex(
+    (row) => String(row[table.index["id"]] || "").trim() === id,
+  );
 
-  if (idIndex == -1) {
-    throw new Error("id列がありません");
+  if (rowIndex === -1) {
+    throw new Error("削除対象が見つかりません");
   }
 
-  for (let i = 1; i < values.length; i++) {
-    if (String(values[i][idIndex]).trim() === id) {
-      sheet.deleteRow(i + 1);
+  /*
+   * 削除する前に、
+   * 派生データ更新に必要な情報を保存する
+   */
+  const targetRow = table.rows[rowIndex];
 
-      clearTableCache(SHEETS.TRANSACTIONS);
-      clearAccountBalanceCache_();
+  const transactionDate = targetRow[table.index["transaction_date"]];
 
-      /*
-       * 取引そのものの削除は完了済み。
-       * 派生シートの再構築に失敗しても、
-       * 削除API自体は成功として返す。
-       */
-      const rebuildErrors = [];
+  const status = getString(targetRow, table.index, "status");
 
-      try {
-        rebuildReviewQueue();
-      } catch (error) {
-        console.error("rebuildReviewQueue失敗", error);
+  const settlementStatus = getString(
+    targetRow,
+    table.index,
+    "settlement_status",
+  );
 
-        rebuildErrors.push("reviewQueue");
-      }
+  const yearMonth = normalizeYearMonth(transactionDate);
 
-      try {
-        rebuildReviewSummary();
-      } catch (error) {
-        console.error("rebuildReviewSummary失敗", error);
+  const needsReviewRefresh =
+    status === "要確認" || settlementStatus === "review";
 
-        rebuildErrors.push("reviewSummary");
-      }
+  const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
 
-      try {
-        rebuildAllViews();
-      } catch (error) {
-        console.error("rebuildAllViews失敗", error);
+  const sheetRowNumber = rowIndex + 2;
 
-        rebuildErrors.push("allViews");
-      }
+  /*
+   * 本体を削除
+   */
+  sheet.deleteRow(sheetRowNumber);
 
-      return createJsonResponse_(
-        {
-          deleted: true,
-          id,
-          rebuildErrors,
-        },
-        "ok",
-      );
+  /*
+   * キャッシュ破棄
+   */
+  clearTableCache(SHEETS.TRANSACTIONS);
+
+  clearAccountBalanceCache_();
+
+  /*
+   * 派生データ更新。
+   *
+   * 本体の削除自体は完了しているので、
+   * 派生データ更新失敗によって
+   * API全体を失敗扱いにはしない。
+   */
+  const rebuildErrors = [];
+
+  if (needsReviewRefresh) {
+    try {
+      rebuildReviewViews();
+    } catch (error) {
+      console.error("rebuildReviewViews失敗", error);
+
+      rebuildErrors.push("reviewViews");
     }
   }
 
-  throw new Error("削除対象が見つかりません");
+  if (yearMonth) {
+    try {
+      rebuildSummariesForMonth_(yearMonth);
+    } catch (error) {
+      console.error("rebuildSummariesForMonth_失敗", error);
+
+      rebuildErrors.push("monthlySummary");
+    }
+  }
+
+  return createJsonResponse_(
+    {
+      deleted: true,
+      id,
+      rebuildErrors,
+    },
+    "ok",
+  );
 }
 
 function formatApiDate_(value) {

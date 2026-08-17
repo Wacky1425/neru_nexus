@@ -39,6 +39,21 @@ class AccountBalanceModel {
       openingBalanceDate: json['openingBalanceDate']?.toString() ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'accountId': accountId,
+      'accountName': accountName,
+      'paymentMethod': paymentMethod,
+      'wallet': wallet,
+      'institution': institution,
+      'isAsset': isAsset,
+      'isLiability': isLiability,
+      'currentBalance': currentBalance,
+      'openingBalance': openingBalance,
+      'openingBalanceDate': openingBalanceDate,
+    };
+  }
 }
 
 class AccountBalancesResult {
@@ -54,4 +69,35 @@ class AccountBalancesResult {
   final int totalAssets;
   final int totalLiabilities;
   final int netAssets;
+
+  factory AccountBalancesResult.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'];
+
+    final items = rawItems is List
+        ? rawItems
+              .whereType<Map>()
+              .map(
+                (item) => AccountBalanceModel.fromJson(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList()
+        : <AccountBalanceModel>[];
+
+    return AccountBalancesResult(
+      items: items,
+      totalAssets: (json['totalAssets'] as num?)?.toInt() ?? 0,
+      totalLiabilities: (json['totalLiabilities'] as num?)?.toInt() ?? 0,
+      netAssets: (json['netAssets'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'items': items.map((item) => item.toJson()).toList(),
+      'totalAssets': totalAssets,
+      'totalLiabilities': totalLiabilities,
+      'netAssets': netAssets,
+    };
+  }
 }

@@ -6,7 +6,19 @@ import 'transaction_form_page.dart';
 
 enum TransactionDetailAction { edit, delete }
 
-enum TransactionDetailResult { updated, deleted }
+enum TransactionDetailResultType { updated, deleted }
+
+class TransactionDetailResult {
+  const TransactionDetailResult.updated(this.transaction)
+    : type = TransactionDetailResultType.updated;
+
+  const TransactionDetailResult.deleted()
+    : type = TransactionDetailResultType.deleted,
+      transaction = null;
+
+  final TransactionDetailResultType type;
+  final TransactionModel? transaction;
+}
 
 class TransactionDetailPage extends StatefulWidget {
   const TransactionDetailPage({
@@ -360,7 +372,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
   }
 
   Future<void> _editTransaction(BuildContext context) async {
-    final result = await Navigator.of(context).push<TransactionFormResult>(
+    final result = await Navigator.of(context).push<TransactionFormPageResult>(
       MaterialPageRoute(
         builder: (_) => TransactionFormPage(
           initialTransaction: transaction,
@@ -373,7 +385,19 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
       return;
     }
 
-    Navigator.of(context).pop(TransactionDetailResult.updated);
+    final updatedTransaction = result?.transaction;
+
+    if (updatedTransaction == null) {
+      return;
+    }
+
+    if (!context.mounted) {
+      return;
+    }
+
+    Navigator.of(
+      context,
+    ).pop(TransactionDetailResult.updated(updatedTransaction));
   }
 
   Future<void> _deleteTransaction(BuildContext context) async {
@@ -410,16 +434,12 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
     try {
       await const TransactionService().deleteTransaction(id: transaction.id);
 
-      // ダイアログやメニューのNavigator処理が
-      // 完全に終わるのを少し待つ
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-
       if (!context.mounted) {
         return;
       }
 
       // 詳細画面を閉じる
-      Navigator.of(context).pop(TransactionDetailResult.deleted);
+      Navigator.of(context).pop(TransactionDetailResult.deleted());
     } catch (error) {
       if (!context.mounted) {
         return;

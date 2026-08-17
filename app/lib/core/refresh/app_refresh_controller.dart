@@ -5,7 +5,13 @@ class AppRefreshController {
 
   static final ValueNotifier<int> dataVersion = ValueNotifier<int>(0);
 
+  static final ValueNotifier<int> accountBalanceVersion = ValueNotifier<int>(0);
+
   static void refreshAll() {
     dataVersion.value++;
+  }
+
+  static void refreshAccountBalances() {
+    accountBalanceVersion.value++;
   }
 }

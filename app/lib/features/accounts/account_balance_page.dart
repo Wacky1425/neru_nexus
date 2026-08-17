@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'model/account_balance_model.dart';
 import 'service/account_balance_service.dart';
+import '../../core/refresh/app_refresh_controller.dart';
 
 class AccountBalancePage extends StatefulWidget {
   const AccountBalancePage({super.key});
@@ -13,35 +14,121 @@ class AccountBalancePage extends StatefulWidget {
 class _AccountBalancePageState extends State<AccountBalancePage> {
   final _service = const AccountBalanceService();
 
-  late Future<AccountBalancesResult> _future;
+  AccountBalancesResult? _result;
+
+  bool _loading = false;
+  bool _initialLoading = false;
+  Object? _error;
 
   @override
   void initState() {
     super.initState();
 
-    _future = _service.fetchAccountBalances();
+    _result = AccountBalanceService.cachedResult;
+
+    _initialLoading = _result == null;
+
+    AppRefreshController.accountBalanceVersion.addListener(
+      _handleAccountBalanceRefresh,
+    );
+
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    if (_result == null) {
+      final stored = await AccountBalanceService.loadStoredCache();
+
+      if (!mounted) {
+        return;
+      }
+
+      if (stored != null) {
+        setState(() {
+          _result = stored;
+          _initialLoading = false;
+        });
+      }
+    }
+
+    await _load();
+  }
+
+  Future<void> _load() async {
+    if (_loading) {
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final result = await _service.fetchAccountBalances();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _result = result;
+        _initialLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _error = error;
+        _initialLoading = false;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
+    }
   }
 
   Future<void> _reload() async {
-    setState(() {
-      _future = _service.fetchAccountBalances();
-    });
+    await _load();
+  }
 
-    await _future;
+  void _handleAccountBalanceRefresh() {
+    AccountBalanceService.clearCache();
+
+    if (!mounted) {
+      return;
+    }
+
+    _load();
+  }
+
+  @override
+  void dispose() {
+    AppRefreshController.accountBalanceVersion.removeListener(
+      _handleAccountBalanceRefresh,
+    );
+
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final result = _result;
+
     return Scaffold(
       appBar: AppBar(title: const Text('資産')),
-      body: FutureBuilder<AccountBalancesResult>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+      body: Builder(
+        builder: (context) {
+          if (_initialLoading && result == null) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (snapshot.hasError) {
+          if (result == null) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -51,7 +138,7 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
                     const Icon(Icons.error_outline, size: 48),
                     const SizedBox(height: 16),
                     Text(
-                      snapshot.error.toString(),
+                      _error?.toString() ?? '残高データを取得できませんでした',
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
@@ -65,18 +152,16 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
             );
           }
 
-          final result = snapshot.data;
-
-          if (result == null) {
-            return const Center(child: Text('残高データがありません'));
-          }
-
           return RefreshIndicator(
             onRefresh: _reload,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
               children: [
+                if (_loading) const LinearProgressIndicator(),
+
+                if (_loading) const SizedBox(height: 12),
+
                 _SummaryCard(result: result),
 
                 const SizedBox(height: 24),

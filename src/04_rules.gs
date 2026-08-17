@@ -672,6 +672,142 @@ function createCategoryFromApp_(data) {
   );
 }
 
+function createAccountFromApp_(data) {
+  const accountName = String(data.accountName || "").trim();
+  const paymentMethod = String(data.paymentMethod || "").trim();
+  const wallet = String(data.wallet || "").trim();
+  const institution = String(data.institution || "").trim();
+
+  const isAsset = data.isAsset === true;
+  const isLiability = data.isLiability === true;
+
+  const openingBalanceValue = data.openingBalance;
+  const openingBalanceDate = String(data.openingBalanceDate || "").trim();
+
+  if (!accountName) {
+    throw new Error("accountNameは必須です");
+  }
+
+  if (!paymentMethod) {
+    throw new Error("paymentMethodは必須です");
+  }
+
+  if (!wallet) {
+    throw new Error("walletは必須です");
+  }
+
+  if (isAsset && isLiability) {
+    throw new Error("資産口座と負債口座を同時に指定できません");
+  }
+
+  const openingBalance =
+    openingBalanceValue === null ||
+    openingBalanceValue === undefined ||
+    openingBalanceValue === ""
+      ? 0
+      : Number(openingBalanceValue);
+
+  if (!Number.isFinite(openingBalance)) {
+    throw new Error("openingBalanceが不正です");
+  }
+
+  const sheet = getRequiredSheet(SHEETS.ACCOUNTS);
+
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length === 0) {
+    throw new Error("accountsシートにヘッダーがありません");
+  }
+
+  const headers = values[0].map((value) => String(value || "").trim());
+
+  const index = createHeaderIndex(headers);
+
+  assertRequiredColumns(
+    index,
+    [
+      "account_id",
+      "account_name",
+      "payment_method",
+      "wallet",
+      "institution",
+      "is_asset",
+      "is_liability",
+      "active",
+      "note",
+      "sort_order",
+      "opening_balance",
+      "opening_balance_date",
+    ],
+    SHEETS.ACCOUNTS,
+  );
+
+  const existingRows = values.slice(1);
+
+  const duplicate = existingRows.some(
+    (row) => String(row[index["account_name"]] || "").trim() === accountName,
+  );
+
+  if (duplicate) {
+    throw new Error("同じ名前の口座がすでに存在します");
+  }
+
+  const accountId = "acc_" + Utilities.getUuid().replace(/-/g, "").slice(0, 16);
+
+  const maxSortOrder = existingRows.reduce((maximum, row) => {
+    const value = Number(row[index["sort_order"]] || 0);
+
+    return value > maximum ? value : maximum;
+  }, 0);
+
+  const row = new Array(headers.length).fill("");
+
+  row[index["account_id"]] = accountId;
+
+  row[index["account_name"]] = accountName;
+
+  row[index["payment_method"]] = paymentMethod;
+
+  row[index["wallet"]] = wallet;
+
+  row[index["institution"]] = institution;
+
+  row[index["is_asset"]] = isAsset ? 1 : 0;
+
+  row[index["is_liability"]] = isLiability ? 1 : 0;
+
+  row[index["active"]] = 1;
+
+  row[index["note"]] = "アプリ追加";
+
+  row[index["sort_order"]] = maxSortOrder + 1;
+
+  row[index["opening_balance"]] = openingBalance;
+
+  row[index["opening_balance_date"]] = openingBalanceDate;
+
+  sheet.appendRow(row);
+
+  clearTableCache(SHEETS.ACCOUNTS);
+
+  clearAccountBalanceCache_();
+
+  return createJsonResponse_(
+    {
+      accountId,
+      accountName,
+      paymentMethod,
+      wallet,
+      institution,
+      isAsset,
+      isLiability,
+      openingBalance,
+      openingBalanceDate,
+    },
+    "ok",
+  );
+}
+
 function updateCategoryFromApp_(data) {
   const subCategoryId = String(data.subCategoryId || "").trim();
 

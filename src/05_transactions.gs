@@ -784,15 +784,20 @@ function appendTransactionRows(rows) {
 }
 
 function addTransactions(transactions) {
+  const perfStart = Date.now();
   if (!Array.isArray(transactions) || transactions.length === 0) {
     return {
       addedCount: 0,
       skippedCount: 0,
+      addedIds: [],
     };
   }
 
+  const duplicateStart = Date.now();
   const existingKeys = getExistingDuplicateKeys();
+  const duplicateKeysMs = Date.now() - duplicateStart;
   const rows = [];
+  const addedIds = [];
 
   let skippedCount = 0;
 
@@ -811,7 +816,6 @@ function addTransactions(transactions) {
       continue;
     }
 
-    // 同じ取込データ内での重複も防ぐ
     existingKeys.add(duplicateKey);
 
     const createdAt = new Date();
@@ -821,21 +825,26 @@ function addTransactions(transactions) {
       createdAt,
     );
 
-    rows.push(
-      buildTransactionRow(
-        tx,
-        Utilities.getUuid(),
-        createdAt,
-        yearMonth,
-        duplicateKey,
-      ),
-    );
+    const id = Utilities.getUuid();
+
+    addedIds.push(id);
+
+    rows.push(buildTransactionRow(tx, id, createdAt, yearMonth, duplicateKey));
   }
+
+  const appendStart = Date.now();
 
   const addedCount = appendTransactionRows(rows);
 
+  const appendRowsMs = Date.now() - appendStart;
   return {
     addedCount,
     skippedCount,
+    addedIds,
+    perf: {
+      duplicateKeysMs,
+      appendRowsMs,
+      totalMs: Date.now() - perfStart,
+    },
   };
 }

@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../../../core/constants/api_constants.dart';
 import '../transaction_form_page.dart';
 import '../model/transaction_model.dart';
+import '../../../core/refresh/app_refresh_controller.dart';
 
 class TransactionService {
   const TransactionService();
@@ -96,7 +97,7 @@ class TransactionService {
     }).toList();
   }
 
-  Future<void> createTransaction({
+  Future<TransactionModel> createTransaction({
     required TransactionFormResult transaction,
   }) async {
     final uri = Uri.parse(ApiConstants.baseUrl);
@@ -165,18 +166,32 @@ class TransactionService {
       if (data is! Map) {
         throw Exception('取引登録APIのデータ形式が正しくありません');
       }
+      print('CREATE PERF: ${data['perf']}');
 
       final addedCount = _toInt(data['addedCount']);
 
       if (addedCount <= 0) {
         throw Exception('取引が登録されませんでした');
       }
+      final transactionData = data['transaction'];
+
+      if (transactionData is! Map) {
+        throw Exception('登録後の取引データを取得できませんでした');
+      }
+
+      final createdTransaction = TransactionModel.fromJson(
+        Map<String, dynamic>.from(transactionData),
+      );
+
+      AppRefreshController.refreshAccountBalances();
+
+      return createdTransaction;
     } finally {
       client.close();
     }
   }
 
-  Future<void> updateTransaction({
+  Future<TransactionModel> updateTransaction({
     required String id,
     required TransactionFormResult transaction,
     bool saveRule = false,
@@ -264,6 +279,19 @@ class TransactionService {
       if (data['updated'] != true) {
         throw Exception('取引が更新されませんでした');
       }
+      final transactionData = data['transaction'];
+
+      if (transactionData is! Map) {
+        throw Exception('更新後の取引データを取得できませんでした');
+      }
+
+      final updatedTransaction = TransactionModel.fromJson(
+        Map<String, dynamic>.from(transactionData),
+      );
+
+      AppRefreshController.refreshAccountBalances();
+
+      return updatedTransaction;
     } finally {
       client.close();
     }
@@ -328,13 +356,19 @@ class TransactionService {
 
       final data = decoded['data'];
 
+      
+
       if (data is! Map) {
         throw Exception('取引削除APIのデータ形式が正しくありません');
       }
 
+      
+
       if (data['deleted'] != true) {
         throw Exception('取引が削除されませんでした');
       }
+
+      AppRefreshController.refreshAccountBalances();
     } finally {
       client.close();
     }

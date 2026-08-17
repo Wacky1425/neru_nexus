@@ -16,11 +16,11 @@ class TransactionFormResult {
     required this.subCategory,
     required this.title,
     required this.paymentMethod,
-    required this.accountName,
     required this.status,
-    this.memo,
-    this.fromAccount,
-    this.toAccount,
+    required this.memo,
+    required this.accountName,
+    required this.fromAccount,
+    required this.toAccount,
   });
 
   final DateTime date;
@@ -30,11 +30,18 @@ class TransactionFormResult {
   final String subCategory;
   final String title;
   final String paymentMethod;
-  final String accountName;
   final String status;
-  final String? memo;
+  final String memo;
+  final String? accountName;
   final String? fromAccount;
   final String? toAccount;
+}
+
+class TransactionFormPageResult {
+  const TransactionFormPageResult({required this.form, this.transaction});
+
+  final TransactionFormResult form;
+  final TransactionModel? transaction;
 }
 
 enum TransactionType { expense, income, transfer }
@@ -465,9 +472,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
       paymentMethod: _selectedPaymentMethod,
       accountName: _selectedAccountName,
       status: _isConfirmed ? '確定' : '要確認',
-      memo: _memoController.text.trim().isEmpty
-          ? null
-          : _memoController.text.trim(),
+      memo: _memoController.text.trim(),
       fromAccount: _selectedType == TransactionType.transfer
           ? _selectedFromAccountName
           : null,
@@ -485,21 +490,39 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
       final initialTransaction = widget.initialTransaction;
 
       if (initialTransaction == null) {
-        await _transactionService.createTransaction(transaction: result);
+        final createdTransaction = await _transactionService.createTransaction(
+          transaction: result,
+        );
+
+        if (!mounted) {
+          return;
+        }
+
+        Navigator.of(context).pop(
+          TransactionFormPageResult(
+            form: result,
+            transaction: createdTransaction,
+          ),
+        );
       } else {
-        await _transactionService.updateTransaction(
+        final updatedTransaction = await _transactionService.updateTransaction(
           id: initialTransaction.id,
           transaction: result,
           saveRule: widget.fromReview && _saveRule,
           merchant: initialTransaction.merchant.trim(),
         );
-      }
 
-      if (!mounted) {
-        return;
-      }
+        if (!mounted) {
+          return;
+        }
 
-      Navigator.of(context).pop(result);
+        Navigator.of(context).pop(
+          TransactionFormPageResult(
+            form: result,
+            transaction: updatedTransaction,
+          ),
+        );
+      }
     } catch (error) {
       if (!mounted) {
         return;

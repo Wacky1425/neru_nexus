@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../accounts/account_management_page.dart';
 import '../categories/category_management_page.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -32,6 +33,21 @@ class SettingsPage extends StatelessWidget {
               );
             },
           ),
+
+          ListTile(
+            leading: const Icon(Icons.account_balance_outlined),
+            title: const Text('口座管理'),
+            subtitle: const Text('口座・基準残高の設定'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AccountManagementPage(),
+                ),
+              );
+            },
+          ),
+          
           const Divider(),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
