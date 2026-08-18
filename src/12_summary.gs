@@ -6,13 +6,26 @@ function createMonthlySummary_() {
     total_transfer: 0,
     total_business_expense: 0,
     count_transactions: 0,
+    fixed_expense: 0,
+    variable_expense: 0,
+
+    business_income: 0,
+    business_expense: 0,
   };
 }
 
 function aggregateTransactionSummaries_(transactionTable) {
   assertRequiredColumns(
     transactionTable.index,
-    ["transaction_date", "type", "major_category", "amount", "expense_amount"],
+    [
+      "transaction_date",
+      "type",
+      "major_category",
+      "sub_category",
+      "wallet",
+      "amount",
+      "expense_amount",
+    ],
     SHEETS.TRANSACTIONS,
   );
 
@@ -57,10 +70,34 @@ function aggregateTransactionSummaries_(transactionTable) {
     monthly.count_transactions += 1;
     monthly.total_business_expense += expenseAmount;
 
+    const wallet = getString(row, transactionTable.index, "wallet");
+
     if (type === "支出") {
       monthly.total_expense += amount;
+
+      if (wallet === "生活") {
+        const subCategory = getString(
+          row,
+          transactionTable.index,
+          "sub_category",
+        );
+
+        if (isFixedExpenseCategory(majorCategory, subCategory)) {
+          monthly.fixed_expense += amount;
+        } else {
+          monthly.variable_expense += amount;
+        }
+      }
+
+      if (wallet === "事業") {
+        monthly.business_expense += amount;
+      }
     } else if (type === "収入") {
       monthly.total_income += amount;
+
+      if (wallet === "事業") {
+        monthly.business_income += amount;
+      }
     } else if (type === "値引き" || type === "調整") {
       monthly.total_discount += amount;
     } else if (type === "振替" || type === "移動") {
@@ -104,13 +141,24 @@ function buildMonthlySummaryRows_(monthlyMap) {
     .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
     .map(([yearMonth, summary]) => [
       String(yearMonth),
+
       summary.total_expense,
       summary.total_income,
       summary.total_discount,
       summary.total_transfer,
       summary.total_business_expense,
+
       summary.total_expense - summary.total_discount,
+
       summary.count_transactions,
+
+      summary.fixed_expense,
+      summary.variable_expense,
+
+      summary.business_income,
+      summary.business_expense,
+
+      summary.business_income - summary.business_expense,
     ]);
 }
 
@@ -166,6 +214,11 @@ function rebuildSummaries() {
       "total_business_expense",
       "net_expense",
       "count_transactions",
+      "fixed_expense",
+      "variable_expense",
+      "business_income",
+      "business_expense",
+      "business_profit",
     ],
     monthlyRows,
     Math.max(monthlySheet.getLastRow(), monthlyRows.length + 1, 1),
@@ -188,6 +241,8 @@ function rebuildSummaries() {
     `月別集計: ${monthlyRows.length}件 / ` +
       `カテゴリ集計: ${categoryRows.length}件`,
   );
+
+  clearAnalyticsSummaryCache_();
 }
 
 function rebuildSummariesForMonth_(yearMonth) {
@@ -236,6 +291,8 @@ function rebuildSummariesForMonth_(yearMonth) {
   clearTableCache(SHEETS.MONTHLY_SUMMARY);
 
   clearTableCache(SHEETS.CATEGORY_SUMMARY);
+
+  clearAnalyticsSummaryCache_();
 }
 
 function replaceSummaryMonth_(sheetName, yearMonth, newRows) {
@@ -380,4 +437,177 @@ function rebuildReviewSummaryFromRows_(reviewRows) {
     ["merchant", "count", "total_amount", "sample_category"],
     rows,
   );
+}
+
+const SUMMARY_DIRTY_KEY = "summary_dirty_months_v1";
+
+function getDirtySummaryMonths_() {
+  const properties = PropertiesService.getScriptProperties();
+
+  const raw = properties.getProperty(SUMMARY_DIRTY_KEY);
+
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const values = JSON.parse(raw);
+
+    return Array.isArray(values) ? values : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function markSummaryDirty_(yearMonth) {
+  const month = normalizeBudgetYearMonth(yearMonth);
+
+  if (!month) {
+    return;
+  }
+
+  const properties = PropertiesService.getScriptProperties();
+
+  const months = getDirtySummaryMonths_();
+
+  if (!months.includes(month)) {
+    months.push(month);
+
+    properties.setProperty(SUMMARY_DIRTY_KEY, JSON.stringify(months));
+  }
+}
+
+function clearSummaryDirty_(yearMonth) {
+  const month = normalizeBudgetYearMonth(yearMonth);
+
+  if (!month) {
+    return;
+  }
+
+  const properties = PropertiesService.getScriptProperties();
+
+  const months = getDirtySummaryMonths_().filter((value) => value !== month);
+
+  if (months.length === 0) {
+    properties.deleteProperty(SUMMARY_DIRTY_KEY);
+
+    return;
+  }
+
+  properties.setProperty(SUMMARY_DIRTY_KEY, JSON.stringify(months));
+}
+
+function ensureSummaryFresh_(yearMonth) {
+  const month = normalizeBudgetYearMonth(yearMonth);
+
+  if (!month) {
+    return;
+  }
+
+  const dirtyMonths = getDirtySummaryMonths_();
+
+  if (!dirtyMonths.includes(month)) {
+    return;
+  }
+
+  rebuildSummariesForMonth_(month);
+
+  clearSummaryDirty_(month);
+}
+
+const ANALYTICS_MONTHLY_CACHE_KEY = "analytics_monthly_summary_v1";
+
+const ANALYTICS_CATEGORY_CACHE_KEY = "analytics_category_summary_v1";
+
+function loadAnalyticsMonthlySummary_() {
+  const cache = CacheService.getScriptCache();
+
+  const cached = cache.get(ANALYTICS_MONTHLY_CACHE_KEY);
+
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  const table = loadTable(SHEETS.MONTHLY_SUMMARY);
+
+  if (table.rows.length === 0) {
+    return [];
+  }
+
+  assertRequiredColumns(
+    table.index,
+    [
+      "year_month",
+      "fixed_expense",
+      "variable_expense",
+      "business_income",
+      "business_expense",
+      "business_profit",
+    ],
+    SHEETS.MONTHLY_SUMMARY,
+  );
+
+  const result = table.rows
+    .map((row) => ({
+      yearMonth: normalizeYearMonth(row[table.index["year_month"]]),
+
+      fixedExpense: getNumber(row, table.index, "fixed_expense"),
+
+      variableExpense: getNumber(row, table.index, "variable_expense"),
+
+      businessIncome: getNumber(row, table.index, "business_income"),
+
+      businessExpense: getNumber(row, table.index, "business_expense"),
+
+      businessProfit: getNumber(row, table.index, "business_profit"),
+    }))
+    .filter((item) => item.yearMonth);
+
+  cache.put(ANALYTICS_MONTHLY_CACHE_KEY, JSON.stringify(result), 21600);
+
+  return result;
+}
+
+function loadAnalyticsCategorySummary_() {
+  const cache = CacheService.getScriptCache();
+
+  const cached = cache.get(ANALYTICS_CATEGORY_CACHE_KEY);
+
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  const table = loadTable(SHEETS.CATEGORY_SUMMARY);
+
+  if (table.rows.length === 0) {
+    return [];
+  }
+
+  assertRequiredColumns(
+    table.index,
+    ["year_month", "major_category", "total_amount"],
+    SHEETS.CATEGORY_SUMMARY,
+  );
+
+  const result = table.rows
+    .map((row) => ({
+      yearMonth: normalizeYearMonth(row[table.index["year_month"]]),
+
+      category: getString(row, table.index, "major_category"),
+
+      amount: getNumber(row, table.index, "total_amount"),
+    }))
+    .filter((item) => item.yearMonth);
+
+  cache.put(ANALYTICS_CATEGORY_CACHE_KEY, JSON.stringify(result), 21600);
+
+  return result;
+}
+
+function clearAnalyticsSummaryCache_() {
+  const cache = CacheService.getScriptCache();
+
+  cache.remove(ANALYTICS_MONTHLY_CACHE_KEY);
+
+  cache.remove(ANALYTICS_CATEGORY_CACHE_KEY);
 }

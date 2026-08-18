@@ -8,24 +8,19 @@ import '../model/analytics_model.dart';
 class AnalyticsService {
   const AnalyticsService();
 
-  Future<AnalyticsModel> fetchAnalytics({
-    String? yearMonth,
-  }) async {
+  Future<AnalyticsModel> fetchAnalytics({String? yearMonth}) async {
     final queryParameters = <String, String>{
       'action': 'analytics',
       'key': ApiConstants.apiKey,
     };
 
-    if (yearMonth != null &&
-        yearMonth.trim().isNotEmpty) {
-      queryParameters['yearMonth'] =
-          yearMonth.trim();
+    if (yearMonth != null && yearMonth.trim().isNotEmpty) {
+      queryParameters['yearMonth'] = yearMonth.trim();
     }
 
-    final uri =
-        Uri.parse(ApiConstants.baseUrl).replace(
-      queryParameters: queryParameters,
-    );
+    final uri = Uri.parse(
+      ApiConstants.baseUrl,
+    ).replace(queryParameters: queryParameters);
 
     final response = await http.get(uri);
 
@@ -36,29 +31,22 @@ class AnalyticsService {
       );
     }
 
-    final decoded =
-        jsonDecode(response.body)
-            as Map<String, dynamic>;
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
 
     if (decoded['success'] != true) {
       final error = decoded['error'] as Map?;
 
       throw Exception(
-        error?['message']?.toString() ??
-            'Analytics APIでエラーが発生しました',
+        error?['message']?.toString() ?? 'Analytics APIでエラーが発生しました',
       );
     }
 
     final data = decoded['data'];
 
     if (data is! Map) {
-      throw Exception(
-        'Analytics APIの形式が正しくありません',
-      );
+      throw Exception('Analytics APIの形式が正しくありません');
     }
 
-    return AnalyticsModel.fromJson(
-      Map<String, dynamic>.from(data),
-    );
+    return AnalyticsModel.fromJson(Map<String, dynamic>.from(data));
   }
 }

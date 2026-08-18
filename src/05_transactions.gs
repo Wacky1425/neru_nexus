@@ -231,12 +231,8 @@ function getMonthlyLivingExpense(yearMonth, table) {
   );
 }
 
-function getMonthlyLivingExpenseBreakdown(yearMonth) {
-  const filtered = filterTransactionRows({
-    yearMonth,
-    type: "支出",
-    wallet: "生活",
-  });
+function getMonthlyLivingExpenseBreakdown(yearMonth, monthlyTable) {
+  const targetMonth = normalizeBudgetYearMonth(yearMonth);
 
   const result = {
     fixedExpense: 0,
@@ -244,72 +240,72 @@ function getMonthlyLivingExpenseBreakdown(yearMonth) {
     totalExpense: 0,
   };
 
-  if (filtered.rows.length === 0) {
+  if (!targetMonth) {
+    return result;
+  }
+
+  const table = monthlyTable || loadTable(SHEETS.MONTHLY_SUMMARY);
+
+  if (table.rows.length === 0) {
     return result;
   }
 
   assertRequiredColumns(
-    filtered.index,
-    ["major_category", "sub_category", "amount"],
-    SHEETS.TRANSACTIONS,
+    table.index,
+    ["year_month", "fixed_expense", "variable_expense"],
+    SHEETS.MONTHLY_SUMMARY,
   );
 
-  for (const row of filtered.rows) {
-    const major = getString(row, filtered.index, "major_category");
+  const row = table.rows.find((row) => {
+    const rowMonth = normalizeYearMonth(row[table.index["year_month"]]);
 
-    const sub = getString(row, filtered.index, "sub_category");
-
-    const amount = getNumber(row, filtered.index, "amount");
-
-    result.totalExpense += amount;
-
-    if (isFixedExpenseCategory(major, sub)) {
-      result.fixedExpense += amount;
-    } else {
-      result.variableExpense += amount;
-    }
-  }
-
-  return result;
-}
-
-function getExpenseCategoryBreakdown(yearMonth) {
-  const filtered = filterTransactionRows({
-    yearMonth,
-    type: "支出",
-    wallet: "生活",
+    return rowMonth === targetMonth;
   });
 
-  if (filtered.rows.length === 0) {
+  if (!row) {
+    return result;
+  }
+
+  const fixedExpense = getNumber(row, table.index, "fixed_expense");
+
+  const variableExpense = getNumber(row, table.index, "variable_expense");
+
+  return {
+    fixedExpense,
+    variableExpense,
+    totalExpense: fixedExpense + variableExpense,
+  };
+}
+
+function getExpenseCategoryBreakdown(yearMonth, categoryTable) {
+  const targetMonth = normalizeBudgetYearMonth(yearMonth);
+
+  if (!targetMonth) {
+    return [];
+  }
+
+  const table = categoryTable || loadTable(SHEETS.CATEGORY_SUMMARY);
+
+  if (table.rows.length === 0) {
     return [];
   }
 
   assertRequiredColumns(
-    filtered.index,
-    ["major_category", "amount"],
-    SHEETS.TRANSACTIONS,
+    table.index,
+    ["year_month", "major_category", "total_amount"],
+    SHEETS.CATEGORY_SUMMARY,
   );
 
-  const categoryTotals = {};
+  return table.rows
+    .filter((row) => {
+      const rowMonth = normalizeYearMonth(row[table.index["year_month"]]);
 
-  for (const row of filtered.rows) {
-    const category = getString(row, filtered.index, "major_category");
+      return rowMonth === targetMonth;
+    })
+    .map((row) => ({
+      category: getString(row, table.index, "major_category"),
 
-    const amount = getNumber(row, filtered.index, "amount");
-
-    const categoryName = category.trim() || "未分類";
-
-    if (!categoryTotals[categoryName]) {
-      categoryTotals[categoryName] = 0;
-    }
-
-    categoryTotals[categoryName] += amount;
-  }
-
-  return Object.entries(categoryTotals)
-    .map(([category, amount]) => ({
-      category,
-      amount,
+      amount: getNumber(row, table.index, "total_amount"),
     }))
     .sort((a, b) => b.amount - a.amount);
 }
@@ -350,6 +346,47 @@ function getSideBusinessProfit(yearMonth) {
 
 function loadTransactions() {
   return loadTable(SHEETS.TRANSACTIONS);
+}
+
+function findTransactionById_(id) {
+  const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
+
+  const lastColumn = sheet.getLastColumn();
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) {
+    return null;
+  }
+
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+
+  const index = createHeaderIndex(headers);
+
+  if (index["id"] === undefined) {
+    throw new Error("transactionsシートにid列がありません");
+  }
+
+  const idColumn = index["id"] + 1;
+
+  const idRange = sheet.getRange(2, idColumn, lastRow - 1, 1);
+
+  const cell = idRange.createTextFinder(id).matchEntireCell(true).findNext();
+
+  if (!cell) {
+    return null;
+  }
+
+  const rowNumber = cell.getRow();
+
+  const row = sheet.getRange(rowNumber, 1, 1, lastColumn).getValues()[0];
+
+  return {
+    sheet,
+    headers,
+    index,
+    row,
+    rowNumber,
+  };
 }
 
 function buildTransactionRow(tx, id, createdAt, yearMonth, duplicateKey) {
@@ -740,31 +777,62 @@ function validateTransactionAccounts() {
 
 function normalizeAccountName(accountName) {
   const raw = String(accountName || "").trim();
-  if (!raw) return "";
+
+  if (!raw) {
+    return "";
+  }
+
+  const aliasMap = getAccountAliasMap_();
+
+  return aliasMap.get(raw) || raw;
+}
+
+const ACCOUNT_ALIAS_CACHE_KEY = "account_alias_map_v1";
+
+function getAccountAliasMap_() {
+  const cache = CacheService.getScriptCache();
+
+  const cached = cache.get(ACCOUNT_ALIAS_CACHE_KEY);
+
+  if (cached) {
+    return new Map(Object.entries(JSON.parse(cached)));
+  }
 
   const sheet = SS.getSheetByName(SHEETS.ACCOUNT_ALIAS);
 
-  if (!sheet) return raw;
+  if (!sheet) {
+    return new Map();
+  }
 
   const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return raw;
 
-  const headers = values[0];
-  const idx = {};
-  headers.forEach((h, i) => {
-    idx[String(h).trim()] = i;
+  if (values.length < 2) {
+    return new Map();
+  }
+
+  const headers = values[0].map((value) => String(value || "").trim());
+
+  const index = {};
+
+  headers.forEach((header, i) => {
+    index[header] = i;
   });
 
-  for (const row of values.slice(1)) {
-    const alias = String(row[idx["raw_account_name"]] || "").trim();
-    const canonical = String(row[idx["canonical_account_name"]] || "").trim();
+  const map = {};
 
-    if (alias === raw && canonical) {
-      return canonical;
+  for (const row of values.slice(1)) {
+    const alias = String(row[index["raw_account_name"]] || "").trim();
+
+    const canonical = String(row[index["canonical_account_name"]] || "").trim();
+
+    if (alias && canonical) {
+      map[alias] = canonical;
     }
   }
 
-  return raw;
+  cache.put(ACCOUNT_ALIAS_CACHE_KEY, JSON.stringify(map), 21600);
+
+  return new Map(Object.entries(map));
 }
 
 function appendTransactionRows(rows) {
@@ -783,8 +851,7 @@ function appendTransactionRows(rows) {
   return rows.length;
 }
 
-function addTransactions(transactions) {
-  const perfStart = Date.now();
+function addTransactions(transactions, options = {}) {
   if (!Array.isArray(transactions) || transactions.length === 0) {
     return {
       addedCount: 0,
@@ -793,9 +860,12 @@ function addTransactions(transactions) {
     };
   }
 
-  const duplicateStart = Date.now();
-  const existingKeys = getExistingDuplicateKeys();
-  const duplicateKeysMs = Date.now() - duplicateStart;
+  const skipDuplicateCheck = options.skipDuplicateCheck === true;
+
+  const existingKeys = skipDuplicateCheck
+    ? new Set()
+    : getExistingDuplicateKeys();
+
   const rows = [];
   const addedIds = [];
 
@@ -816,6 +886,7 @@ function addTransactions(transactions) {
       continue;
     }
 
+    // 同一バッチ内の重複も防ぐ
     existingKeys.add(duplicateKey);
 
     const createdAt = new Date();
@@ -832,19 +903,11 @@ function addTransactions(transactions) {
     rows.push(buildTransactionRow(tx, id, createdAt, yearMonth, duplicateKey));
   }
 
-  const appendStart = Date.now();
-
   const addedCount = appendTransactionRows(rows);
 
-  const appendRowsMs = Date.now() - appendStart;
   return {
     addedCount,
     skippedCount,
     addedIds,
-    perf: {
-      duplicateKeysMs,
-      appendRowsMs,
-      totalMs: Date.now() - perfStart,
-    },
   };
 }

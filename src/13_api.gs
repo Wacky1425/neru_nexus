@@ -1,21 +1,56 @@
 function getHomeData() {
+
   const yearMonth = getLatestBudgetMonth();
 
   if (!yearMonth) {
     throw new Error("対象月がありません");
   }
 
+  ensureSummaryFresh_(yearMonth);
+
+  const budgets = getBudgetsForMonth(yearMonth);
+
+  const monthlyData = loadAnalyticsMonthlySummary_();
+
+  const monthly = monthlyData.find((item) => item.yearMonth === yearMonth);
+
+  const fixedExpense = Number(monthly?.fixedExpense || 0);
+
+  const variableExpense = Number(monthly?.variableExpense || 0);
+
+  const expenses = {
+    fixedExpense,
+    variableExpense,
+    totalExpense: fixedExpense + variableExpense,
+  };
+
+  const availableMoney = calculateAvailableMoney_(budgets, expenses);
+
+  const savingForecast = calculateSavingForecast_(yearMonth, budgets, expenses);
+
+  const dailyBudget = calculateDailyBudget_(yearMonth, availableMoney);
+
+  const moneyHealth = calculateMoneyHealth_(
+    availableMoney,
+    savingForecast,
+    expenses,
+  );
+
+  const sideBusinessProfit = Number(monthly?.businessProfit || 0);
+
+  const featuredDream = getFeaturedDreamFund();
+
+  const recentTransactions = getHomeRecentTransactions_();
+
   return {
     yearMonth,
-    dailyBudget: getDailyBudget(yearMonth),
-    availableMoney: getAvailableMoney(yearMonth),
-    savingForecast: getSavingForecast(yearMonth),
-    sideBusinessProfit: getSideBusinessProfit(yearMonth),
-    moneyHealth: getMoneyHealth(yearMonth),
-    featuredDream: getFeaturedDreamFund(),
-    recentTransactions: getTransactionsData({
-      limit: 3,
-    }).items,
+    dailyBudget,
+    availableMoney,
+    savingForecast,
+    sideBusinessProfit,
+    moneyHealth,
+    featuredDream,
+    recentTransactions,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -202,9 +237,6 @@ function doPost(e) {
 }
 
 function createTransactionFromApp_(data) {
-  const perfStart = Date.now();
-  const perf = {};
-
   const transactionDate = String(data.transactionDate || "").trim();
 
   const type = String(data.type || "").trim();
@@ -311,12 +343,9 @@ function createTransactionFromApp_(data) {
     intent: type === "収入" ? "収入" : guessIntent(subCategory),
   };
 
-  const writeStart = Date.now();
-
-  const result = addTransactions([tx]);
-
-  perf.writeMs = Date.now() - writeStart;
-  perf.writeDetail = result.perf || {};
+  const result = addTransactions([tx], {
+    skipDuplicateCheck: true,
+  });
 
   if (result.addedCount === 0) {
     if (result.skippedCount > 0) {
@@ -326,22 +355,18 @@ function createTransactionFromApp_(data) {
     throw new Error("取引を登録できませんでした");
   }
 
+  clearTableCache(SHEETS.TRANSACTIONS);
+  clearAccountBalanceCache_();
+  clearHomeRecentTransactionsCache_();
+
   const createdId =
     result.addedIds && result.addedIds.length > 0 ? result.addedIds[0] : "";
 
-  if (status === "要確認") {
-    const reviewStart = Date.now();
+  const yearMonth = normalizeYearMonth(transactionDate);
 
-    rebuildReviewViews();
-
-    perf.reviewMs = Date.now() - reviewStart;
-  } else {
-    perf.reviewMs = 0;
+  if (yearMonth) {
+    markSummaryDirty_(yearMonth);
   }
-
-  perf.summaryMs = 0;
-
-  perf.totalMs = Date.now() - perfStart;
 
   return createJsonResponse_(
     {
@@ -350,8 +375,6 @@ function createTransactionFromApp_(data) {
       skippedCount: result.skippedCount,
 
       source: "app",
-
-      perf,
 
       transaction: {
         id: createdId,
@@ -464,14 +487,14 @@ function updateTransactionFromApp_(data) {
     throw new Error("statusは確定または要確認を指定してください");
   }
 
-  const table = loadTransactions();
+  const found = findTransactionById_(id);
 
-  if (table.rows.length === 0) {
+  if (!found) {
     throw new Error("更新対象の取引が見つかりません");
   }
 
   assertRequiredColumns(
-    table.index,
+    found.index,
     [
       "id",
       "transaction_date",
@@ -506,45 +529,30 @@ function updateTransactionFromApp_(data) {
     SHEETS.TRANSACTIONS,
   );
 
-  const rowIndex = table.rows.findIndex(
-    (row) => String(row[table.index["id"]] || "").trim() === id,
-  );
+  const existingRow = found.row;
+  const tableIndex = found.index;
 
-  if (rowIndex === -1) {
-    throw new Error("更新対象の取引が見つかりません");
-  }
+  const oldStatus = getString(existingRow, tableIndex, "status");
 
-  const existingRow = table.rows[rowIndex];
+  const oldTransactionDate = existingRow[tableIndex["transaction_date"]];
 
-  const oldStatus = getString(existingRow, table.index, "status");
+  const oldType = getString(existingRow, tableIndex, "type");
 
-  const oldTransactionDate = existingRow[table.index["transaction_date"]];
+  const oldAmount = getNumber(existingRow, tableIndex, "amount");
 
-  const oldType = getString(existingRow, table.index, "type");
+  const oldMajorCategory = getString(existingRow, tableIndex, "major_category");
 
-  const oldAmount = getNumber(existingRow, table.index, "amount");
-
-  const oldMajorCategory = getString(
-    existingRow,
-    table.index,
-    "major_category",
-  );
-
-  const oldExpenseAmount = getNumber(
-    existingRow,
-    table.index,
-    "expense_amount",
-  );
+  const oldExpenseAmount = getNumber(existingRow, tableIndex, "expense_amount");
 
   const existingSettlementStatus = getString(
     existingRow,
-    table.index,
+    tableIndex,
     "settlement_status",
   );
 
   const existingSettlementId = getString(
     existingRow,
-    table.index,
+    tableIndex,
     "settlement_id",
   );
 
@@ -564,18 +572,18 @@ function updateTransactionFromApp_(data) {
     type,
 
     source_type:
-      getString(existingRow, table.index, "source_type") || "Neru Nexus App",
+      getString(existingRow, tableIndex, "source_type") || "Neru Nexus App",
 
     payment_method: paymentMethod,
 
     account_name:
-      getString(existingRow, table.index, "account_name") || "App Manual",
+      getString(existingRow, tableIndex, "account_name") || "App Manual",
 
     merchant: normalizeMerchant(title),
 
     item_name: title,
 
-    raw_text: getString(existingRow, table.index, "raw_text"),
+    raw_text: getString(existingRow, tableIndex, "raw_text"),
 
     amount,
 
@@ -589,15 +597,15 @@ function updateTransactionFromApp_(data) {
 
     note: memo,
 
-    evidence_url: getString(existingRow, table.index, "evidence_url"),
+    evidence_url: getString(existingRow, tableIndex, "evidence_url"),
 
     original_image_url: getString(
       existingRow,
-      table.index,
+      tableIndex,
       "original_image_url",
     ),
 
-    import_batch: getString(existingRow, table.index, "import_batch"),
+    import_batch: getString(existingRow, tableIndex, "import_batch"),
 
     status: status,
 
@@ -608,14 +616,14 @@ function updateTransactionFromApp_(data) {
     from_account:
       type === "移動"
         ? resolveCanonicalAccountName_(
-            fromAccount || getString(existingRow, table.index, "from_account"),
+            fromAccount || getString(existingRow, tableIndex, "from_account"),
           )
         : "",
 
     to_account:
       type === "移動"
         ? resolveCanonicalAccountName_(
-            toAccount || getString(existingRow, table.index, "to_account"),
+            toAccount || getString(existingRow, tableIndex, "to_account"),
           )
         : "",
 
@@ -624,7 +632,7 @@ function updateTransactionFromApp_(data) {
         ? ""
         : isCreditCardSettlement
           ? existingSettlementStatus
-          : toAccount || getString(existingRow, table.index, "to_account")
+          : toAccount || getString(existingRow, tableIndex, "to_account")
             ? "none"
             : "review",
 
@@ -638,7 +646,7 @@ function updateTransactionFromApp_(data) {
     updatedTransaction.settlement_status === "review" ||
     saveRule;
 
-  const recordedAt = existingRow[table.index["recorded_at"]] || new Date();
+  const recordedAt = existingRow[tableIndex["recorded_at"]] || new Date();
 
   const yearMonth = resolveTransactionYearMonth(transactionDate, recordedAt);
 
@@ -652,13 +660,9 @@ function updateTransactionFromApp_(data) {
     duplicateKey,
   );
 
-  const sheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
+  const sheet = found.sheet;
 
-  if (!sheet) {
-    throw new Error(`${SHEETS.TRANSACTIONS}シートがありません`);
-  }
-
-  const sheetRowNumber = rowIndex + 2;
+  const sheetRowNumber = found.rowNumber;
 
   sheet
     .getRange(sheetRowNumber, 1, 1, updatedRow.length)
@@ -666,12 +670,13 @@ function updateTransactionFromApp_(data) {
 
   clearTableCache(SHEETS.TRANSACTIONS);
   clearAccountBalanceCache_();
+  clearHomeRecentTransactionsCache_();
 
   let ruleResult = null;
 
   if (saveRule) {
     const merchantForRule =
-      ruleMerchant || getString(existingRow, table.index, "merchant");
+      ruleMerchant || getString(existingRow, tableIndex, "merchant");
 
     if (!merchantForRule) {
       throw new Error("ルール登録対象の取引先を取得できません");
@@ -698,19 +703,15 @@ function updateTransactionFromApp_(data) {
     oldMajorCategory !== majorCategory ||
     oldExpenseAmount !== newExpenseAmount;
 
-  if (needsReviewRefresh) {
-    rebuildReviewViews();
-  }
-
   if (needsSummaryRefresh) {
     const oldYearMonth = normalizeYearMonth(oldTransactionDate);
 
     if (oldYearMonth) {
-      rebuildSummariesForMonth_(oldYearMonth);
+      markSummaryDirty_(oldYearMonth);
     }
 
     if (yearMonth && yearMonth !== oldYearMonth) {
-      rebuildSummariesForMonth_(yearMonth);
+      markSummaryDirty_(yearMonth);
     }
   }
 
@@ -771,39 +772,28 @@ function deleteTransactionFromApp_(data) {
     throw new Error("idは必須です");
   }
 
-  const table = loadTransactions();
+  const found = findTransactionById_(id);
 
-  if (table.rows.length === 0) {
-    throw new Error("データがありません");
+  if (!found) {
+    throw new Error("削除対象が見つかりません");
   }
 
   assertRequiredColumns(
-    table.index,
+    found.index,
     ["id", "transaction_date", "status", "settlement_status"],
     SHEETS.TRANSACTIONS,
   );
 
-  const rowIndex = table.rows.findIndex(
-    (row) => String(row[table.index["id"]] || "").trim() === id,
-  );
+  const targetRow = found.row;
+  const tableIndex = found.index;
 
-  if (rowIndex === -1) {
-    throw new Error("削除対象が見つかりません");
-  }
+  const transactionDate = targetRow[tableIndex["transaction_date"]];
 
-  /*
-   * 削除する前に、
-   * 派生データ更新に必要な情報を保存する
-   */
-  const targetRow = table.rows[rowIndex];
-
-  const transactionDate = targetRow[table.index["transaction_date"]];
-
-  const status = getString(targetRow, table.index, "status");
+  const status = getString(targetRow, tableIndex, "status");
 
   const settlementStatus = getString(
     targetRow,
-    table.index,
+    tableIndex,
     "settlement_status",
   );
 
@@ -812,13 +802,14 @@ function deleteTransactionFromApp_(data) {
   const needsReviewRefresh =
     status === "要確認" || settlementStatus === "review";
 
-  const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
+  const sheet = found.sheet;
 
-  const sheetRowNumber = rowIndex + 2;
+  const sheetRowNumber = found.rowNumber;
 
   /*
    * 本体を削除
    */
+
   sheet.deleteRow(sheetRowNumber);
 
   /*
@@ -827,6 +818,8 @@ function deleteTransactionFromApp_(data) {
   clearTableCache(SHEETS.TRANSACTIONS);
 
   clearAccountBalanceCache_();
+
+  clearHomeRecentTransactionsCache_();
 
   /*
    * 派生データ更新。
@@ -837,24 +830,8 @@ function deleteTransactionFromApp_(data) {
    */
   const rebuildErrors = [];
 
-  if (needsReviewRefresh) {
-    try {
-      rebuildReviewViews();
-    } catch (error) {
-      console.error("rebuildReviewViews失敗", error);
-
-      rebuildErrors.push("reviewViews");
-    }
-  }
-
   if (yearMonth) {
-    try {
-      rebuildSummariesForMonth_(yearMonth);
-    } catch (error) {
-      console.error("rebuildSummariesForMonth_失敗", error);
-
-      rebuildErrors.push("monthlySummary");
-    }
+    markSummaryDirty_(yearMonth);
   }
 
   return createJsonResponse_(
@@ -926,6 +903,7 @@ function getTransactionsData(options) {
     [
       "id",
       "transaction_date",
+      "recorded_at",
       "merchant",
       "item_name",
       "amount",
@@ -1009,7 +987,17 @@ function getTransactionsData(options) {
 
     const dateB = new Date(b[table.index["transaction_date"]]);
 
-    return dateB.getTime() - dateA.getTime();
+    const dateDifference = dateB.getTime() - dateA.getTime();
+
+    if (dateDifference !== 0) {
+      return dateDifference;
+    }
+
+    const recordedAtA = new Date(a[table.index["recorded_at"]]);
+
+    const recordedAtB = new Date(b[table.index["recorded_at"]]);
+
+    return recordedAtB.getTime() - recordedAtA.getTime();
   });
 
   const total = filteredRows.length;
@@ -1111,7 +1099,6 @@ function getReviewTransactionsData(options) {
       "settlement_status",
       "settlement_id",
       "import_batch",
-      "settlement_status",
     ],
     SHEETS.TRANSACTIONS,
   );
@@ -1194,12 +1181,20 @@ function getReviewTransactionCount() {
     };
   }
 
-  assertRequiredColumns(table.index, ["status"], SHEETS.TRANSACTIONS);
+  assertRequiredColumns(
+    table.index,
+    ["status", "settlement_status"],
+    SHEETS.TRANSACTIONS,
+  );
 
   let count = 0;
 
   for (const row of table.rows) {
-    if (getString(row, table.index, "status") === "要確認") {
+    const status = getString(row, table.index, "status");
+
+    const settlementStatus = getString(row, table.index, "settlement_status");
+
+    if (status === "要確認" || settlementStatus === "review") {
       count++;
     }
   }

@@ -166,7 +166,6 @@ class TransactionService {
       if (data is! Map) {
         throw Exception('取引登録APIのデータ形式が正しくありません');
       }
-      print('CREATE PERF: ${data['perf']}');
 
       final addedCount = _toInt(data['addedCount']);
 
@@ -356,13 +355,9 @@ class TransactionService {
 
       final data = decoded['data'];
 
-      
-
       if (data is! Map) {
         throw Exception('取引削除APIのデータ形式が正しくありません');
       }
-
-      
 
       if (data['deleted'] != true) {
         throw Exception('取引が削除されませんでした');

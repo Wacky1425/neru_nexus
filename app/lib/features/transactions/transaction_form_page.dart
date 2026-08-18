@@ -96,7 +96,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
 
   String _selectedToAccountId = '';
   String _selectedToAccountName = '';
-  bool _isConfirmed = false;
+  bool _isConfirmed = true;
 
   bool _isSaving = false;
   bool _saveRule = false;
