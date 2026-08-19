@@ -216,6 +216,162 @@ class AccountBalanceService {
     clearCache();
   }
 
+  Future<void> updateAccount({
+    required String accountId,
+    required String accountName,
+    required String paymentMethod,
+    required String wallet,
+    required String institution,
+    required bool isAsset,
+    required bool isLiability,
+    required int openingBalance,
+    required String openingBalanceDate,
+  }) async {
+    late http.Response response;
+
+    final request = http.Request('POST', Uri.parse(ApiConstants.baseUrl));
+
+    request.headers['Content-Type'] = 'application/json';
+
+    request.body = jsonEncode({
+      'key': ApiConstants.apiKey,
+      'action': 'account_update',
+      'accountId': accountId,
+      'accountName': accountName,
+      'paymentMethod': paymentMethod,
+      'wallet': wallet,
+      'institution': institution,
+      'isAsset': isAsset,
+      'isLiability': isLiability,
+      'openingBalance': openingBalance,
+      'openingBalanceDate': openingBalanceDate,
+    });
+
+    request.followRedirects = false;
+
+    final client = http.Client();
+
+    try {
+      final firstResponse = await client.send(request);
+
+      if (firstResponse.statusCode == 302 || firstResponse.statusCode == 303) {
+        final location = firstResponse.headers['location'];
+
+        if (location == null || location.isEmpty) {
+          throw Exception('口座更新APIのリダイレクト先がありません');
+        }
+
+        response = await client.get(Uri.parse(location));
+      } else {
+        response = await http.Response.fromStream(firstResponse);
+      }
+    } finally {
+      client.close();
+    }
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        '口座情報の更新に失敗しました: '
+        '${response.statusCode}',
+      );
+    }
+
+    final dynamic decodedValue;
+
+    try {
+      decodedValue = jsonDecode(response.body);
+    } on FormatException {
+      throw Exception('口座更新APIから不正なレスポンスが返されました');
+    }
+
+    if (decodedValue is! Map) {
+      throw Exception('口座更新APIの形式が正しくありません');
+    }
+
+    final decoded = Map<String, dynamic>.from(decodedValue);
+
+    if (decoded['success'] != true) {
+      final error = decoded['error'];
+
+      if (error is Map) {
+        throw Exception(error['message']?.toString() ?? '口座情報の更新に失敗しました');
+      }
+
+      throw Exception(error?.toString() ?? '口座情報の更新に失敗しました');
+    }
+
+    clearCache();
+  }
+
+  Future<void> deactivateAccount({required String accountId}) async {
+    late http.Response response;
+
+    final request = http.Request('POST', Uri.parse(ApiConstants.baseUrl));
+
+    request.headers['Content-Type'] = 'application/json';
+
+    request.body = jsonEncode({
+      'key': ApiConstants.apiKey,
+      'action': 'account_deactivate',
+      'accountId': accountId,
+    });
+
+    request.followRedirects = false;
+
+    final client = http.Client();
+
+    try {
+      final firstResponse = await client.send(request);
+
+      if (firstResponse.statusCode == 302 || firstResponse.statusCode == 303) {
+        final location = firstResponse.headers['location'];
+
+        if (location == null || location.isEmpty) {
+          throw Exception('口座削除APIのリダイレクト先がありません');
+        }
+
+        response = await client.get(Uri.parse(location));
+      } else {
+        response = await http.Response.fromStream(firstResponse);
+      }
+    } finally {
+      client.close();
+    }
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        '口座の削除に失敗しました: '
+        '${response.statusCode}',
+      );
+    }
+
+    final dynamic decodedValue;
+
+    try {
+      decodedValue = jsonDecode(response.body);
+    } on FormatException {
+      throw Exception('口座削除APIから不正なレスポンスが返されました');
+    }
+
+    if (decodedValue is! Map) {
+      throw Exception('口座削除APIの形式が正しくありません');
+    }
+
+    final decoded = Map<String, dynamic>.from(decodedValue);
+
+    if (decoded['success'] != true) {
+      final error = decoded['error'];
+
+      if (error is Map) {
+        throw Exception(error['message']?.toString() ?? '口座の削除に失敗しました');
+      }
+
+      throw Exception(error?.toString() ?? '口座の削除に失敗しました');
+    }
+
+    clearCache();
+  }
+
   Future<void> createAccount({
     required String accountName,
     required String paymentMethod,

@@ -491,7 +491,8 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
             '明細合計：'
             '${_formatYen(candidate.totalAmount)}\n'
             '差額：'
-            '${_formatSignedYen(candidate.difference)}',
+            '${_formatSignedYen(candidate.difference)}'
+            '${candidate.difference != 0 ? '\n\n⚠ 金額が一致していません。\nそれでも紐付けますか？' : ''}',
           ),
           actions: [
             TextButton(

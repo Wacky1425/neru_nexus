@@ -121,6 +121,10 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
     '臨時収入': ['ポイント', '返金', 'お祝い', 'その他'],
   };
 
+  static const Map<String, List<String>> _fallbackTransferCategoryMap = {
+    '移動': ['口座間移動', 'クレカ引落', 'その他'],
+  };
+
   static const List<String> _fallbackPaymentMethods = [
     'クレジットカード',
     '現金',
@@ -142,9 +146,16 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
       }
     }
 
-    return _selectedType == TransactionType.expense
-        ? _fallbackExpenseCategoryMap
-        : _fallbackIncomeCategoryMap;
+    switch (_selectedType) {
+      case TransactionType.expense:
+        return _fallbackExpenseCategoryMap;
+
+      case TransactionType.income:
+        return _fallbackIncomeCategoryMap;
+
+      case TransactionType.transfer:
+        return _fallbackTransferCategoryMap;
+    }
   }
 
   List<AccountMaster> get _accounts {
@@ -368,7 +379,11 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
   }
 
   Map<String, List<String>> _categoryMapFromMaster(MasterModel master) {
-    final typeName = _selectedType == TransactionType.income ? '収入' : '支出';
+    final typeName = switch (_selectedType) {
+      TransactionType.expense => '支出',
+      TransactionType.income => '収入',
+      TransactionType.transfer => '移動',
+    };
 
     final categories =
         master.categories
@@ -666,7 +681,6 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
 
                   TextFormField(
                     controller: _amountController,
-                    autofocus: true,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     style: const TextStyle(

@@ -927,6 +927,11 @@ class _TransactionTile extends StatelessWidget {
           await onResult(result);
         }
       },
+
+      onLongPress: () {
+        _showActionSheet(context);
+      },
+
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       leading: CircleAvatar(
         backgroundColor: transactionColor.withValues(alpha: 0.12),
@@ -952,6 +957,135 @@ class _TransactionTile extends StatelessWidget {
           color: transactionColor,
         ),
       ),
+    );
+  }
+
+  Future<void> _showActionSheet(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        final displayName = transaction.merchant.trim().isNotEmpty
+            ? transaction.merchant.trim()
+            : transaction.itemName.trim().isNotEmpty
+            ? transaction.itemName.trim()
+            : '名称なし';
+
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(sheetContext).textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('編集'),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+
+                  final result = await Navigator.of(context)
+                      .push<TransactionFormPageResult>(
+                        MaterialPageRoute(
+                          builder: (_) => TransactionFormPage(
+                            initialTransaction: transaction,
+                          ),
+                        ),
+                      );
+
+                  if (result?.transaction != null) {
+                    await onResult(
+                      TransactionDetailResult.updated(result!.transaction!),
+                    );
+                  }
+                },
+              ),
+
+              ListTile(
+                leading: Icon(
+                  Icons.delete_outline,
+                  color: Theme.of(sheetContext).colorScheme.error,
+                ),
+                title: Text(
+                  '削除',
+                  style: TextStyle(
+                    color: Theme.of(sheetContext).colorScheme.error,
+                  ),
+                ),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (dialogContext) {
+                      return AlertDialog(
+                        title: const Text('取引を削除しますか？'),
+                        content: Text('$displayNameを削除します。'),
+                        actions: [
+                          TextButton(
+                            onPressed: () {
+                              Navigator.of(dialogContext).pop(false);
+                            },
+                            child: const Text('キャンセル'),
+                          ),
+                          FilledButton(
+                            onPressed: () {
+                              Navigator.of(dialogContext).pop(true);
+                            },
+                            child: const Text('削除する'),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+
+                  if (confirmed != true || !context.mounted) {
+                    return;
+                  }
+
+                  try {
+                    await const TransactionService().deleteTransaction(
+                      id: transaction.id,
+                    );
+
+                    if (!context.mounted) {
+                      return;
+                    }
+
+                    await onResult(const TransactionDetailResult.deleted());
+                  } catch (error) {
+                    if (!context.mounted) {
+                      return;
+                    }
+
+                    final message = error.toString().replaceFirst(
+                      'Exception: ',
+                      '',
+                    );
+
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(message)));
+                  }
+                },
+              ),
+
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
     );
   }
 

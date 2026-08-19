@@ -139,6 +139,62 @@ class CategoryService {
     }
   }
 
+  Future<void> deactivateCategory({required String subCategoryId}) async {
+    final uri = Uri.parse(ApiConstants.baseUrl);
+    final client = http.Client();
+
+    try {
+      final request = http.Request('POST', uri)
+        ..followRedirects = false
+        ..headers.addAll({'Content-Type': 'application/json'})
+        ..body = jsonEncode({
+          'action': 'category_deactivate',
+          'key': ApiConstants.apiKey,
+          'subCategoryId': subCategoryId,
+        });
+
+      final streamedResponse = await client.send(request);
+
+      final response = await _resolveResponse(client, streamedResponse);
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          'カテゴリの削除に失敗しました: '
+          '${response.statusCode}',
+        );
+      }
+
+      final dynamic decodedValue;
+
+      try {
+        decodedValue = jsonDecode(response.body);
+      } on FormatException {
+        throw Exception(
+          'カテゴリ削除APIから'
+          '不正なレスポンスが返されました',
+        );
+      }
+
+      if (decodedValue is! Map) {
+        throw Exception('カテゴリ削除APIの形式が正しくありません');
+      }
+
+      final decoded = Map<String, dynamic>.from(decodedValue);
+
+      if (decoded['success'] != true) {
+        final error = decoded['error'];
+
+        if (error is Map) {
+          throw Exception(error['message']?.toString() ?? 'カテゴリの削除に失敗しました');
+        }
+
+        throw Exception(error?.toString() ?? 'カテゴリの削除に失敗しました');
+      }
+    } finally {
+      client.close();
+    }
+  }
+
   Future<http.Response> _resolveResponse(
     http.Client client,
     http.StreamedResponse initialResponse,

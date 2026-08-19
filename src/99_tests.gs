@@ -399,3 +399,7 @@ function testUpdateCategoryFromApp() {
     result.getContent()
   );
 }
+
+function testClearAnalyticsCache() {
+  clearAnalyticsSummaryCache_();
+}

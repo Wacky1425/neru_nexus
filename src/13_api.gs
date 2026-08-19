@@ -1,5 +1,4 @@
 function getHomeData() {
-
   const yearMonth = getLatestBudgetMonth();
 
   if (!yearMonth) {
@@ -215,6 +214,9 @@ function doPost(e) {
       case "category_update":
         return updateCategoryFromApp_(data);
 
+      case "category_deactivate":
+        return deactivateCategoryFromApp_(data);
+
       case "settlement_confirm":
         return confirmSettlementManually_(data);
 
@@ -223,6 +225,12 @@ function doPost(e) {
 
       case "account_create":
         return createAccountFromApp_(data);
+
+      case "account_update":
+        return updateAccountFromApp_(data);
+
+      case "account_deactivate":
+        return deactivateAccountFromApp_(data);
 
       default:
         return createJsonErrorResponse_(`未対応のactionです: ${action}`);

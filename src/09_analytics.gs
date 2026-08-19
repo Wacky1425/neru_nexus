@@ -67,7 +67,6 @@ function rebuildMonthlyTable() {
 }
 
 function getAnalyticsData(yearMonth) {
-
   /*
    * 対象月
    */
@@ -85,14 +84,14 @@ function getAnalyticsData(yearMonth) {
   }
 
   /*
-   * 直近4か月のSummaryを最新化
+   * 直近6か月のSummaryを最新化
    */
 
   const [year, month] = normalized.split("-").map(Number);
 
   const trendMonths = [];
 
-  for (let difference = 3; difference >= 0; difference--) {
+  for (let difference = 5; difference >= 0; difference--) {
     const targetDate = new Date(year, month - 1 - difference, 1);
 
     const monthKey = Utilities.formatDate(
@@ -126,6 +125,34 @@ function getAnalyticsData(yearMonth) {
 
   const totalExpense = fixedExpense + variableExpense;
 
+  const totalIncome = Number(monthly?.totalIncome || 0);
+
+  const balance = totalIncome - totalExpense;
+  /*
+   * 前月
+   */
+
+  const previousDate = new Date(year, month - 2, 1);
+
+  const previousYearMonth = Utilities.formatDate(
+    previousDate,
+    Session.getScriptTimeZone(),
+    "yyyy-MM",
+  );
+
+  const previousMonthly = monthlyData.find(
+    (item) => item.yearMonth === previousYearMonth,
+  );
+
+  const previousFixedExpense = Number(previousMonthly?.fixedExpense || 0);
+
+  const previousVariableExpense = Number(previousMonthly?.variableExpense || 0);
+
+  const previousTotalExpense = previousFixedExpense + previousVariableExpense;
+
+  const previousTotalIncome = Number(previousMonthly?.totalIncome || 0);
+
+  const previousBalance = previousTotalIncome - previousTotalExpense;
   /*
    * カテゴリ
    */
@@ -139,7 +166,7 @@ function getAnalyticsData(yearMonth) {
     .sort((a, b) => b.amount - a.amount);
 
   /*
-   * 直近4か月
+   * 直近6か月
    */
 
   const monthlyTrend = trendMonths.map((monthKey) => {
@@ -151,9 +178,15 @@ function getAnalyticsData(yearMonth) {
       ? Number(item.fixedExpense || 0) + Number(item.variableExpense || 0)
       : 0;
 
+    const income = Number(item?.totalIncome || 0);
+
+    const balance = income - expense;
+
     return {
       yearMonth: monthKey,
       expense,
+      income,
+      balance,
     };
   });
 
@@ -162,16 +195,27 @@ function getAnalyticsData(yearMonth) {
 
     totalExpense,
 
+    totalIncome,
+
+    balance,
+
     fixedExpense,
 
     variableExpense,
+
+    previousYearMonth,
+
+    previousTotalExpense,
+
+    previousTotalIncome,
+
+    previousBalance,
 
     categories,
 
     monthlyTrend,
 
     generatedAt: new Date().toISOString(),
-
   };
 }
 

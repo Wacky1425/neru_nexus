@@ -15,26 +15,57 @@ class AccountEditPage extends StatefulWidget {
 class _AccountEditPageState extends State<AccountEditPage> {
   final _service = const AccountBalanceService();
 
+  late final TextEditingController _accountNameController;
+
+  late final TextEditingController _paymentMethodController;
+
+  late final TextEditingController _institutionController;
+
   late final TextEditingController _balanceController;
+
+  late String _wallet;
+
+  late bool _isAsset;
+  late bool _isLiability;
 
   DateTime? _openingBalanceDate;
 
   bool _saving = false;
+  bool _deleting = false;
 
   @override
   void initState() {
     super.initState();
 
-    _balanceController = TextEditingController(
-      text: widget.account.openingBalance.toString(),
+    final account = widget.account;
+
+    _accountNameController = TextEditingController(text: account.accountName);
+
+    _paymentMethodController = TextEditingController(
+      text: account.paymentMethod,
     );
 
-    _openingBalanceDate = _parseDate(widget.account.openingBalanceDate);
+    _institutionController = TextEditingController(text: account.institution);
+
+    _balanceController = TextEditingController(
+      text: account.openingBalance.toString(),
+    );
+
+    _wallet = account.wallet.isEmpty ? '生活' : account.wallet;
+
+    _isAsset = account.isAsset;
+    _isLiability = account.isLiability;
+
+    _openingBalanceDate = _parseDate(account.openingBalanceDate);
   }
 
   @override
   void dispose() {
+    _accountNameController.dispose();
+    _paymentMethodController.dispose();
+    _institutionController.dispose();
     _balanceController.dispose();
+
     super.dispose();
   }
 
@@ -66,7 +97,23 @@ class _AccountEditPageState extends State<AccountEditPage> {
   }
 
   Future<void> _save() async {
-    if (_saving) {
+    if (_saving || _deleting) {
+      return;
+    }
+
+    final accountName = _accountNameController.text.trim();
+
+    final paymentMethod = _paymentMethodController.text.trim();
+
+    final institution = _institutionController.text.trim();
+
+    if (accountName.isEmpty) {
+      _showMessage('口座名を入力してください');
+      return;
+    }
+
+    if (paymentMethod.isEmpty) {
+      _showMessage('支払方法を入力してください');
       return;
     }
 
@@ -90,13 +137,24 @@ class _AccountEditPageState extends State<AccountEditPage> {
       return;
     }
 
+    if (_isAsset && _isLiability) {
+      _showMessage('資産と負債を同時には選択できません');
+      return;
+    }
+
     setState(() {
       _saving = true;
     });
 
     try {
-      await _service.updateOpeningBalance(
+      await _service.updateAccount(
         accountId: widget.account.accountId,
+        accountName: accountName,
+        paymentMethod: paymentMethod,
+        wallet: _wallet,
+        institution: institution,
+        isAsset: _isAsset,
+        isLiability: _isLiability,
         openingBalance: balance,
         openingBalanceDate: _formatApiDate(date),
       );
@@ -121,6 +179,77 @@ class _AccountEditPageState extends State<AccountEditPage> {
     }
   }
 
+  Future<void> _delete() async {
+    if (_saving || _deleting) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('口座を削除しますか？'),
+          content: Text(
+            '${widget.account.accountName}を'
+            '口座一覧から削除します。\n\n'
+            '過去の取引は削除されません。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(false);
+              },
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop(true);
+              },
+              child: const Text('削除'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _deleting = true;
+    });
+
+    try {
+      await _service.deactivateAccount(accountId: widget.account.accountId);
+
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _deleting = false;
+        });
+      }
+    }
+  }
+
+  void _setAccountType({required bool asset, required bool liability}) {
+    setState(() {
+      _isAsset = asset;
+      _isLiability = liability;
+    });
+  }
+
   void _showMessage(String message) {
     ScaffoldMessenger.of(
       context,
@@ -129,7 +258,9 @@ class _AccountEditPageState extends State<AccountEditPage> {
 
   String _formatApiDate(DateTime date) {
     final year = date.year.toString().padLeft(4, '0');
+
     final month = date.month.toString().padLeft(2, '0');
+
     final day = date.day.toString().padLeft(2, '0');
 
     return '$year-$month-$day';
@@ -143,30 +274,116 @@ class _AccountEditPageState extends State<AccountEditPage> {
 
   @override
   Widget build(BuildContext context) {
+    final busy = _saving || _deleting;
+
     return Scaffold(
       appBar: AppBar(title: const Text('口座設定')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(
-            widget.account.accountName,
-            style: Theme.of(
-              context,
-            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+          TextField(
+            controller: _accountNameController,
+            enabled: !busy,
+            decoration: const InputDecoration(
+              labelText: '口座名',
+              border: OutlineInputBorder(),
+            ),
           ),
+
+          const SizedBox(height: 16),
+
+          TextField(
+            controller: _paymentMethodController,
+            enabled: !busy,
+            decoration: const InputDecoration(
+              labelText: '支払方法',
+              border: OutlineInputBorder(),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          TextField(
+            controller: _institutionController,
+            enabled: !busy,
+            decoration: const InputDecoration(
+              labelText: '金融機関',
+              border: OutlineInputBorder(),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          DropdownButtonFormField<String>(
+            initialValue: _wallet,
+            decoration: const InputDecoration(
+              labelText: 'ウォレット',
+              border: OutlineInputBorder(),
+            ),
+            items: const [
+              DropdownMenuItem(value: '生活', child: Text('生活')),
+              DropdownMenuItem(value: '事業', child: Text('事業')),
+            ],
+            onChanged: busy
+                ? null
+                : (value) {
+                    if (value == null) {
+                      return;
+                    }
+
+                    setState(() {
+                      _wallet = value;
+                    });
+                  },
+          ),
+
+          const SizedBox(height: 24),
+
+          Text('口座種別', style: Theme.of(context).textTheme.titleMedium),
 
           const SizedBox(height: 8),
 
-          if (widget.account.institution.isNotEmpty)
-            Text(
-              widget.account.institution,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(
+                value: 'asset',
+                label: Text('資産'),
+                icon: Icon(Icons.account_balance_wallet_outlined),
+              ),
+              ButtonSegment(
+                value: 'liability',
+                label: Text('負債'),
+                icon: Icon(Icons.credit_card),
+              ),
+              ButtonSegment(value: 'none', label: Text('その他')),
+            ],
+            selected: {
+              _isAsset
+                  ? 'asset'
+                  : _isLiability
+                  ? 'liability'
+                  : 'none',
+            },
+            onSelectionChanged: busy
+                ? null
+                : (selection) {
+                    final value = selection.first;
 
-          const SizedBox(height: 32),
+                    if (value == 'asset') {
+                      _setAccountType(asset: true, liability: false);
+                    } else if (value == 'liability') {
+                      _setAccountType(asset: false, liability: true);
+                    } else {
+                      _setAccountType(asset: false, liability: false);
+                    }
+                  },
+          ),
+
+          const SizedBox(height: 24),
 
           TextField(
             controller: _balanceController,
+            enabled: !busy,
             keyboardType: const TextInputType.numberWithOptions(signed: true),
             decoration: const InputDecoration(
               labelText: '基準残高',
@@ -179,7 +396,7 @@ class _AccountEditPageState extends State<AccountEditPage> {
           const SizedBox(height: 24),
 
           InkWell(
-            onTap: _selectDate,
+            onTap: busy ? null : _selectDate,
             borderRadius: BorderRadius.circular(12),
             child: InputDecorator(
               decoration: const InputDecoration(
@@ -198,7 +415,7 @@ class _AccountEditPageState extends State<AccountEditPage> {
           const SizedBox(height: 32),
 
           FilledButton(
-            onPressed: _saving ? null : _save,
+            onPressed: busy ? null : _save,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: _saving
@@ -208,6 +425,27 @@ class _AccountEditPageState extends State<AccountEditPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Text('保存'),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          const Divider(),
+
+          const SizedBox(height: 12),
+
+          TextButton.icon(
+            onPressed: busy ? null : _delete,
+            icon: _deleting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.delete_outline),
+            label: const Text('口座を削除'),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
             ),
           ),
         ],

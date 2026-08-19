@@ -24,6 +24,8 @@ class _EditCategoryDialogState extends State<EditCategoryDialog> {
 
   bool _isSaving = false;
 
+  bool _isDeleting = false;
+
   @override
   void initState() {
     super.initState();
@@ -46,7 +48,7 @@ class _EditCategoryDialogState extends State<EditCategoryDialog> {
   }
 
   Future<void> _save() async {
-    if (_isSaving || !_formKey.currentState!.validate()) {
+    if (_isSaving || _isDeleting || !_formKey.currentState!.validate()) {
       return;
     }
 
@@ -81,6 +83,76 @@ class _EditCategoryDialogState extends State<EditCategoryDialog> {
       if (mounted) {
         setState(() {
           _isSaving = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _delete() async {
+    if (_isSaving || _isDeleting) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('カテゴリを削除しますか？'),
+          content: Text(
+            '${widget.category.majorCategory} / '
+            '${widget.category.subCategory}\n\n'
+            '過去の取引データからは削除されません。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false);
+              },
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(true);
+              },
+              child: const Text('削除'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _isDeleting = true;
+    });
+
+    try {
+      await _service.deactivateCategory(
+        subCategoryId: widget.category.subCategoryId,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      final message = error.toString().replaceFirst('Exception: ', '');
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDeleting = false;
         });
       }
     }
@@ -149,7 +221,20 @@ class _EditCategoryDialogState extends State<EditCategoryDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _isSaving
+          onPressed: _isSaving || _isDeleting ? null : _delete,
+          style: TextButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.error,
+          ),
+          child: _isDeleting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('削除'),
+        ),
+        TextButton(
+          onPressed: _isSaving || _isDeleting
               ? null
               : () {
                   Navigator.of(context).pop(false);
@@ -157,7 +242,7 @@ class _EditCategoryDialogState extends State<EditCategoryDialog> {
           child: const Text('キャンセル'),
         ),
         FilledButton(
-          onPressed: _isSaving ? null : _save,
+          onPressed: _isSaving || _isDeleting ? null : _save,
           child: _isSaving
               ? const SizedBox(
                   width: 18,

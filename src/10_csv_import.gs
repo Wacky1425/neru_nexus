@@ -348,7 +348,15 @@ function reconcileCardSettlementForBatch_(importBatch, rawAccountName) {
 
     const rowAccount = resolveCanonicalAccountName_(row[index["account_name"]]);
 
-    if (rowBatch === importBatch && rowAccount === cardAccount) {
+    const settlementStatus = String(
+      row[index["settlement_status"]] || "",
+    ).trim();
+
+    if (
+      rowBatch === importBatch &&
+      rowAccount === cardAccount &&
+      settlementStatus !== "matched"
+    ) {
       batchRows.push({
         sheetIndex: i,
         row,
@@ -394,11 +402,13 @@ function reconcileCardSettlementForBatch_(importBatch, rawAccountName) {
 
   // 1件に確定できない場合は自動照合しない
   if (amountMatches.length !== 1) {
-    for (const pending of pendingRows) {
-      pending.row[index["settlement_status"]] = "review";
-    }
+    // 同額候補が複数ある場合だけ、その候補を要確認にする。
+    // 金額一致が0件の場合は、既存のpendingを勝手に変更しない。
+    if (amountMatches.length > 1) {
+      for (const candidate of amountMatches) {
+        candidate.row[index["settlement_status"]] = "review";
+      }
 
-    if (pendingRows.length > 0) {
       sheet
         .getRange(2, 1, values.length - 1, values[0].length)
         .setValues(values.slice(1));
@@ -406,6 +416,7 @@ function reconcileCardSettlementForBatch_(importBatch, rawAccountName) {
       clearTableCache(SHEETS.TRANSACTIONS);
       clearAccountBalanceCache_();
     }
+
     let candidateAmount = null;
     let difference = null;
 
@@ -422,6 +433,7 @@ function reconcileCardSettlementForBatch_(importBatch, rawAccountName) {
       cardAccount,
       batchTotal,
       candidateCount: pendingRows.length,
+      amountMatchCount: amountMatches.length,
       candidateAmount,
       difference,
     };
@@ -459,6 +471,48 @@ function reconcileCardSettlementForBatch_(importBatch, rawAccountName) {
   };
 }
 
+function resolveAccountFromAliases_(values) {
+  const candidates = (values || [])
+    .filter(Boolean)
+    .map((value) => String(value).normalize("NFKC").trim())
+    .filter(Boolean);
+
+  if (candidates.length === 0) {
+    return "";
+  }
+
+  const aliases = loadObjects(SHEETS.ACCOUNT_ALIAS);
+
+  let bestMatch = null;
+
+  for (const candidate of candidates) {
+    for (const row of aliases) {
+      const raw = String(row.raw_account_name || "")
+        .normalize("NFKC")
+        .trim();
+
+      const canonical = String(row.canonical_account_name || "").trim();
+
+      if (!raw || !canonical) {
+        continue;
+      }
+
+      if (!candidate.includes(raw)) {
+        continue;
+      }
+
+      if (bestMatch === null || raw.length > bestMatch.rawLength) {
+        bestMatch = {
+          rawLength: raw.length,
+          canonical,
+        };
+      }
+    }
+  }
+
+  return bestMatch?.canonical || "";
+}
+
 function confirmSettlementManually_(data) {
   const settlementTransactionId = String(
     data.settlementTransactionId || "",
@@ -486,13 +540,22 @@ function confirmSettlementManually_(data) {
 
   assertRequiredColumns(
     index,
-    ["id", "type", "import_batch", "settlement_status", "settlement_id"],
+    [
+      "id",
+      "type",
+      "amount",
+      "account_name",
+      "to_account",
+      "import_batch",
+      "settlement_status",
+      "settlement_id",
+    ],
     SHEETS.TRANSACTIONS,
   );
 
   let settlementRow = null;
-  const batchRows = [];
 
+  // まず引落取引を探す
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
 
@@ -500,15 +563,7 @@ function confirmSettlementManually_(data) {
 
     if (id === settlementTransactionId) {
       settlementRow = row;
-    }
-
-    const rowBatch = String(row[index["import_batch"]] || "").trim();
-
-    if (
-      rowBatch === importBatch &&
-      String(row[index["type"]] || "").trim() !== "移動"
-    ) {
-      batchRows.push(row);
+      break;
     }
   }
 
@@ -516,9 +571,64 @@ function confirmSettlementManually_(data) {
     throw new Error("照合対象の引落が見つかりません");
   }
 
+  const currentSettlementStatus = String(
+    settlementRow[index["settlement_status"]] || "",
+  ).trim();
+
+  if (currentSettlementStatus === "matched") {
+    throw new Error("この引落取引はすでに照合済みです");
+  }
+
+  // 引落の移動先カードを特定
+  const cardAccount = resolveCanonicalAccountName_(
+    settlementRow[index["to_account"]],
+  );
+
+  if (!cardAccount) {
+    throw new Error("引落先のカード口座を特定できません");
+  }
+
+  // 同じ取込バッチ ＋ 同じカード口座の明細だけ集める
+  const batchRows = [];
+
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+
+    const rowBatch = String(row[index["import_batch"]] || "").trim();
+
+    const type = String(row[index["type"]] || "").trim();
+
+    const rowAccount = resolveCanonicalAccountName_(row[index["account_name"]]);
+
+    if (
+      rowBatch === importBatch &&
+      type !== "移動" &&
+      rowAccount === cardAccount
+    ) {
+      batchRows.push(row);
+    }
+  }
+
   if (batchRows.length === 0) {
     throw new Error("紐付け対象のカード明細がありません");
   }
+
+  // すでに照合済みのカード明細が混ざっていないか確認
+  const alreadyMatchedDetail = batchRows.some((row) => {
+    return String(row[index["settlement_status"]] || "").trim() === "matched";
+  });
+
+  if (alreadyMatchedDetail) {
+    throw new Error("カード明細にすでに照合済みの取引が含まれています");
+  }
+
+  const settlementAmount = Number(settlementRow[index["amount"]] || 0);
+
+  const detailTotal = batchRows.reduce((sum, row) => {
+    return sum + Number(row[index["amount"]] || 0);
+  }, 0);
+
+  const difference = settlementAmount - detailTotal;
 
   const settlementId = "settlement_" + Utilities.getUuid();
 
@@ -548,36 +658,17 @@ function confirmSettlementManually_(data) {
       settlementTransactionId,
       importBatch,
       detailCount: batchRows.length,
+
+      settlementAmount,
+      detailTotal,
+      difference,
     },
     "ok",
   );
 }
 
 function resolveCreditCardAccount_(tx) {
-  const candidates = [tx.merchant, tx.item_name, tx.note]
-    .filter(Boolean)
-    .map((value) => String(value).normalize("NFKC").trim());
-
-  const aliases = loadObjects(SHEETS.ACCOUNT_ALIAS);
-
-  for (const candidate of candidates) {
-    for (const row of aliases) {
-      const raw = String(row.raw_account_name || "")
-        .normalize("NFKC")
-        .trim();
-
-      if (!raw) {
-        continue;
-      }
-
-      // 銀行明細の文字列にaliasが含まれているか
-      if (candidate.includes(raw)) {
-        return String(row.canonical_account_name || "").trim();
-      }
-    }
-  }
-
-  return "";
+  return resolveAccountFromAliases_([tx.merchant, tx.item_name, tx.note]);
 }
 
 function applyTransferMetadata_(tx) {
@@ -612,7 +703,6 @@ function applyTransferMetadata_(tx) {
     return;
   }
 
-
   const destinationAccount = resolveTransferDestinationAccount_(tx);
 
   tx.to_account = destinationAccount;
@@ -621,29 +711,12 @@ function applyTransferMetadata_(tx) {
 }
 
 function resolveTransferDestinationAccount_(tx) {
-  const candidates = [tx.merchant, tx.item_name, tx.note, tx.raw_text]
-    .filter(Boolean)
-    .map((value) => String(value).normalize("NFKC").trim());
-
-  const aliases = loadObjects(SHEETS.ACCOUNT_ALIAS);
-
-  for (const candidate of candidates) {
-    for (const row of aliases) {
-      const raw = String(row.raw_account_name || "")
-        .normalize("NFKC")
-        .trim();
-
-      if (!raw) {
-        continue;
-      }
-
-      if (candidate.includes(raw)) {
-        return String(row.canonical_account_name || "").trim();
-      }
-    }
-  }
-
-  return "";
+  return resolveAccountFromAliases_([
+    tx.merchant,
+    tx.item_name,
+    tx.note,
+    tx.raw_text,
+  ]);
 }
 
 function getLatestCsvFileFromDrive(folderId) {

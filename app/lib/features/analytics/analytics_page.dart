@@ -5,6 +5,7 @@ import 'service/analytics_service.dart';
 import 'widgets/expense_pie_chart.dart';
 import 'widgets/monthly_expense_chart.dart';
 import '../../core/refresh/app_refresh_controller.dart';
+import '../../core/widgets/month_picker_dialog.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -52,6 +53,30 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         _selectedMonth.year,
         _selectedMonth.month + difference,
       );
+
+      _analyticsFuture = _fetchSelectedMonth();
+    });
+  }
+
+  Future<void> _selectMonth() async {
+    final selectedMonth = await showMonthPickerDialog(
+      context: context,
+      initialMonth: _selectedMonth,
+      firstMonth: DateTime(2020, 1),
+      lastMonth: DateTime.now(),
+    );
+
+    if (selectedMonth == null || !mounted) {
+      return;
+    }
+
+    if (selectedMonth.year == _selectedMonth.year &&
+        selectedMonth.month == _selectedMonth.month) {
+      return;
+    }
+
+    setState(() {
+      _selectedMonth = DateTime(selectedMonth.year, selectedMonth.month);
 
       _analyticsFuture = _fetchSelectedMonth();
     });
@@ -113,10 +138,19 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                       icon: const Icon(Icons.chevron_left),
                     ),
 
-                    Text(
-                      _formatYearMonth(_selectedMonth),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                    TextButton(
+                      onPressed: _selectMonth,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _formatYearMonth(_selectedMonth),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.calendar_month_outlined, size: 18),
+                        ],
                       ),
                     ),
 
@@ -131,14 +165,65 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
                 const SizedBox(height: 20),
 
-                _SummaryCard(
-                  title: '今月の支出',
-                  amount: analytics.totalExpense,
-                  icon: Icons.payments_outlined,
+                Row(
+                  children: [
+                    Expanded(
+                      child: _SummaryCard(
+                        title: '収入',
+                        amount: analytics.totalIncome,
+                        icon: Icons.arrow_downward_rounded,
+                      ),
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    Expanded(
+                      child: _SummaryCard(
+                        title: '支出',
+                        amount: analytics.totalExpense,
+                        icon: Icons.arrow_upward_rounded,
+                      ),
+                    ),
+                  ],
                 ),
 
                 const SizedBox(height: 12),
 
+                _SummaryCard(
+                  title: '収支',
+                  amount: analytics.balance,
+                  icon: Icons.account_balance_wallet_outlined,
+                ),
+
+                const SizedBox(height: 12),
+
+                Column(
+                  children: [
+                    _PreviousMonthComparisonCard(
+                      title: '収入の前月比',
+                      currentAmount: analytics.totalIncome,
+                      previousAmount: analytics.previousTotalIncome,
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    _PreviousMonthComparisonCard(
+                      title: '支出の前月比',
+                      currentAmount: analytics.totalExpense,
+                      previousAmount: analytics.previousTotalExpense,
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    _PreviousMonthComparisonCard(
+                      title: '収支の前月比',
+                      currentAmount: analytics.balance,
+                      previousAmount: analytics.previousBalance,
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
@@ -160,7 +245,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 24),
 
                 ExpensePieChart(categories: analytics.categories),
@@ -315,6 +399,76 @@ class _SummaryCard extends StatelessWidget {
               style: Theme.of(
                 context,
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _formatYen(int amount) {
+    final formatted = amount.toString().replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (_) => ',',
+    );
+
+    return '￥$formatted';
+  }
+}
+
+class _PreviousMonthComparisonCard extends StatelessWidget {
+  const _PreviousMonthComparisonCard({
+    required this.title,
+    required this.currentAmount,
+    required this.previousAmount,
+  });
+
+  final String title;
+  final int currentAmount;
+  final int previousAmount;
+
+  @override
+  Widget build(BuildContext context) {
+    final difference = currentAmount - previousAmount;
+
+    final percentage = previousAmount == 0
+        ? null
+        : (difference / previousAmount * 100);
+
+    final differenceText = difference == 0
+        ? '前月と同じ'
+        : '${difference > 0 ? '+' : '-'}'
+              '${_formatYen(difference.abs())}';
+
+    final percentageText = percentage == null
+        ? ''
+        : '（${percentage > 0 ? '+' : ''}${percentage.toStringAsFixed(1)}%）';
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            const Icon(Icons.compare_arrows_rounded),
+
+            const SizedBox(width: 12),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.bodyMedium),
+
+                  const SizedBox(height: 4),
+
+                  Text(
+                    '$differenceText$percentageText',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

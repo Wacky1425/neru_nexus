@@ -540,6 +540,7 @@ function loadAnalyticsMonthlySummary_() {
       "year_month",
       "fixed_expense",
       "variable_expense",
+      "total_income",
       "business_income",
       "business_expense",
       "business_profit",
@@ -554,6 +555,8 @@ function loadAnalyticsMonthlySummary_() {
       fixedExpense: getNumber(row, table.index, "fixed_expense"),
 
       variableExpense: getNumber(row, table.index, "variable_expense"),
+
+      totalIncome: getNumber(row, table.index, "total_income"),
 
       businessIncome: getNumber(row, table.index, "business_income"),
 

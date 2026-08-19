@@ -138,7 +138,7 @@ class _HomePageState extends State<HomePage> {
               MoneyCard(
                 title: 'あと使えるお金',
                 amount: _formatMoney(home.availableMoney),
-                subAmount: '今日あと ${_formatMoney(home.dailyBudget)}',
+                subAmount: '1日あたり ${_formatMoney(home.dailyBudget)}',
                 icon: Icons.account_balance_wallet,
               ),
 
