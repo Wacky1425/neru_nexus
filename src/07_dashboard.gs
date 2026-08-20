@@ -998,3 +998,496 @@ function getHomeRecentTransactions_() {
 function clearHomeRecentTransactionsCache_() {
   CacheService.getScriptCache().remove(HOME_RECENT_TRANSACTIONS_CACHE_KEY);
 }
+
+function getGoalsData() {
+  const rows = loadObjects(SHEETS.GOALS);
+
+  const items = rows
+    .filter((row) => {
+      const active = String(row.active === undefined ? "1" : row.active)
+        .trim()
+        .toUpperCase();
+
+      return active === "1" || active === "TRUE";
+    })
+    .map((row) => ({
+      goalId: String(row.goal_id || "").trim(),
+
+      goalName: String(row.goal_name || "").trim(),
+
+      goalType: String(row.goal_type || "").trim(),
+
+      targetAmount: Number(row.target_amount || 0),
+
+      targetDate: formatApiDate_(row.target_date),
+
+      certainty: String(row.certainty || "").trim(),
+
+      reservedCash: Number(row.reserved_cash || 0),
+
+      priority: Number(row.priority || 0),
+
+      note: String(row.note || "").trim(),
+    }))
+    .filter((item) => item.goalId && item.goalName)
+    .sort((a, b) => {
+      const priorityDifference = b.priority - a.priority;
+
+      if (priorityDifference !== 0) {
+        return priorityDifference;
+      }
+
+      return a.targetDate.localeCompare(b.targetDate);
+    });
+
+  return {
+    items,
+    total: items.length,
+  };
+}
+
+function getFinancialSettings_() {
+  const rows = loadObjects(SHEETS.FINANCIAL_SETTINGS);
+
+  const settings = {};
+
+  for (const row of rows) {
+    const key = String(row.setting_key || "").trim();
+
+    if (!key) {
+      continue;
+    }
+
+    settings[key] = Number(row.setting_value || 0);
+  }
+
+  return {
+    emergencyFundMonths: settings.emergency_fund_months || 6,
+
+    baseNisaMonthly: settings.base_nisa_monthly || 0,
+
+    minCashMonths: settings.min_cash_months || 1,
+
+    cashHeavyUntilMonths: settings.cash_heavy_until_months || 3,
+
+    balancedUntilMonths: settings.balanced_until_months || 6,
+
+    goalSafetyMonths: settings.goal_safety_months || 6,
+
+    forecastMonths: settings.forecast_months || 36,
+
+    paydayDay: settings.payday_day || 25,
+  };
+}
+
+function calculateBaselineMonthlyLivingCost_() {
+  const monthlyData = loadAnalyticsMonthlySummary_();
+
+  if (!Array.isArray(monthlyData) || monthlyData.length === 0) {
+    return {
+      monthlyLivingCost: 0,
+      monthsUsed: 0,
+      source: "no_data",
+    };
+  }
+
+  const currentMonth = Utilities.formatDate(
+    new Date(),
+    "Asia/Tokyo",
+    "yyyy-MM",
+  );
+
+  const completedMonths = monthlyData
+    .filter((item) => {
+      const yearMonth = String(item.yearMonth || "").trim();
+
+      return /^\d{4}-\d{2}$/.test(yearMonth) && yearMonth < currentMonth;
+    })
+    .sort((a, b) => String(b.yearMonth).localeCompare(String(a.yearMonth)))
+    .slice(0, 3);
+
+  if (completedMonths.length === 0) {
+    return {
+      monthlyLivingCost: 0,
+      monthsUsed: 0,
+      source: "no_completed_month",
+    };
+  }
+
+  let total = 0;
+
+  for (const month of completedMonths) {
+    total +=
+      Number(month.fixedExpense || 0) + Number(month.variableExpense || 0);
+  }
+
+  return {
+    monthlyLivingCost: Math.round(total / completedMonths.length),
+    monthsUsed: completedMonths.length,
+    source: "actual_average",
+  };
+}
+
+function calculateBaselineEssentialLivingCost_() {
+  const transactionTable = loadTransactions();
+
+  if (transactionTable.rows.length === 0) {
+    return {
+      monthlyEssentialCost: 0,
+      monthsUsed: 0,
+      source: "no_transactions",
+    };
+  }
+
+  assertRequiredColumns(
+    transactionTable.index,
+    ["transaction_date", "type", "amount", "major_category", "sub_category"],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const categoryData = getCategoriesData();
+
+  const essentialKeys = new Set();
+
+  for (const item of categoryData.items || []) {
+    if (item.type !== "支出" || item.essential !== true) {
+      continue;
+    }
+
+    const key = [
+      String(item.majorCategory || "").trim(),
+      String(item.subCategory || "").trim(),
+    ].join("|");
+
+    essentialKeys.add(key);
+  }
+
+  const currentMonth = Utilities.formatDate(
+    new Date(),
+    "Asia/Tokyo",
+    "yyyy-MM",
+  );
+
+  const monthlyTotals = new Map();
+
+  for (const row of transactionTable.rows) {
+    const type = getString(row, transactionTable.index, "type");
+
+    if (type !== "支出") {
+      continue;
+    }
+
+    const transactionDate = row[transactionTable.index["transaction_date"]];
+
+    const yearMonth = normalizeYearMonth(transactionDate);
+
+    // 今月は月途中なので平均対象から除外
+    if (!yearMonth || yearMonth >= currentMonth) {
+      continue;
+    }
+
+    const majorCategory = getString(
+      row,
+      transactionTable.index,
+      "major_category",
+    );
+
+    const subCategory = getString(row, transactionTable.index, "sub_category");
+
+    const key = [majorCategory, subCategory].join("|");
+
+    if (!essentialKeys.has(key)) {
+      continue;
+    }
+
+    const amount = Math.abs(getNumber(row, transactionTable.index, "amount"));
+
+    monthlyTotals.set(
+      yearMonth,
+      Number(monthlyTotals.get(yearMonth) || 0) + amount,
+    );
+  }
+
+  const months = Array.from(monthlyTotals.entries())
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .slice(0, 3);
+
+  if (months.length === 0) {
+    return {
+      monthlyEssentialCost: 0,
+      monthsUsed: 0,
+      source: "no_completed_month",
+    };
+  }
+
+  const total = months.reduce(
+    (sum, [, amount]) => sum + Number(amount || 0),
+    0,
+  );
+
+  return {
+    monthlyEssentialCost: Math.round(total / months.length),
+
+    monthsUsed: months.length,
+
+    source: "essential_actual_average",
+
+    months: months.map(([yearMonth, amount]) => ({
+      yearMonth,
+      amount,
+    })),
+  };
+}
+
+function calculateEmergencyFundStatus_() {
+  const settings = getFinancialSettings_();
+
+  const baseline = calculateBaselineEssentialLivingCost_();
+
+  const monthlyEssentialCost = Number(baseline.monthlyEssentialCost || 0);
+
+  const targetMonths = Number(settings.emergencyFundMonths || 6);
+
+  const protectedCashData = calculateProtectedCash_();
+
+  const liquidCash = protectedCashData.protectedCash;
+
+  if (monthlyEssentialCost <= 0) {
+    return {
+      monthlyEssentialCost,
+      targetMonths,
+      targetAmount,
+
+      liquidCash,
+
+      rawLiquidCash: protectedCashData.liquidCash,
+
+      reservedGoalCash: protectedCashData.reservedGoalCash,
+
+      upcomingCardPayments: protectedCashData.upcomingCardPayments,
+
+      coveredMonths: Math.round(coveredMonths * 10) / 10,
+
+      stage,
+      cashRatio,
+      nisaRatio,
+      shortage,
+
+      monthsUsed: baseline.monthsUsed || 0,
+    };
+  }
+
+  const targetAmount = Math.round(monthlyEssentialCost * targetMonths);
+
+  const coveredMonths = liquidCash / monthlyEssentialCost;
+
+  const shortage = Math.max(0, targetAmount - liquidCash);
+
+  let stage = "";
+  let cashRatio = 0;
+  let nisaRatio = 0;
+
+  const minCashMonths = Number(settings.minCashMonths || 1);
+
+  const cashHeavyUntilMonths = Number(settings.cashHeavyUntilMonths || 3);
+
+  const balancedUntilMonths = Number(settings.balancedUntilMonths || 6);
+
+  if (coveredMonths < minCashMonths) {
+    stage = "critical";
+
+    cashRatio = 1.0;
+    nisaRatio = 0.0;
+  } else if (coveredMonths < cashHeavyUntilMonths) {
+    stage = "cash_heavy";
+
+    cashRatio = 0.8;
+    nisaRatio = 0.2;
+  } else if (coveredMonths < balancedUntilMonths) {
+    stage = "balanced";
+
+    cashRatio = 0.5;
+    nisaRatio = 0.5;
+  } else {
+    stage = "secured";
+
+    cashRatio = 0.0;
+    nisaRatio = 1.0;
+  }
+
+  return {
+    monthlyEssentialCost,
+
+    targetMonths,
+
+    targetAmount,
+
+    liquidCash,
+
+    coveredMonths: Math.round(coveredMonths * 10) / 10,
+
+    stage,
+
+    cashRatio,
+
+    nisaRatio,
+
+    shortage,
+
+    monthsUsed: baseline.monthsUsed || 0,
+
+    reservedGoalCash: protectedCashData.reservedGoalCash,
+
+    upcomingCardPayments: protectedCashData.upcomingCardPayments,
+
+    cashNeededUntilPayday: protectedCashData.cashNeededUntilPayday,
+
+    nextPayday: protectedCashData.nextPayday,
+
+    daysUntilPayday: protectedCashData.daysUntilPayday,
+  };
+}
+
+function calculateProtectedCash_() {
+  const liquidCash = getLiquidCashBalance_();
+
+  const goalsData = getGoalsData();
+  const goals = goalsData.items || [];
+
+  const reservedGoalCash = goals.reduce(
+    (sum, goal) => sum + Number(goal.reservedCash || 0),
+    0,
+  );
+
+  const upcomingCardPayments = calculateUpcomingCardPayments_();
+
+  const paydayCash = calculateCashNeededUntilNextPayday_();
+
+  const protectedCash = Math.max(
+    0,
+    liquidCash -
+      reservedGoalCash -
+      upcomingCardPayments.totalAmount -
+      paydayCash.amount,
+  );
+
+  return {
+    liquidCash,
+    reservedGoalCash,
+
+    upcomingCardPayments: upcomingCardPayments.totalAmount,
+
+    cashNeededUntilPayday: paydayCash.amount,
+
+    nextPayday: paydayCash.nextPayday,
+
+    daysUntilPayday: paydayCash.daysUntilPayday,
+
+    protectedCash,
+  };
+}
+
+function calculateUpcomingCardPayments_() {
+  const balanceData = getAccountBalancesData();
+
+  const items = balanceData.items || [];
+
+  let totalAmount = 0;
+
+  const details = [];
+
+  for (const account of items) {
+    if (account.isLiability !== true) {
+      continue;
+    }
+
+    const paymentMethod = String(account.paymentMethod || "").trim();
+
+    if (paymentMethod !== "クレジットカード" && paymentMethod !== "クレカ") {
+      continue;
+    }
+
+    const balance = Math.max(0, Number(account.currentBalance || 0));
+
+    if (balance <= 0) {
+      continue;
+    }
+
+    totalAmount += balance;
+
+    details.push({
+      accountId: account.accountId,
+      accountName: account.accountName,
+      amount: balance,
+    });
+  }
+
+  return {
+    totalAmount,
+    details,
+  };
+}
+
+function calculateCashNeededUntilNextPayday_() {
+  const settings = getFinancialSettings_();
+
+  const baseline = calculateBaselineEssentialLivingCost_();
+
+  const monthlyEssentialCost = Number(baseline.monthlyEssentialCost || 0);
+
+  if (monthlyEssentialCost <= 0) {
+    return {
+      amount: 0,
+      daysUntilPayday: 0,
+      nextPayday: "",
+      dailyEssentialCost: 0,
+    };
+  }
+
+  const paydayDay = Math.max(1, Math.min(31, Number(settings.paydayDay || 25)));
+
+  const now = new Date();
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  let paydayYear = today.getFullYear();
+
+  let paydayMonth = today.getMonth();
+
+  let paydayDate = createSafeMonthlyDate_(paydayYear, paydayMonth, paydayDay);
+
+  // 今月の給料日を過ぎていたら翌月
+  if (today >= paydayDate) {
+    paydayMonth++;
+
+    paydayDate = createSafeMonthlyDate_(paydayYear, paydayMonth, paydayDay);
+  }
+
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+
+  const daysUntilPayday = Math.max(
+    0,
+    Math.ceil((paydayDate.getTime() - today.getTime()) / millisecondsPerDay),
+  );
+
+  // 1か月 = 平均30.4375日
+  const dailyEssentialCost = monthlyEssentialCost / 30.4375;
+
+  const amount = Math.ceil(dailyEssentialCost * daysUntilPayday);
+
+  return {
+    amount,
+
+    daysUntilPayday,
+
+    nextPayday: Utilities.formatDate(paydayDate, "Asia/Tokyo", "yyyy-MM-dd"),
+
+    dailyEssentialCost: Math.round(dailyEssentialCost),
+  };
+}
+
+function createSafeMonthlyDate_(year, zeroBasedMonth, requestedDay) {
+  const lastDay = new Date(year, zeroBasedMonth + 1, 0).getDate();
+
+  return new Date(year, zeroBasedMonth, Math.min(requestedDay, lastDay));
+}

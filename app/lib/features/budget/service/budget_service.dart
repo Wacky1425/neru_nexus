@@ -1,43 +1,16 @@
-import 'dart:convert';
-
-import 'package:http/http.dart' as http;
-
-import '../../../core/constants/api_constants.dart';
+import '../../../core/network/api_client.dart';
 import '../model/budget_model.dart';
 
 class BudgetService {
   const BudgetService();
 
   Future<BudgetModel> fetchBudget({required String yearMonth}) async {
-    final uri = Uri.parse(ApiConstants.baseUrl).replace(
-      queryParameters: {
-        'action': 'budget_settings',
-        'key': ApiConstants.apiKey,
-        'yearMonth': yearMonth,
-      },
+    final data = await ApiClient.get(
+      action: 'budget_settings',
+      queryParameters: {'yearMonth': yearMonth},
     );
 
-    final response = await http.get(uri);
-
-    if (response.statusCode != 200) {
-      throw Exception('予算設定の取得に失敗しました: ${response.statusCode}');
-    }
-
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-
-    if (decoded['success'] != true) {
-      final error = decoded['error'] as Map?;
-
-      throw Exception(error?['message']?.toString() ?? '予算設定APIでエラーが発生しました');
-    }
-
-    final data = decoded['data'];
-
-    if (data is! Map) {
-      throw Exception('予算設定APIの形式が正しくありません');
-    }
-
-    return BudgetModel.fromJson(Map<String, dynamic>.from(data));
+    return BudgetModel.fromJson(data);
   }
 
   Future<BudgetModel> updateBudget({
@@ -50,14 +23,9 @@ class BudgetService {
     required int variableExpenseBudget,
     required int dreamTarget,
   }) async {
-    final uri = Uri.parse(ApiConstants.baseUrl);
-
-    final response = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'action': 'budget_settings_update',
-        'key': ApiConstants.apiKey,
+    final data = await ApiClient.post(
+      action: 'budget_settings_update',
+      body: {
         'yearMonth': yearMonth,
         'salaryPlanned': salaryPlanned,
         'sideIncomePlanned': sideIncomePlanned,
@@ -66,27 +34,9 @@ class BudgetService {
         'fixedExpenseBudget': fixedExpenseBudget,
         'variableExpenseBudget': variableExpenseBudget,
         'dreamTarget': dreamTarget,
-      }),
+      },
     );
 
-    if (response.statusCode != 200) {
-      throw Exception('予算設定の保存に失敗しました: ${response.statusCode}');
-    }
-
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-
-    if (decoded['success'] != true) {
-      final error = decoded['error'] as Map?;
-
-      throw Exception(error?['message']?.toString() ?? '予算設定の保存中にエラーが発生しました');
-    }
-
-    final data = decoded['data'];
-
-    if (data is! Map) {
-      throw Exception('予算設定APIの形式が正しくありません');
-    }
-
-    return BudgetModel.fromJson(Map<String, dynamic>.from(data));
+    return BudgetModel.fromJson(data);
   }
 }

@@ -1,8 +1,4 @@
-import 'dart:convert';
-
-import 'package:http/http.dart' as http;
-
-import '../../../core/constants/api_constants.dart';
+import '../../../core/network/api_client.dart';
 
 class SettlementResult {
   const SettlementResult({
@@ -69,12 +65,10 @@ class CsvImportTiming {
     required this.reviewQueueMs,
     required this.reviewSummaryMs,
     required this.allViewsMs,
-
     required this.allViewsSummariesMs,
     required this.allViewsMonthlyCheckMs,
     required this.allViewsLatestMonthMs,
     required this.allViewsDashboardMs,
-
     required this.totalMs,
   });
 
@@ -157,123 +151,42 @@ class ImportService {
       throw Exception('CSVが空です');
     }
 
-    final uri = Uri.parse(ApiConstants.baseUrl);
-    final client = http.Client();
+    final data = await ApiClient.post(
+      action: 'csv_import',
+      body: {'csvText': csvText, 'fileName': fileName},
+    );
 
-    try {
-      final request = http.Request('POST', uri)
-        ..followRedirects = false
-        ..headers.addAll({'Content-Type': 'application/json'})
-        ..body = jsonEncode({
-          'action': 'csv_import',
-          'key': ApiConstants.apiKey,
-          'csvText': csvText,
-          'fileName': fileName,
-        });
+    final settlementValue = data['settlementResult'];
 
-      final streamedResponse = await client.send(request);
+    SettlementResult? settlementResult;
 
-      final response = await _resolveResponse(client, streamedResponse);
-
-      if (response.statusCode != 200) {
-        throw Exception('CSV取込に失敗しました: ${response.statusCode}');
-      }
-
-      final dynamic decodedValue;
-
-      try {
-        decodedValue = jsonDecode(response.body);
-      } on FormatException {
-        throw Exception('CSV取込APIから不正なレスポンスが返されました');
-      }
-
-      if (decodedValue is! Map) {
-        throw Exception('CSV取込APIの形式が正しくありません');
-      }
-
-      final decoded = Map<String, dynamic>.from(decodedValue);
-
-      if (decoded['success'] != true) {
-        final error = decoded['error'];
-
-        if (error is Map) {
-          throw Exception(error['message']?.toString() ?? 'CSV取込に失敗しました');
-        }
-
-        throw Exception(error?.toString() ?? 'CSV取込に失敗しました');
-      }
-
-      final data = decoded['data'];
-
-      if (data is! Map) {
-        throw Exception('CSV取込APIのデータ形式が正しくありません');
-      }
-
-      final settlementValue = data['settlementResult'];
-
-      SettlementResult? settlementResult;
-
-      if (settlementValue is Map) {
-        settlementResult = SettlementResult.fromJson(
-          Map<String, dynamic>.from(settlementValue),
-        );
-      }
-      final debugTimingValue = data['debugTiming'];
-
-      CsvImportTiming? debugTiming;
-
-      if (debugTimingValue is Map) {
-        debugTiming = CsvImportTiming.fromJson(
-          Map<String, dynamic>.from(debugTimingValue),
-        );
-      }
-      return CsvImportResult(
-        csvType: data['csvType']?.toString() ?? 'unknown',
-        importBatch: data['importBatch']?.toString() ?? '',
-        addedCount: _toInt(data['addedCount']),
-        skippedCount: _toInt(data['skippedCount']),
-        debugTiming: debugTiming,
-        settlementResult: settlementResult,
-      );
-    } finally {
-      client.close();
-    }
-  }
-
-  Future<http.Response> _resolveResponse(
-    http.Client client,
-    http.StreamedResponse initialResponse,
-  ) async {
-    final initialBody = await initialResponse.stream.bytesToString();
-
-    final statusCode = initialResponse.statusCode;
-
-    if (statusCode != 301 &&
-        statusCode != 302 &&
-        statusCode != 303 &&
-        statusCode != 307 &&
-        statusCode != 308) {
-      return http.Response(
-        initialBody,
-        statusCode,
-        headers: initialResponse.headers,
+    if (settlementValue is Map) {
+      settlementResult = SettlementResult.fromJson(
+        Map<String, dynamic>.from(settlementValue),
       );
     }
 
-    final location = initialResponse.headers['location'];
+    final debugTimingValue = data['debugTiming'];
 
-    if (location == null || location.trim().isEmpty) {
-      throw Exception('CSV取込APIの転送先が取得できませんでした');
+    CsvImportTiming? debugTiming;
+
+    if (debugTimingValue is Map) {
+      debugTiming = CsvImportTiming.fromJson(
+        Map<String, dynamic>.from(debugTimingValue),
+      );
     }
 
-    return client.get(Uri.parse(location));
+    return CsvImportResult(
+      csvType: data['csvType']?.toString() ?? 'unknown',
+      importBatch: data['importBatch']?.toString() ?? '',
+      addedCount: _toInt(data['addedCount']),
+      skippedCount: _toInt(data['skippedCount']),
+      settlementResult: settlementResult,
+      debugTiming: debugTiming,
+    );
   }
 
   static int _toInt(dynamic value) {
-    if (value is int) {
-      return value;
-    }
-
     if (value is num) {
       return value.toInt();
     }

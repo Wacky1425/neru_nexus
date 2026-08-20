@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../accounts/account_management_page.dart';
 import '../budget/budget_settings_page.dart';
 import '../categories/category_management_page.dart';
+import '../goals/goal_management_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -46,6 +47,18 @@ class SettingsPage extends StatelessWidget {
                 MaterialPageRoute(
                   builder: (_) => const AccountManagementPage(),
                 ),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.flag_outlined),
+            title: const Text('目的資金管理'),
+            subtitle: const Text('旅行・引っ越し・結婚などの資金計画'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const GoalManagementPage()),
               );
             },
           ),

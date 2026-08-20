@@ -7,6 +7,8 @@ const SHEETS = Object.freeze({
   DREAM_FUNDS: "M_DreamFunds",
   ACCOUNT_ALIAS: "M_AccountAlias",
   MERCHANT_ALIAS: "M_MerchantAlias",
+  GOALS: "M_Goals",
+  FINANCIAL_SETTINGS: "M_FinancialSettings",
 
   // ===== Transaction =====
   TRANSACTIONS: "T_Transactions",

@@ -1,5 +1,5 @@
 function testLoadTable() {
-  const table = loadTable(SHEETS.TRANSACTIONS)
+  const table = loadTable(SHEETS.TRANSACTIONS);
 
   Logger.log(`values: ${table.values.length}`);
   Logger.log(`rows: ${table.rows.length}`);
@@ -17,18 +17,12 @@ function testObjectLoaders() {
   Logger.log(`import_csv: ${importRows.length}`);
 
   if (rules.length > 0) {
-    Logger.log(
-      `先頭rule: ${JSON.stringify(rules[0])}`
-    );
+    Logger.log(`先頭rule: ${JSON.stringify(rules[0])}`);
   }
 
-  const olive = getImportConfig(
-    "olive_credit_v1"
-  );
+  const olive = getImportConfig("olive_credit_v1");
 
-  Logger.log(
-    `config取得: ${olive.config_name}`
-  );
+  Logger.log(`config取得: ${olive.config_name}`);
 }
 
 function testClassifyMoneyTransaction() {
@@ -36,8 +30,8 @@ function testClassifyMoneyTransaction() {
 
   const incomeResult = classifyMoneyTransaction(
     {
-      "お預入れ": "10,000",
-      "お引出し": ""
+      お預入れ: "10,000",
+      お引出し: "",
     },
     {
       merchant: "振込 テスト",
@@ -46,16 +40,16 @@ function testClassifyMoneyTransaction() {
       source_type: "CSV_銀行",
       account_name: "三井住友銀行",
       payment_method: "銀行_生活",
-      amount: 10000
+      amount: 10000,
     },
     rules,
-    "smbc_bank_v1"
+    "smbc_bank_v1",
   );
 
   const expenseResult = classifyMoneyTransaction(
     {
-      "お預入れ": "",
-      "お引出し": "3,000"
+      お預入れ: "",
+      お引出し: "3,000",
     },
     {
       merchant: "ATM",
@@ -64,76 +58,47 @@ function testClassifyMoneyTransaction() {
       source_type: "CSV_銀行",
       account_name: "三井住友銀行",
       payment_method: "銀行_生活",
-      amount: 3000
+      amount: 3000,
     },
     rules,
-    "smbc_bank_v1"
+    "smbc_bank_v1",
   );
 
-  Logger.log(
-    `入金テスト: ${incomeResult.type}`
-  );
+  Logger.log(`入金テスト: ${incomeResult.type}`);
 
-  Logger.log(
-    `出金テスト: ${expenseResult.type}`
-  );
+  Logger.log(`出金テスト: ${expenseResult.type}`);
 
   if (incomeResult.type !== "収入") {
-    throw new Error(
-      "入金が収入として判定されません"
-    );
+    throw new Error("入金が収入として判定されません");
   }
 
   if (expenseResult.type !== "支出") {
-    throw new Error(
-      "出金が支出として判定されません"
-    );
+    throw new Error("出金が支出として判定されません");
   }
 
   Logger.log("入出金判定テスト成功");
 }
 
 function testOliveCsvTypeMapping() {
-  const configV1 = getConfigNameByCsvType(
-    "olive_credit_v1"
-  );
+  const configV1 = getConfigNameByCsvType("olive_credit_v1");
 
-  const configV2 = getConfigNameByCsvType(
-    "olive_credit_v2"
-  );
+  const configV2 = getConfigNameByCsvType("olive_credit_v2");
 
   Logger.log(`v1 config: ${configV1}`);
   Logger.log(`v2 config: ${configV2}`);
 
-  if (
-    configV1 !== "olive_credit_v1" ||
-    configV2 !== "olive_credit_v1"
-  ) {
-    throw new Error(
-      "Oliveのconfig変換に失敗しました"
-    );
+  if (configV1 !== "olive_credit_v1" || configV2 !== "olive_credit_v1") {
+    throw new Error("Oliveのconfig変換に失敗しました");
   }
 
   const rows = convertOliveRowsWithoutHeader([
-    [
-      "2026/07/01",
-      "ローソン",
-      "610",
-      "",
-      "",
-      "610"
-    ]
+    ["2026/07/01", "ローソン", "610", "", "", "610"],
   ]);
 
   Logger.log(JSON.stringify(rows));
 
-  if (
-    rows.length !== 1 ||
-    rows[0]["請求額"] !== 610
-  ) {
-    throw new Error(
-      "Olive明細変換に失敗しました"
-    );
+  if (rows.length !== 1 || rows[0]["請求額"] !== 610) {
+    throw new Error("Olive明細変換に失敗しました");
   }
 
   Logger.log("Olive CSVテスト成功");
@@ -146,9 +111,9 @@ function testDoPostCash() {
         merchant: "ローソン",
         amount: 500,
         mode: "cash",
-        memo: "テスト現金"
-      })
-    }
+        memo: "テスト現金",
+      }),
+    },
   };
 
   const result = doPost(e);
@@ -162,15 +127,14 @@ function testDoPostMemo() {
         merchant: "BOOTH",
         amount: 3200,
         mode: "memo",
-        memo: "配信素材テスト"
-      })
-    }
+        memo: "配信素材テスト",
+      }),
+    },
   };
 
   const result = doPost(e);
   Logger.log(result.getContent());
 }
-
 
 function testAccess() {
   const folder = DriveApp.getFolderById(FOLDERS.EVIDENCE_IMAGES);
@@ -192,14 +156,14 @@ function testAddTransaction() {
     item_name: "てりやきセット",
     amount: 850,
     note: "",
-    source_type: "test"
+    source_type: "test",
   };
 
   const result = classifyTransaction(sample, rules);
 
   const tx = {
     ...sample,
-    ...result
+    ...result,
   };
 
   addTransaction(tx);
@@ -211,11 +175,9 @@ function testGetAvailableMoney() {
 }
 
 function testDreamFund() {
-
   const dream = getDreamFund("dream_001");
 
   Logger.log(JSON.stringify(dream, null, 2));
-
 }
 
 function testFeaturedDreamFund() {
@@ -223,16 +185,10 @@ function testFeaturedDreamFund() {
   Logger.log(JSON.stringify(dream, null, 2));
 }
 
-function testCategorySummary(){
-
+function testCategorySummary() {
   Logger.log(
-    JSON.stringify(
-      getCategorySummary(getLatestBudgetMonth()),
-      null,
-      2
-    )
+    JSON.stringify(getCategorySummary(getLatestBudgetMonth()), null, 2),
   );
-
 }
 
 function debugCsvHeader() {
@@ -245,7 +201,7 @@ function debugCsvHeader() {
     if (!file.getName().endsWith(".csv")) continue;
 
     const values = parseCsvFile(file);
-    const row = values[0].map(v => String(v).trim());
+    const row = values[0].map((v) => String(v).trim());
 
     Logger.log(file.getName());
     Logger.log(JSON.stringify(row));
@@ -255,30 +211,22 @@ function debugCsvHeader() {
 function testGetHomeData() {
   const data = getHomeData();
 
-  Logger.log(
-    JSON.stringify(data, null, 2)
-  );
+  Logger.log(JSON.stringify(data, null, 2));
 
   if (!data.yearMonth) {
     throw new Error("yearMonth がありません");
   }
 
   if (typeof data.availableMoney !== "number") {
-    throw new Error(
-      "availableMoney が数値ではありません"
-    );
+    throw new Error("availableMoney が数値ではありません");
   }
 
   if (typeof data.savingForecast !== "number") {
-    throw new Error(
-      "savingForecast が数値ではありません"
-    );
+    throw new Error("savingForecast が数値ではありません");
   }
 
   if (typeof data.sideBusinessProfit !== "number") {
-    throw new Error(
-      "sideBusinessProfit が数値ではありません"
-    );
+    throw new Error("sideBusinessProfit が数値ではありません");
   }
 
   if (!data.moneyHealth) {
@@ -291,46 +239,30 @@ function testGetHomeData() {
 function testGetTransactionsData() {
   const data = getTransactionsData({
     limit: 10,
-    offset: 0
+    offset: 0,
   });
 
-  Logger.log(
-    JSON.stringify(data, null, 2)
-  );
+  Logger.log(JSON.stringify(data, null, 2));
 
   if (!Array.isArray(data.items)) {
-    throw new Error(
-      "itemsが配列ではありません"
-    );
+    throw new Error("itemsが配列ではありません");
   }
 
   if (data.items.length > 10) {
-    throw new Error(
-      "limitを超えて取得されています"
-    );
+    throw new Error("limitを超えて取得されています");
   }
 
-  if (
-    data.items.length > 0 &&
-    typeof data.items[0].amount !== "number"
-  ) {
-    throw new Error(
-      "amountが数値ではありません"
-    );
+  if (data.items.length > 0 && typeof data.items[0].amount !== "number") {
+    throw new Error("amountが数値ではありません");
   }
 
-  Logger.log(
-    `取引一覧API成功: ${data.items.length}/${data.total}件`
-  );
+  Logger.log(`取引一覧API成功: ${data.items.length}/${data.total}件`);
 }
 
 function testGetAnalyticsData() {
-  const result =
-    getAnalyticsData("2026-07");
+  const result = getAnalyticsData("2026-07");
 
-  console.log(
-    JSON.stringify(result, null, 2)
-  );
+  console.log(JSON.stringify(result, null, 2));
 }
 
 function testCreateTransactionFromApp() {
@@ -341,65 +273,51 @@ function testCreateTransactionFromApp() {
     category: "食費",
     title: "アプリ登録テスト",
     paymentMethod: "現金",
-    memo: "Flutter接続前のテスト"
+    memo: "Flutter接続前のテスト",
   });
 
-  Logger.log(
-    result.getContent()
-  );
+  Logger.log(result.getContent());
 }
 
 function testGetCategoriesData() {
   const data = getCategoriesData();
 
-  Logger.log(
-    JSON.stringify(
-      data,
-      null,
-      2
-    )
-  );
+  Logger.log(JSON.stringify(data, null, 2));
 }
 
 function testGetMasterData() {
   const data = getMasterData();
 
-  Logger.log(
-    JSON.stringify(
-      data,
-      null,
-      2
-    )
-  );
+  Logger.log(JSON.stringify(data, null, 2));
 }
 
 function testCreateCategoryFromApp() {
-  const result =
-    createCategoryFromApp_({
-      type: "支出",
-      majorCategory: "テスト",
-      subCategory: "動作確認"
-    });
+  const result = createCategoryFromApp_({
+    type: "支出",
+    majorCategory: "テスト",
+    subCategory: "動作確認",
+  });
 
-  Logger.log(
-    result.getContent()
-  );
+  Logger.log(result.getContent());
 }
 
 function testUpdateCategoryFromApp() {
-  const result =
-    updateCategoryFromApp_({
-      subCategoryId: "sub_001",
-      majorCategory: "食費",
-      subCategory: "外食",
-      active: true
-    });
+  const result = updateCategoryFromApp_({
+    subCategoryId: "sub_001",
+    majorCategory: "食費",
+    subCategory: "外食",
+    active: true,
+  });
 
-  Logger.log(
-    result.getContent()
-  );
+  Logger.log(result.getContent());
 }
 
 function testClearAnalyticsCache() {
   clearAnalyticsSummaryCache_();
+}
+
+function debugFinancialSettings() {
+  const settings = getFinancialSettings_();
+
+  console.log(settings);
 }

@@ -176,12 +176,12 @@ function updateBudgetSettingsFromApp_(data) {
   };
 
   const table = loadBudgetTable_();
-  const sheet = getRequiredSheet(SHEETS.BUDGET);
+  const sheet = getRequiredSheet(SHEETS.BUDGETS);
 
   assertRequiredColumns(
     table.index,
     ["year_month", "item", "value"],
-    SHEETS.BUDGET,
+    SHEETS.BUDGETS,
   );
 
   const existingRows = new Map();

@@ -30,15 +30,50 @@ function getHomeData() {
     totalExpense: fixedExpense + variableExpense,
   };
 
+  // ==========================================
+  // 今月使っていいお金
+  // ==========================================
+
   const availableMoney = calculateAvailableMoney_(
     budgets,
     expenses,
     projectedIncome,
   );
 
-  const savingForecast = calculateSavingForecast_(yearMonth, budgets, expenses);
-
   const dailyBudget = calculateDailyBudget_(yearMonth, availableMoney);
+
+  // ==========================================
+  // 今月の資金配分
+  // Goal / 防衛資金 / NISA
+  // ==========================================
+
+  const moneyAllocation = calculateMonthlyMoneyAllocation_(
+    yearMonth,
+    budgets,
+    expenses,
+    projectedIncome,
+  );
+
+  // ==========================================
+  // 現金・安全資金
+  // ==========================================
+
+  const emergencyFund = moneyAllocation.emergencyFund;
+
+  const liquidCash = Number(emergencyFund.rawLiquidCash || 0);
+
+  const protectedCash = Number(emergencyFund.liquidCash || 0);
+
+  // ==========================================
+  // 従来表示
+  // ==========================================
+
+  const savingForecast = calculateSavingForecast_(
+    yearMonth,
+    budgets,
+    expenses,
+    projectedIncome,
+  );
 
   const moneyHealth = calculateMoneyHealth_(
     availableMoney,
@@ -54,13 +89,85 @@ function getHomeData() {
 
   return {
     yearMonth,
-    dailyBudget,
+
+    // 今月使える
     availableMoney,
+    dailyBudget,
+
+    // ========================================
+    // 今月のおすすめ資金配分
+    // ========================================
+
+    monthlySurplus: moneyAllocation.monthlySurplus,
+
+    goalAllocation: moneyAllocation.goalAllocation,
+
+    goalRequired: moneyAllocation.goalRequired,
+
+    goalShortage: moneyAllocation.goalShortage,
+
+    emergencyCashAllocation: moneyAllocation.emergencyCashAllocation,
+
+    baseNisa: moneyAllocation.baseNisa,
+
+    additionalNisa: moneyAllocation.additionalNisa,
+
+    totalNisa: moneyAllocation.totalNisa,
+
+    unallocatedCash: moneyAllocation.unallocatedCash,
+
+    allocationStatus: moneyAllocation.status,
+
+    allocationMessage: moneyAllocation.message,
+
+    goalFundingDetails: moneyAllocation.goalDetails,
+
+    // ========================================
+    // 生活防衛資金
+    // ========================================
+
+    liquidCash,
+
+    protectedCash,
+
+    emergencyFund: {
+      monthlyEssentialCost: emergencyFund.monthlyEssentialCost,
+
+      targetMonths: emergencyFund.targetMonths,
+
+      targetAmount: emergencyFund.targetAmount,
+
+      coveredMonths: emergencyFund.coveredMonths,
+
+      shortage: emergencyFund.shortage,
+
+      stage: emergencyFund.stage,
+
+      cashRatio: emergencyFund.cashRatio,
+
+      nisaRatio: emergencyFund.nisaRatio,
+
+      reservedGoalCash: emergencyFund.reservedGoalCash || 0,
+
+      upcomingCardPayments: emergencyFund.upcomingCardPayments || 0,
+
+      cashNeededUntilPayday: emergencyFund.cashNeededUntilPayday || 0,
+
+      nextPayday: emergencyFund.nextPayday || "",
+
+      daysUntilPayday: emergencyFund.daysUntilPayday || 0,
+    },
+
+    // ========================================
+    // 既存情報
+    // ========================================
+
     savingForecast,
     sideBusinessProfit,
     moneyHealth,
     featuredDream,
     recentTransactions,
+
     generatedAt: new Date().toISOString(),
   };
 }
@@ -192,6 +299,9 @@ function doGet(e) {
           }),
           "ok",
         );
+
+      case "goals":
+        return createJsonResponse_(getGoalsData(), "ok");
       default:
         return createJsonErrorResponse_(`未対応のactionです: ${action}`);
     }
@@ -260,6 +370,15 @@ function doPost(e) {
 
       case "budget_settings_update":
         return updateBudgetSettingsFromApp_(data);
+
+      case "goal_create":
+        return createGoalFromApp_(data);
+
+      case "goal_update":
+        return updateGoalFromApp_(data);
+
+      case "goal_deactivate":
+        return deactivateGoalFromApp_(data);
 
       default:
         return createJsonErrorResponse_(`未対応のactionです: ${action}`);
@@ -1387,4 +1506,165 @@ function getSettlementCandidatesData(options) {
     settlementAmount,
     items,
   };
+}
+
+function createGoalFromApp_(data) {
+  const goalName = String(data.goalName || "").trim();
+
+  if (!goalName) {
+    throw new Error("goalNameは必須です");
+  }
+
+  const sheet = getRequiredSheet(SHEETS.GOALS);
+
+  const goalId = Utilities.getUuid();
+
+  const row = [
+    goalId,
+    goalName,
+    String(data.goalType || "").trim(),
+    Number(data.targetAmount || 0),
+    normalizeGoalDate_(data.targetDate),
+    String(data.certainty || "").trim(),
+    Number(data.reservedCash || 0),
+    Number(data.priority || 0),
+    1,
+    String(data.note || "").trim(),
+  ];
+
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+
+  clearTableCache(SHEETS.GOALS);
+
+  return createJsonResponse_(
+    {
+      goalId,
+      status: "created",
+    },
+    "ok",
+  );
+}
+
+function updateGoalFromApp_(data) {
+  const goalId = String(data.goalId || "").trim();
+
+  if (!goalId) {
+    throw new Error("goalIdは必須です");
+  }
+
+  const sheet = getRequiredSheet(SHEETS.GOALS);
+
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) {
+    throw new Error("Goalが見つかりません");
+  }
+
+  const index = createHeaderIndex(values[0]);
+
+  const rowIndex = values.findIndex(
+    (row, i) => i > 0 && String(row[index["goal_id"]] || "").trim() === goalId,
+  );
+
+  if (rowIndex === -1) {
+    throw new Error(`Goalが見つかりません: ${goalId}`);
+  }
+
+  const row = values[rowIndex];
+
+  row[index["goal_name"]] = String(data.goalName || "").trim();
+
+  row[index["goal_type"]] = String(data.goalType || "").trim();
+
+  row[index["target_amount"]] = Number(data.targetAmount || 0);
+
+  row[index["target_date"]] = normalizeGoalDate_(data.targetDate);
+
+  row[index["certainty"]] = String(data.certainty || "").trim();
+
+  row[index["reserved_cash"]] = Number(data.reservedCash || 0);
+
+  row[index["priority"]] = Number(data.priority || 0);
+
+  row[index["note"]] = String(data.note || "").trim();
+
+  sheet.getRange(rowIndex + 1, 1, 1, row.length).setValues([row]);
+
+  clearTableCache(SHEETS.GOALS);
+
+  return createJsonResponse_(
+    {
+      goalId,
+      status: "updated",
+    },
+    "ok",
+  );
+}
+
+function deactivateGoalFromApp_(data) {
+  const goalId = String(data.goalId || "").trim();
+
+  if (!goalId) {
+    throw new Error("goalIdは必須です");
+  }
+
+  const sheet = getRequiredSheet(SHEETS.GOALS);
+
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) {
+    throw new Error("Goalが見つかりません");
+  }
+
+  const index = createHeaderIndex(values[0]);
+
+  const rowIndex = values.findIndex(
+    (row, i) => i > 0 && String(row[index["goal_id"]] || "").trim() === goalId,
+  );
+
+  if (rowIndex === -1) {
+    throw new Error(`Goalが見つかりません: ${goalId}`);
+  }
+
+  sheet.getRange(rowIndex + 1, index["active"] + 1).setValue(0);
+
+  clearTableCache(SHEETS.GOALS);
+
+  return createJsonResponse_(
+    {
+      goalId,
+      status: "deactivated",
+    },
+    "ok",
+  );
+}
+
+function normalizeGoalDate_(value) {
+  if (!value) {
+    return "";
+  }
+
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, "Asia/Tokyo", "yyyy-MM-dd");
+  }
+
+  const text = String(value).normalize("NFKC").trim();
+
+  if (!text) {
+    return "";
+  }
+
+  const match = text.match(/^(\d{4})[\/\-](\d{1,2})(?:[\/\-](\d{1,2}))?$/);
+
+  if (!match) {
+    throw new Error("targetDateの形式が正しくありません");
+  }
+
+  const year = match[1];
+
+  const month = String(Number(match[2])).padStart(2, "0");
+
+  const day = String(Number(match[3] || 1)).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
