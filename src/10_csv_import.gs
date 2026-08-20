@@ -1129,6 +1129,8 @@ function addImportHistory_(data) {
     Number(data.addedCount || 0),
     Number(data.skippedCount || 0),
     String(data.status || "completed"),
+    String(data.billingYearMonth || ""),
+    String((data.billingYearMonths || []).join(",")),
   ];
 
   sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
@@ -1170,6 +1172,11 @@ function importCsvFromApp_(data) {
 
   const importPeriod = getImportPeriod_(parsed.rows, config);
 
+  const billingYearMonths = getImportBillingYearMonths_(parsed.rows, config);
+
+  const billingYearMonth =
+    billingYearMonths.length === 1 ? billingYearMonths[0] : "";
+
   // 新規追加がない場合は後続の再構築を行わない
   let reviewQueueFinishedAt = importFinishedAt;
   let reviewSummaryFinishedAt = importFinishedAt;
@@ -1208,6 +1215,9 @@ function importCsvFromApp_(data) {
     periodStart: importPeriod.periodStart,
 
     periodEnd: importPeriod.periodEnd,
+
+    billingYearMonth,
+    billingYearMonths,
 
     rowCount: parsed.rows.length,
     addedCount: result.addedCount,
@@ -1332,27 +1342,46 @@ function getImportPeriod_(rows, config) {
 }
 
 function normalizeImportDate_(value) {
-  const text = String(value || "")
-    .normalize("NFKC")
-    .trim();
+  if (!value) {
+    return "";
+  }
+
+  // Google Sheetsから取得したDate型
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) {
+      return "";
+    }
+
+    return Utilities.formatDate(value, "Asia/Tokyo", "yyyy-MM-dd");
+  }
+
+  const text = String(value).normalize("NFKC").trim();
 
   if (!text) {
     return "";
   }
 
+  // yyyy/MM/dd または yyyy-MM-dd
   const match = text.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
 
-  if (!match) {
-    return "";
+  if (match) {
+    const year = match[1];
+
+    const month = String(Number(match[2])).padStart(2, "0");
+
+    const day = String(Number(match[3])).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
   }
 
-  const year = match[1];
+  // その他Dateとして解釈可能な形式の保険
+  const parsed = new Date(text);
 
-  const month = String(Number(match[2])).padStart(2, "0");
+  if (!isNaN(parsed.getTime())) {
+    return Utilities.formatDate(parsed, "Asia/Tokyo", "yyyy-MM-dd");
+  }
 
-  const day = String(Number(match[3])).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+  return "";
 }
 
 function getImportHistoryData_(options = {}) {
@@ -1376,7 +1405,7 @@ function getImportHistoryData_(options = {}) {
 
       fileName: String(row.file_name || "").trim(),
 
-      targetYearMonth: String(row.target_year_month || "").trim(),
+      targetYearMonth: normalizeYearMonth(row.target_year_month),
 
       periodStart: formatApiDate_(row.period_start),
 
@@ -1388,14 +1417,53 @@ function getImportHistoryData_(options = {}) {
 
       skippedCount: Number(row.skipped_count || 0),
 
+      billingYearMonth: normalizeYearMonth(row.billing_year_month),
+
+      billingYearMonths: (() => {
+        const value = row.billing_year_months;
+
+        if (!value) {
+          return [];
+        }
+
+        // Sheetsが「2026-07」を日付として保持している場合
+        if (value instanceof Date) {
+          const normalized = normalizeYearMonth(value);
+
+          return normalized ? [normalized] : [];
+        }
+
+        // 複数月 "2026-07,2026-08" の場合
+        return String(value)
+          .split(",")
+          .map((item) => normalizeYearMonth(item.trim()))
+          .filter((item) => /^\d{4}-\d{2}$/.test(item));
+      })(),
+
       status: String(row.status || "").trim(),
     }))
     .sort((a, b) => b.importedAt.localeCompare(a.importedAt))
     .slice(0, limit);
+  const configs = loadObjects(SHEETS.IMPORT_CONFIG)
+    .filter((row) => {
+      const active = String(row.active === undefined ? "1" : row.active)
+        .trim()
+        .toUpperCase();
 
+      return active === "1" || active === "TRUE";
+    })
+    .map((row) => ({
+      configName: String(row.config_name || "").trim(),
+
+      accountName: String(row.account_name || "").trim(),
+
+      sourceType: String(row.source_type || "").trim(),
+    }))
+    .filter((row) => row.configName && row.accountName);
   return {
     items,
     total: rows.length,
+    configs,
   };
 }
 

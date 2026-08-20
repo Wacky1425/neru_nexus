@@ -32,7 +32,7 @@ class _ImportPageState extends State<ImportPage> {
   final _importService = const ImportService();
   final _importHistoryService = const ImportHistoryService();
 
-  late Future<List<ImportHistoryModel>> _historyFuture;
+  late Future<ImportHistoryData> _historyFuture;
 
   @override
   void initState() {
@@ -49,6 +49,74 @@ class _ImportPageState extends State<ImportPage> {
     });
 
     await future;
+  }
+
+  Map<String, Set<String>> _buildBillingImportStatus(
+    List<ImportHistoryModel> histories,
+  ) {
+    final result = <String, Set<String>>{};
+
+    for (final history in histories) {
+      if (history.billingYearMonths.isEmpty) {
+        continue;
+      }
+
+      final accountName = history.accountName.trim();
+
+      if (accountName.isEmpty) {
+        continue;
+      }
+
+      for (final yearMonth in history.billingYearMonths) {
+        final normalized = yearMonth.trim();
+
+        if (!RegExp(r'^\d{4}-\d{2}$').hasMatch(normalized)) {
+          continue;
+        }
+
+        result.putIfAbsent(normalized, () => <String>{});
+
+        result[normalized]!.add(accountName);
+      }
+    }
+
+    return result;
+  }
+
+  Map<String, Map<String, ImportHistoryModel>> _buildImportStatus(
+    List<ImportHistoryModel> histories,
+  ) {
+    final result = <String, Map<String, ImportHistoryModel>>{};
+
+    for (final history in histories) {
+      final yearMonth = history.targetYearMonth.trim();
+
+      final accountName = history.accountName.trim();
+
+      if (yearMonth.isEmpty || accountName.isEmpty) {
+        continue;
+      }
+
+      result.putIfAbsent(yearMonth, () => <String, ImportHistoryModel>{});
+
+      final existing = result[yearMonth]![accountName];
+
+      if (existing == null) {
+        result[yearMonth]![accountName] = history;
+        continue;
+      }
+
+      final existingDate = existing.importedAt;
+
+      final newDate = history.importedAt;
+
+      if (newDate != null &&
+          (existingDate == null || newDate.isAfter(existingDate))) {
+        result[yearMonth]![accountName] = history;
+      }
+    }
+
+    return result;
   }
 
   Future<void> _selectCsvFile() async {
@@ -207,6 +275,138 @@ class _ImportPageState extends State<ImportPage> {
     return '${(milliseconds / 1000).toStringAsFixed(2)}秒';
   }
 
+  List<String> _buildHistoryYearMonths(List<ImportHistoryModel> histories) {
+    final values = <String>{};
+
+    final now = DateTime.now();
+
+    // 今月は履歴がなくても必ず表示
+    values.add(
+      '${now.year}-'
+      '${now.month.toString().padLeft(2, '0')}',
+    );
+
+    for (final history in histories) {
+      final start = DateTime.tryParse(history.periodStart);
+
+      final end = DateTime.tryParse(history.periodEnd);
+
+      if (start == null || end == null) {
+        // 古い履歴など、期間が取れない場合の保険
+        final fallback = history.targetYearMonth.trim();
+
+        if (RegExp(r'^\d{4}-\d{2}$').hasMatch(fallback)) {
+          values.add(fallback);
+        }
+
+        continue;
+      }
+
+      var cursor = DateTime(start.year, start.month);
+
+      final lastMonth = DateTime(end.year, end.month);
+
+      while (!cursor.isAfter(lastMonth)) {
+        values.add(
+          '${cursor.year}-'
+          '${cursor.month.toString().padLeft(2, '0')}',
+        );
+
+        cursor = DateTime(cursor.year, cursor.month + 1);
+      }
+    }
+
+    final result = values.toList()..sort((a, b) => b.compareTo(a));
+
+    return result;
+  }
+
+  ImportCoverageStatus _getCoverageStatus({
+    required String yearMonth,
+    required String accountName,
+    required List<ImportHistoryModel> histories,
+  }) {
+    final parts = yearMonth.split('-');
+
+    if (parts.length != 2) {
+      return ImportCoverageStatus.none;
+    }
+
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+
+    if (year == null || month == null) {
+      return ImportCoverageStatus.none;
+    }
+
+    final monthStart = DateTime(year, month, 1);
+    final monthEnd = DateTime(year, month + 1, 0);
+
+    final now = DateTime.now();
+
+    final isCurrentMonth = now.year == year && now.month == month;
+
+    final requiredEnd = isCurrentMonth
+        ? DateTime(now.year, now.month, now.day)
+        : monthEnd;
+
+    final ranges = <({DateTime start, DateTime end})>[];
+
+    for (final history in histories) {
+      if (history.accountName.trim() != accountName.trim()) {
+        continue;
+      }
+
+      final start = DateTime.tryParse(history.periodStart);
+
+      final end = DateTime.tryParse(history.periodEnd);
+
+      if (start == null || end == null) {
+        continue;
+      }
+
+      if (end.isBefore(monthStart) || start.isAfter(requiredEnd)) {
+        continue;
+      }
+
+      final clippedStart = start.isBefore(monthStart) ? monthStart : start;
+
+      final clippedEnd = end.isAfter(requiredEnd) ? requiredEnd : end;
+
+      ranges.add((start: clippedStart, end: clippedEnd));
+    }
+
+    if (ranges.isEmpty) {
+      return ImportCoverageStatus.none;
+    }
+
+    ranges.sort((a, b) => a.start.compareTo(b.start));
+
+    var coveredUntil = ranges.first.end;
+
+    if (ranges.first.start.isAfter(monthStart)) {
+      return ImportCoverageStatus.partial;
+    }
+
+    for (final range in ranges.skip(1)) {
+      final nextDay = coveredUntil.add(const Duration(days: 1));
+
+      if (range.start.isAfter(nextDay)) {
+        return ImportCoverageStatus.partial;
+      }
+
+      if (range.end.isAfter(coveredUntil)) {
+        coveredUntil = range.end;
+      }
+    }
+
+    if (!coveredUntil.isBefore(requiredEnd)) {
+      return ImportCoverageStatus.complete;
+    }
+
+    return ImportCoverageStatus.partial;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -351,138 +551,7 @@ class _ImportPageState extends State<ImportPage> {
                       const SizedBox(height: 12),
 
                       _ResultRow(label: '重複スキップ', value: '$_skippedCount件'),
-                      if (_debugTiming != null) ...[
-                        const SizedBox(height: 20),
 
-                        const Divider(),
-
-                        const SizedBox(height: 12),
-
-                        Text(
-                          '処理時間（開発用）',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        _ResultRow(
-                          label: 'CSV本体',
-                          value: _formatDuration(_debugTiming!.importMs),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        _ResultRow(
-                          label: '└ CSV種別→設定',
-                          value: _formatDuration(_debugTiming!.configNameMs),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        _ResultRow(
-                          label: '└ 設定読込',
-                          value: _formatDuration(_debugTiming!.configMs),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        _ResultRow(
-                          label: '└ 分類ルール読込',
-                          value: _formatDuration(_debugTiming!.rulesMs),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        _ResultRow(
-                          label: '└ CSV解析・分類',
-                          value: _formatDuration(_debugTiming!.normalizeMs),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        _ResultRow(
-                          label: '└ 取引追加',
-                          value: _formatDuration(
-                            _debugTiming!.addTransactionsMs,
-                          ),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        _ResultRow(
-                          label: '└ カード引落照合',
-                          value: _formatDuration(_debugTiming!.settlementMs),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        _ResultRow(
-                          label: 'ReviewQueue',
-                          value: _formatDuration(_debugTiming!.reviewQueueMs),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        _ResultRow(
-                          label: 'ReviewSummary',
-                          value: _formatDuration(_debugTiming!.reviewSummaryMs),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        _ResultRow(
-                          label: 'AllViews',
-                          value: _formatDuration(_debugTiming!.allViewsMs),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        _ResultRow(
-                          label: '└ 集計再構築',
-                          value: _formatDuration(
-                            _debugTiming!.allViewsSummariesMs,
-                          ),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        _ResultRow(
-                          label: '└ 月次確認',
-                          value: _formatDuration(
-                            _debugTiming!.allViewsMonthlyCheckMs,
-                          ),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        _ResultRow(
-                          label: '└ 最新月設定',
-                          value: _formatDuration(
-                            _debugTiming!.allViewsLatestMonthMs,
-                          ),
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        _ResultRow(
-                          label: '└ Dashboard更新',
-                          value: _formatDuration(
-                            _debugTiming!.allViewsDashboardMs,
-                          ),
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        const Divider(),
-
-                        const SizedBox(height: 12),
-
-                        _ResultRow(
-                          label: '合計',
-                          value: _formatDuration(_debugTiming!.totalMs),
-                        ),
-                      ],
                       if (_importBatch != null && _importBatch!.isNotEmpty) ...[
                         const SizedBox(height: 20),
 
@@ -519,7 +588,7 @@ class _ImportPageState extends State<ImportPage> {
 
             const SizedBox(height: 12),
 
-            FutureBuilder<List<ImportHistoryModel>>(
+            FutureBuilder<ImportHistoryData>(
               future: _historyFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -553,42 +622,310 @@ class _ImportPageState extends State<ImportPage> {
                   );
                 }
 
-                final histories = snapshot.data ?? const <ImportHistoryModel>[];
+                final data = snapshot.data;
 
-                if (histories.isEmpty) {
-                  return const Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Text('取込履歴はまだありません'),
-                    ),
-                  );
+                if (data == null) {
+                  return const SizedBox.shrink();
                 }
 
-                return Card(
-                  child: Column(
-                    children: [
-                      for (int i = 0; i < histories.length; i++) ...[
-                        _ImportHistoryTile(
-                          history: histories[i],
-                          onTap: histories[i].importBatch.isEmpty
-                              ? null
-                              : () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          ImportResultTransactionsPage(
-                                            importBatch:
-                                                histories[i].importBatch,
-                                          ),
-                                    ),
-                                  );
-                                },
-                        ),
+                final histories = data.histories;
+                final configs = data.configs;
 
-                        if (i < histories.length - 1) const Divider(height: 1),
-                      ],
-                    ],
-                  ),
+                final yearMonths = _buildHistoryYearMonths(histories);
+
+                final billingStatus = _buildBillingImportStatus(histories);
+
+                final billingYearMonths = billingStatus.keys.toList()
+                  ..sort((a, b) => b.compareTo(a));
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // =========================
+                    // 取込状況
+                    // =========================
+                    Card(
+                      clipBehavior: Clip.antiAlias,
+                      child: ExpansionTile(
+                        initiallyExpanded: true,
+                        leading: const Icon(Icons.fact_check_outlined),
+                        title: const Text(
+                          '取込状況',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: const Text('月別データ・カード請求'),
+                        childrenPadding: const EdgeInsets.fromLTRB(
+                          16,
+                          0,
+                          16,
+                          16,
+                        ),
+                        children: [
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              '月別データ状況',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          if (yearMonths.isEmpty)
+                            const Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text('月別データの履歴はありません'),
+                            )
+                          else
+                            for (final yearMonth in yearMonths) ...[
+                              _ImportStatusCard(
+                                yearMonth: yearMonth,
+                                configs: configs,
+                                allHistories: histories,
+                              ),
+
+                              const SizedBox(height: 12),
+                            ],
+
+                          if (billingYearMonths.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+
+                            const Divider(),
+
+                            const SizedBox(height: 16),
+
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'カード請求取込状況',
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            for (final yearMonth in billingYearMonths) ...[
+                              _BillingImportStatusCard(
+                                yearMonth: yearMonth,
+                                configs: configs,
+                                importedAccounts:
+                                    billingStatus[yearMonth] ??
+                                    const <String>{},
+                              ),
+
+                              const SizedBox(height: 12),
+                            ],
+                          ],
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // =========================
+                    // 取込履歴
+                    // =========================
+                    Card(
+                      clipBehavior: Clip.antiAlias,
+                      child: ExpansionTile(
+                        initiallyExpanded: false,
+                        leading: const Icon(Icons.history),
+                        title: const Text(
+                          '取込履歴',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          histories.isEmpty ? '履歴なし' : '${histories.length}件',
+                        ),
+                        childrenPadding: const EdgeInsets.only(bottom: 8),
+                        children: [
+                          if (histories.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.all(20),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text('取込履歴はまだありません'),
+                              ),
+                            )
+                          else
+                            for (int i = 0; i < histories.length; i++) ...[
+                              _ImportHistoryTile(
+                                history: histories[i],
+                                onTap: histories[i].importBatch.isEmpty
+                                    ? null
+                                    : () {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                ImportResultTransactionsPage(
+                                                  importBatch:
+                                                      histories[i].importBatch,
+                                                ),
+                                          ),
+                                        );
+                                      },
+                              ),
+
+                              if (i < histories.length - 1)
+                                const Divider(height: 1),
+                            ],
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // =========================
+                    // 開発情報
+                    // =========================
+                    if (_debugTiming != null)
+                      Card(
+                        clipBehavior: Clip.antiAlias,
+                        child: ExpansionTile(
+                          initiallyExpanded: false,
+                          leading: const Icon(Icons.speed_outlined),
+                          title: const Text(
+                            '処理時間',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: const Text('開発用'),
+                          childrenPadding: const EdgeInsets.fromLTRB(
+                            16,
+                            0,
+                            16,
+                            16,
+                          ),
+                          children: [
+                            _ResultRow(
+                              label: 'CSV本体',
+                              value: _formatDuration(_debugTiming!.importMs),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            _ResultRow(
+                              label: '└ CSV種別→設定',
+                              value: _formatDuration(
+                                _debugTiming!.configNameMs,
+                              ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            _ResultRow(
+                              label: '└ 設定読込',
+                              value: _formatDuration(_debugTiming!.configMs),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            _ResultRow(
+                              label: '└ 分類ルール読込',
+                              value: _formatDuration(_debugTiming!.rulesMs),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            _ResultRow(
+                              label: '└ CSV解析・分類',
+                              value: _formatDuration(_debugTiming!.normalizeMs),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            _ResultRow(
+                              label: '└ 取引追加',
+                              value: _formatDuration(
+                                _debugTiming!.addTransactionsMs,
+                              ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            _ResultRow(
+                              label: '└ カード引落照合',
+                              value: _formatDuration(
+                                _debugTiming!.settlementMs,
+                              ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            _ResultRow(
+                              label: 'ReviewQueue',
+                              value: _formatDuration(
+                                _debugTiming!.reviewQueueMs,
+                              ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            _ResultRow(
+                              label: 'ReviewSummary',
+                              value: _formatDuration(
+                                _debugTiming!.reviewSummaryMs,
+                              ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            _ResultRow(
+                              label: 'AllViews',
+                              value: _formatDuration(_debugTiming!.allViewsMs),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            _ResultRow(
+                              label: '└ 集計再構築',
+                              value: _formatDuration(
+                                _debugTiming!.allViewsSummariesMs,
+                              ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            _ResultRow(
+                              label: '└ 月次確認',
+                              value: _formatDuration(
+                                _debugTiming!.allViewsMonthlyCheckMs,
+                              ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            _ResultRow(
+                              label: '└ 最新月設定',
+                              value: _formatDuration(
+                                _debugTiming!.allViewsLatestMonthMs,
+                              ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            _ResultRow(
+                              label: '└ Dashboard更新',
+                              value: _formatDuration(
+                                _debugTiming!.allViewsDashboardMs,
+                              ),
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            const Divider(),
+
+                            const SizedBox(height: 12),
+
+                            _ResultRow(
+                              label: '合計',
+                              value: _formatDuration(_debugTiming!.totalMs),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 );
               },
             ),
@@ -691,5 +1028,321 @@ class _ImportHistoryTile extends StatelessWidget {
     final minute = date.minute.toString().padLeft(2, '0');
 
     return '$month/$day $hour:$minute';
+  }
+}
+
+enum ImportCoverageStatus { none, partial, complete }
+
+class _ImportStatusCard extends StatelessWidget {
+  const _ImportStatusCard({
+    required this.yearMonth,
+    required this.configs,
+    required this.allHistories,
+  });
+
+  final String yearMonth;
+  final List<ImportConfigModel> configs;
+  final List<ImportHistoryModel> allHistories;
+
+  @override
+  Widget build(BuildContext context) {
+    final uniqueConfigs = <String, ImportConfigModel>{};
+
+    for (final config in configs) {
+      final accountName = config.accountName.trim();
+
+      if (accountName.isEmpty) {
+        continue;
+      }
+
+      uniqueConfigs.putIfAbsent(accountName, () => config);
+    }
+
+    final entries = uniqueConfigs.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _formatYearMonth(yearMonth),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 12),
+
+            for (int i = 0; i < entries.length; i++) ...[
+              _ImportStatusRow(
+                accountName: entries[i].key,
+                status: _getCoverageStatus(
+                  yearMonth: yearMonth,
+                  accountName: entries[i].key,
+                  histories: allHistories,
+                ),
+              ),
+
+              if (i < entries.length - 1) const Divider(height: 16),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _formatYearMonth(String value) {
+    final parts = value.split('-');
+
+    if (parts.length != 2) {
+      return value;
+    }
+
+    return '${parts[0]}年${int.tryParse(parts[1]) ?? 0}月';
+  }
+}
+
+class _ImportStatusRow extends StatelessWidget {
+  const _ImportStatusRow({required this.accountName, required this.status});
+
+  final String accountName;
+  final ImportCoverageStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = switch (status) {
+      ImportCoverageStatus.complete => Icons.check_circle,
+      ImportCoverageStatus.partial => Icons.timelapse,
+      ImportCoverageStatus.none => Icons.remove_circle_outline,
+    };
+
+    final label = switch (status) {
+      ImportCoverageStatus.complete => '取込済み',
+      ImportCoverageStatus.partial => '一部取込',
+      ImportCoverageStatus.none => '未取込',
+    };
+
+    return Row(
+      children: [
+        Icon(
+          icon,
+          size: 20,
+          color: status == ImportCoverageStatus.none
+              ? Theme.of(context).colorScheme.outline
+              : Theme.of(context).colorScheme.primary,
+        ),
+
+        const SizedBox(width: 10),
+
+        Expanded(
+          child: Text(
+            accountName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+
+        Text(
+          label,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
+  }
+}
+
+ImportCoverageStatus _getCoverageStatus({
+  required String yearMonth,
+  required String accountName,
+  required List<ImportHistoryModel> histories,
+}) {
+  final parts = yearMonth.split('-');
+
+  if (parts.length != 2) {
+    return ImportCoverageStatus.none;
+  }
+
+  final year = int.tryParse(parts[0]);
+  final month = int.tryParse(parts[1]);
+
+  if (year == null || month == null) {
+    return ImportCoverageStatus.none;
+  }
+
+  final monthStart = DateTime(year, month, 1);
+  final monthEnd = DateTime(year, month + 1, 0);
+
+  final now = DateTime.now();
+
+  final currentMonth = now.year == year && now.month == month;
+
+  final requiredEnd = currentMonth
+      ? DateTime(now.year, now.month, now.day)
+      : monthEnd;
+
+  DateTime? coveredStart;
+  DateTime? coveredEnd;
+
+  for (final history in histories) {
+    if (history.accountName.trim() != accountName.trim()) {
+      continue;
+    }
+
+    final start = DateTime.tryParse(history.periodStart);
+    final end = DateTime.tryParse(history.periodEnd);
+
+    if (start == null || end == null) {
+      continue;
+    }
+
+    // この履歴が対象月に一切かからない
+    if (end.isBefore(monthStart) || start.isAfter(monthEnd)) {
+      continue;
+    }
+
+    if (coveredStart == null || start.isBefore(coveredStart)) {
+      coveredStart = start;
+    }
+
+    if (coveredEnd == null || end.isAfter(coveredEnd)) {
+      coveredEnd = end;
+    }
+  }
+
+  if (coveredStart == null || coveredEnd == null) {
+    return ImportCoverageStatus.none;
+  }
+
+  final coversStart = !coveredStart.isAfter(monthStart);
+
+  final coversEnd = !coveredEnd.isBefore(requiredEnd);
+
+  if (coversStart && coversEnd) {
+    return ImportCoverageStatus.complete;
+  }
+
+  return ImportCoverageStatus.partial;
+}
+
+class _BillingImportStatusCard extends StatelessWidget {
+  const _BillingImportStatusCard({
+    required this.yearMonth,
+    required this.configs,
+    required this.importedAccounts,
+  });
+
+  final String yearMonth;
+  final List<ImportConfigModel> configs;
+  final Set<String> importedAccounts;
+
+  @override
+  Widget build(BuildContext context) {
+    final cardAccounts = <String>{};
+
+    for (final config in configs) {
+      final sourceType = config.sourceType.trim();
+
+      if (sourceType != 'CSV_クレカ') {
+        continue;
+      }
+
+      final accountName = config.accountName.trim();
+
+      if (accountName.isNotEmpty) {
+        cardAccounts.add(accountName);
+      }
+    }
+
+    final accounts = cardAccounts.toList()..sort();
+
+    if (accounts.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _formatYearMonth(yearMonth),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 12),
+
+            for (int i = 0; i < accounts.length; i++) ...[
+              _BillingImportStatusRow(
+                accountName: accounts[i],
+                imported: importedAccounts.contains(accounts[i]),
+              ),
+
+              if (i < accounts.length - 1) const Divider(height: 16),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _formatYearMonth(String value) {
+    final parts = value.split('-');
+
+    if (parts.length != 2) {
+      return value;
+    }
+
+    return '${parts[0]}年'
+        '${int.tryParse(parts[1]) ?? 0}月';
+  }
+}
+
+class _BillingImportStatusRow extends StatelessWidget {
+  const _BillingImportStatusRow({
+    required this.accountName,
+    required this.imported,
+  });
+
+  final String accountName;
+  final bool imported;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(
+          imported ? Icons.check_circle : Icons.remove_circle_outline,
+          size: 20,
+          color: imported
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.outline,
+        ),
+
+        const SizedBox(width: 10),
+
+        Expanded(
+          child: Text(
+            accountName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+
+        Text(
+          imported ? '取込済み' : '未取込',
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
   }
 }

@@ -2019,3 +2019,174 @@ function initializeCategoryIds() {
 
   clearTableCache(SHEETS.CATEGORIES);
 }
+
+function getAccountBillingSettings_(rawAccountName) {
+  const accountName = resolveCanonicalAccountName_(rawAccountName);
+
+  if (!accountName) {
+    return null;
+  }
+
+  const rows = loadObjects(SHEETS.ACCOUNTS);
+
+  const row = rows.find((item) => {
+    return String(item.account_name || "").trim() === accountName;
+  });
+
+  if (!row) {
+    return null;
+  }
+
+  const closingDay = Number(row.closing_day || 0);
+
+  const paymentDay = Number(row.payment_day || 0);
+
+  const paymentMonthOffset = Number(row.payment_month_offset || 0);
+
+  if (
+    !Number.isInteger(closingDay) ||
+    closingDay <= 0 ||
+    !Number.isInteger(paymentDay) ||
+    paymentDay <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    accountName,
+    closingDay,
+    paymentDay,
+    paymentMonthOffset,
+  };
+}
+
+function calculateBillingYearMonth_(transactionDate, rawAccountName) {
+  const settings = getAccountBillingSettings_(rawAccountName);
+
+  if (!settings) {
+    return "";
+  }
+
+  const text = normalizeImportDate_(transactionDate);
+
+  if (!text) {
+    return "";
+  }
+
+  const [year, month, day] = text.split("-").map(Number);
+
+  let closingYear = year;
+  let closingMonth = month;
+
+  // 月末締め
+  if (settings.closingDay === 31) {
+    // その利用月の締めに入る
+  } else if (day > settings.closingDay) {
+    // 締め日を過ぎていたら次回締め
+    closingMonth++;
+
+    if (closingMonth > 12) {
+      closingMonth = 1;
+      closingYear++;
+    }
+  }
+
+  let billingMonth = closingMonth + settings.paymentMonthOffset;
+
+  let billingYear = closingYear;
+
+  while (billingMonth > 12) {
+    billingMonth -= 12;
+    billingYear++;
+  }
+
+  return `${billingYear}-` + String(billingMonth).padStart(2, "0");
+}
+
+function getImportBillingYearMonth_(rows, config) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return "";
+  }
+
+  // クレカCSV以外は請求月を持たない
+  if (String(config.source_type || "").trim() !== "CSV_クレカ") {
+    return "";
+  }
+
+  const accountName = String(config.account_name || "").trim();
+
+  if (!accountName) {
+    return "";
+  }
+
+  const billingMonths = new Set();
+
+  for (const row of rows) {
+    const keys = Object.keys(row);
+
+    const dateKey = keys[Number(config.date_col) - 1];
+
+    if (!dateKey) {
+      continue;
+    }
+
+    const transactionDate = row[dateKey];
+
+    const billingYearMonth = calculateBillingYearMonth_(
+      transactionDate,
+      accountName,
+    );
+
+    if (billingYearMonth) {
+      billingMonths.add(billingYearMonth);
+    }
+  }
+
+  // CSV全体が1つの請求月に収まる場合だけ確定
+  if (billingMonths.size === 1) {
+    return Array.from(billingMonths)[0];
+  }
+
+  // 複数請求月が含まれるCSVは
+  // 無理に代表月を設定しない
+  return "";
+}
+
+function getImportBillingYearMonths_(rows, config) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return [];
+  }
+
+  if (String(config.source_type || "").trim() !== "CSV_クレカ") {
+    return [];
+  }
+
+  const accountName = String(config.account_name || "").trim();
+
+  if (!accountName) {
+    return [];
+  }
+
+  const billingMonths = new Set();
+
+  for (const row of rows) {
+    const keys = Object.keys(row);
+
+    const dateKey = keys[Number(config.date_col) - 1];
+
+    if (!dateKey) {
+      continue;
+    }
+
+    const billingYearMonth = calculateBillingYearMonth_(
+      row[dateKey],
+      accountName,
+    );
+
+    if (billingYearMonth) {
+      billingMonths.add(billingYearMonth);
+    }
+  }
+
+  return Array.from(billingMonths).sort();
+}

@@ -12,6 +12,8 @@ class ImportHistoryModel {
     required this.rowCount,
     required this.addedCount,
     required this.skippedCount,
+    required this.billingYearMonth,
+    required this.billingYearMonths,
     required this.status,
   });
 
@@ -30,6 +32,8 @@ class ImportHistoryModel {
   final int rowCount;
   final int addedCount;
   final int skippedCount;
+  final String billingYearMonth;
+  final List<String> billingYearMonths;
 
   final String status;
 
@@ -59,6 +63,13 @@ class ImportHistoryModel {
 
       skippedCount: _toInt(json['skippedCount']),
 
+      billingYearMonth: json['billingYearMonth']?.toString() ?? '',
+
+      billingYearMonths: (json['billingYearMonths'] as List? ?? [])
+          .map((value) => value.toString())
+          .where((value) => value.isNotEmpty)
+          .toList(),
+
       status: json['status']?.toString() ?? '',
     );
   }
@@ -70,4 +81,31 @@ class ImportHistoryModel {
 
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
+}
+
+class ImportConfigModel {
+  const ImportConfigModel({
+    required this.configName,
+    required this.accountName,
+    required this.sourceType,
+  });
+
+  final String configName;
+  final String accountName;
+  final String sourceType;
+
+  factory ImportConfigModel.fromJson(Map<String, dynamic> json) {
+    return ImportConfigModel(
+      configName: json['configName']?.toString() ?? '',
+      accountName: json['accountName']?.toString() ?? '',
+      sourceType: json['sourceType']?.toString() ?? '',
+    );
+  }
+}
+
+class ImportHistoryData {
+  const ImportHistoryData({required this.histories, required this.configs});
+
+  final List<ImportHistoryModel> histories;
+  final List<ImportConfigModel> configs;
 }

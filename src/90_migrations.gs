@@ -6,40 +6,40 @@ function migrateRulesToCategoryV2() {
 
   const headers = values[0];
   const idx = {};
-  headers.forEach((h, i) => idx[h] = i);
+  headers.forEach((h, i) => (idx[h] = i));
 
   const majorMap = {
-    "固定費": "通信",
-    "趣味娯楽": "趣味",
-    "生活費": "生活用品",
-    "配信活動": "仕事・副業",
-    "振替": "移動",
-    "値引き": "調整",
+    固定費: "通信",
+    趣味娯楽: "趣味",
+    生活費: "生活用品",
+    配信活動: "仕事・副業",
+    振替: "移動",
+    値引き: "調整",
   };
 
   const subMap = {
-    "通信費": "スマホ",
-    "サブスク": "サブスク",
-    "配信ソフト": "ソフトウェア",
-    "娯楽その他": "動画",
-    "雑貨": "日用品",
-    "イラスト依頼": "イラスト依頼",
-    "電子マネー補充": "電子マネーチャージ",
-    "ポイント還元": "ポイント還元",
-    "クレカ引落": "クレカ引落",
-    "口座移動": "口座移動",
-    "ゲーム": "ゲーム",
-    "外食": "外食",
-    "コンビニ": "コンビニ",
-    "電車": "電車",
-    "イベント": "イベント",
-    "税金": "税金",
-    "手数料": "手数料",
-    "給与": "給与",
-    "配信収益": "配信収益",
-    "その他収入": "その他収入",
-    "キャッシュバック": "キャッシュバック",
-    "個人間送金": "個人間送金",
+    通信費: "スマホ",
+    サブスク: "サブスク",
+    配信ソフト: "ソフトウェア",
+    娯楽その他: "動画",
+    雑貨: "日用品",
+    イラスト依頼: "イラスト依頼",
+    電子マネー補充: "電子マネーチャージ",
+    ポイント還元: "ポイント還元",
+    クレカ引落: "クレカ引落",
+    口座移動: "口座移動",
+    ゲーム: "ゲーム",
+    外食: "外食",
+    コンビニ: "コンビニ",
+    電車: "電車",
+    イベント: "イベント",
+    税金: "税金",
+    手数料: "手数料",
+    給与: "給与",
+    配信収益: "配信収益",
+    その他収入: "その他収入",
+    キャッシュバック: "キャッシュバック",
+    個人間送金: "個人間送金",
   };
 
   for (let r = 1; r < values.length; r++) {
@@ -69,19 +69,19 @@ function migrateRulesToFinalCategories() {
 
   const headers = values[0];
   const idx = {};
-  headers.forEach((h, i) => idx[h] = i);
+  headers.forEach((h, i) => (idx[h] = i));
 
   const majorMap = {
-    "生活用品": "生活",
-    "仕事・副業": "配信"
+    生活用品: "生活",
+    "仕事・副業": "配信",
   };
 
   const subMap = {
-    "ソフト購入": "ソフト購入",
-    "配信経費": "配信経費",
-    "イラスト依頼": "イラスト依頼",
-    "機材": "機材",
-    "仕事用品": "仕事用品"
+    ソフト購入: "ソフト購入",
+    配信経費: "配信経費",
+    イラスト依頼: "イラスト依頼",
+    機材: "機材",
+    仕事用品: "仕事用品",
   };
 
   for (let r = 1; r < values.length; r++) {
@@ -99,7 +99,7 @@ function migrateRulesToFinalCategories() {
 }
 
 function initializeTransactionWallet() {
-  getSheetByName(SHEETS.TRANSACTIONS)
+  getSheetByName(SHEETS.TRANSACTIONS);
 
   if (!sheet) {
     throw new Error("transactions シートがありません");
@@ -186,7 +186,7 @@ function initializeRuleWallet() {
         "ソフト購入",
         "外注",
         "広告",
-        "配信サブスク"
+        "配信サブスク",
       ].includes(sub)
     ) {
       wallet = "事業";
@@ -211,12 +211,11 @@ function initializeRuleIntent() {
 
   const headers = values[0];
   const idx = {};
-  headers.forEach((h, i) => idx[h] = i);
+  headers.forEach((h, i) => (idx[h] = i));
 
   let updated = 0;
 
   for (let i = 1; i < values.length; i++) {
-
     if (values[i][idx["intent_result"]]) continue;
 
     const major = String(values[i][idx["major_category"]] || "");
@@ -237,30 +236,22 @@ function initializeRuleIntent() {
     }
 
     // ===== 娯楽 =====
-    else if (
-      major === "趣味"
-    ) {
+    else if (major === "趣味") {
       intent = "娯楽";
     }
 
     // ===== 資産形成 =====
-    else if (
-      major === "金融"
-    ) {
+    else if (major === "金融") {
       intent = "資産形成";
     }
 
     // ===== 事業 =====
-    else if (
-      wallet === "事業"
-    ) {
+    else if (wallet === "事業") {
       intent = "事業活動";
     }
 
     // ===== プレゼント =====
-    else if (
-      major === "交際"
-    ) {
+    else if (major === "交際") {
       intent = "贈与・交際";
     }
 
@@ -268,8 +259,315 @@ function initializeRuleIntent() {
     updated++;
   }
 
-  sheet.getRange(2,1,values.length-1,values[0].length)
-       .setValues(values.slice(1));
+  sheet
+    .getRange(2, 1, values.length - 1, values[0].length)
+    .setValues(values.slice(1));
 
   Logger.log(updated + "件更新");
+}
+
+function backfillImportHistoryFromTransactions() {
+  const transactionTable = loadTransactions();
+
+  if (transactionTable.rows.length === 0) {
+    return {
+      createdCount: 0,
+      skippedCount: 0,
+    };
+  }
+
+  assertRequiredColumns(
+    transactionTable.index,
+    ["transaction_date", "account_name", "import_batch", "source_type"],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const existingHistory = loadObjects(SHEETS.IMPORT_HISTORY);
+
+  const existingBatches = new Set(
+    existingHistory
+      .map((row) => String(row.import_batch || "").trim())
+      .filter(Boolean),
+  );
+
+  const batches = new Map();
+
+  for (const row of transactionTable.rows) {
+    const importBatch = getString(row, transactionTable.index, "import_batch");
+
+    if (!importBatch) {
+      continue;
+    }
+
+    if (existingBatches.has(importBatch)) {
+      continue;
+    }
+
+    const accountName = getString(row, transactionTable.index, "account_name");
+
+    const sourceType = getString(row, transactionTable.index, "source_type");
+
+    const transactionDate = formatApiDate_(
+      row[transactionTable.index["transaction_date"]],
+    );
+
+    if (!batches.has(importBatch)) {
+      batches.set(importBatch, {
+        importBatch,
+        accountName,
+        sourceType,
+        dates: [],
+        rowCount: 0,
+      });
+    }
+
+    const batch = batches.get(importBatch);
+
+    batch.rowCount += 1;
+
+    if (transactionDate && !batch.dates.includes(transactionDate)) {
+      batch.dates.push(transactionDate);
+    }
+
+    if (!batch.accountName && accountName) {
+      batch.accountName = accountName;
+    }
+
+    if (!batch.sourceType && sourceType) {
+      batch.sourceType = sourceType;
+    }
+  }
+
+  let createdCount = 0;
+
+  for (const batch of batches.values()) {
+    batch.dates.sort();
+
+    const periodStart = batch.dates.length > 0 ? batch.dates[0] : "";
+
+    const periodEnd =
+      batch.dates.length > 0 ? batch.dates[batch.dates.length - 1] : "";
+
+    const targetYearMonth =
+      periodEnd.length >= 7 ? periodEnd.substring(0, 7) : "";
+
+    addImportHistory_({
+      importBatch: batch.importBatch,
+
+      importedAt: parseImportBatchDate_(batch.importBatch),
+
+      csvType: "",
+
+      configName: "",
+
+      accountName: batch.accountName,
+
+      fileName: "過去取込",
+
+      targetYearMonth,
+
+      periodStart,
+
+      periodEnd,
+
+      rowCount: batch.rowCount,
+
+      addedCount: batch.rowCount,
+
+      skippedCount: 0,
+
+      status: "backfilled",
+    });
+
+    createdCount++;
+  }
+
+  return {
+    createdCount,
+    skippedCount:
+      transactionTable.rows.length -
+      Array.from(batches.values()).reduce(
+        (sum, batch) => sum + batch.rowCount,
+        0,
+      ),
+  };
+}
+
+function parseImportBatchDate_(importBatch) {
+  const text = String(importBatch || "").trim();
+
+  const match = text.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/);
+
+  if (!match) {
+    return new Date();
+  }
+
+  return new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Number(match[4]),
+    Number(match[5]),
+    Number(match[6]),
+  );
+}
+
+function backfillImportBillingMonths() {
+  const historySheet = getRequiredSheet(SHEETS.IMPORT_HISTORY);
+  const historyValues = historySheet.getDataRange().getValues();
+
+  if (historyValues.length < 2) {
+    return {
+      updatedCount: 0,
+      skippedCount: 0,
+    };
+  }
+
+  const historyIndex = createHeaderIndex(historyValues[0]);
+
+  assertRequiredColumns(
+    historyIndex,
+    [
+      "import_batch",
+      "account_name",
+      "billing_year_month",
+      "billing_year_months",
+    ],
+    SHEETS.IMPORT_HISTORY,
+  );
+
+  const transactionTable = loadTransactions();
+
+  if (transactionTable.rows.length === 0) {
+    return {
+      updatedCount: 0,
+      skippedCount: historyValues.length - 1,
+    };
+  }
+
+  assertRequiredColumns(
+    transactionTable.index,
+    ["transaction_date", "account_name", "import_batch"],
+    SHEETS.TRANSACTIONS,
+  );
+
+  // import_batchごとに取引をまとめる
+  const transactionsByBatch = new Map();
+
+  for (const row of transactionTable.rows) {
+    const importBatch = getString(row, transactionTable.index, "import_batch");
+
+    if (!importBatch) {
+      continue;
+    }
+
+    if (!transactionsByBatch.has(importBatch)) {
+      transactionsByBatch.set(importBatch, []);
+    }
+
+    transactionsByBatch.get(importBatch).push(row);
+  }
+
+  let updatedCount = 0;
+  let skippedCount = 0;
+
+  for (let i = 1; i < historyValues.length; i++) {
+    const historyRow = historyValues[i];
+
+    const importBatch = String(
+      historyRow[historyIndex["import_batch"]] || "",
+    ).trim();
+
+    const accountName = String(
+      historyRow[historyIndex["account_name"]] || "",
+    ).trim();
+
+    if (!importBatch || !accountName) {
+      skippedCount++;
+      continue;
+    }
+
+    const billingSettings = getAccountBillingSettings_(accountName);
+
+    // カード設定がない口座・銀行・PayPay等は対象外
+    if (!billingSettings) {
+      skippedCount++;
+      continue;
+    }
+
+    const transactionRows = transactionsByBatch.get(importBatch) || [];
+
+    if (transactionRows.length === 0) {
+      skippedCount++;
+      continue;
+    }
+
+    const billingMonths = new Set();
+
+    for (const row of transactionRows) {
+      const transactionDate = row[transactionTable.index["transaction_date"]];
+
+      const billingYearMonth = calculateBillingYearMonth_(
+        transactionDate,
+        accountName,
+      );
+
+      if (billingYearMonth) {
+        billingMonths.add(billingYearMonth);
+      }
+    }
+
+    const sortedMonths = Array.from(billingMonths).sort();
+
+    if (sortedMonths.length === 0) {
+      skippedCount++;
+      continue;
+    }
+
+    // 請求月が1つだけなら単一列にも保存
+    historyRow[historyIndex["billing_year_month"]] =
+      sortedMonths.length === 1 ? sortedMonths[0] : "";
+
+    // 複数月はこちら
+    historyRow[historyIndex["billing_year_months"]] = sortedMonths.join(",");
+
+    updatedCount++;
+  }
+
+  // 一括書き戻し
+  historySheet
+    .getRange(2, 1, historyValues.length - 1, historyValues[0].length)
+    .setValues(historyValues.slice(1));
+
+  clearTableCache(SHEETS.IMPORT_HISTORY);
+
+  return {
+    updatedCount,
+    skippedCount,
+  };
+}
+
+function debugImportBillingBackfill() {
+  const historySheet = getRequiredSheet(SHEETS.IMPORT_HISTORY);
+
+  const values = historySheet.getDataRange().getValues();
+
+  const index = createHeaderIndex(values[0]);
+
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+
+    const importBatch = String(row[index["import_batch"]] || "").trim();
+
+    const accountName = String(row[index["account_name"]] || "").trim();
+
+    const settings = getAccountBillingSettings_(accountName);
+
+    Logger.log({
+      row: i + 1,
+      importBatch,
+      accountName,
+      billingSettings: settings,
+    });
+  }
 }

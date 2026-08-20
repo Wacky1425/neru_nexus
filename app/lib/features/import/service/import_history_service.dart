@@ -8,7 +8,7 @@ import '../model/import_history_model.dart';
 class ImportHistoryService {
   const ImportHistoryService();
 
-  Future<List<ImportHistoryModel>> fetchHistory({int limit = 50}) async {
+  Future<ImportHistoryData> fetchHistory({int limit = 50}) async {
     final uri = Uri.parse(ApiConstants.baseUrl).replace(
       queryParameters: {
         'action': 'import_history',
@@ -62,12 +62,30 @@ class ImportHistoryService {
       throw Exception('取込履歴APIのitems形式が正しくありません');
     }
 
-    return items.map((item) {
+    final histories = items.map((item) {
       if (item is! Map) {
         throw Exception('取込履歴データの形式が正しくありません');
       }
 
       return ImportHistoryModel.fromJson(Map<String, dynamic>.from(item));
     }).toList();
+
+    final configsValue = data['configs'];
+
+    final configs = <ImportConfigModel>[];
+
+    if (configsValue is List) {
+      for (final item in configsValue) {
+        if (item is! Map) {
+          continue;
+        }
+
+        configs.add(
+          ImportConfigModel.fromJson(Map<String, dynamic>.from(item)),
+        );
+      }
+    }
+
+    return ImportHistoryData(histories: histories, configs: configs);
   }
 }
