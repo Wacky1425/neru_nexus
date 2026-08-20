@@ -23,6 +23,12 @@ function detectCsvTypeFromRows(values) {
       row.includes("金額") &&
       row.includes("請求額");
 
+    const isSaisonCard =
+      row.includes("利用日") &&
+      row.includes("ご利用店名及び商品名") &&
+      row.includes("利用金額") &&
+      row.includes("支払区分名称");
+
     const isOliveCardNoHeader =
       row.length >= 8 &&
       /^\d{4}\/\d{1,2}\/\d{1,2}$/.test(row[0]) &&
@@ -49,6 +55,13 @@ function detectCsvTypeFromRows(values) {
     if (isOliveCard) {
       return {
         csvType: "olive_credit_v1",
+        headerRowIndex: i,
+      };
+    }
+
+    if (isSaisonCard) {
+      return {
+        csvType: "saison_credit_v1",
         headerRowIndex: i,
       };
     }
@@ -218,6 +231,35 @@ function readImportCsv() {
   return loadObjects(SHEETS.IMPORT_CSV);
 }
 
+function shouldImportCsvRow(row, config) {
+  const keys = Object.keys(row);
+
+  const dateKey = keys[Number(config.date_col) - 1];
+  const amountKey = keys[Number(config.amount_col) - 1];
+
+  const dateValue = String(row[dateKey] || "").trim();
+  const amountValue = String(row[amountKey] || "").trim();
+
+  // 日付が空の行は取り込まない
+  if (!dateValue) {
+    return false;
+  }
+
+  // 金額が空の行は取り込まない
+  if (!amountValue) {
+    return false;
+  }
+
+  // 金額として解釈できない行は取り込まない
+  const amount = parseAmount(amountValue);
+
+  if (!Number.isFinite(amount)) {
+    return false;
+  }
+
+  return true;
+}
+
 function normalizeCsvRow(row, config) {
   const dateValue = row[Object.keys(row)[Number(config.date_col) - 1]];
   const merchantValue = row[Object.keys(row)[Number(config.merchant_col) - 1]];
@@ -225,7 +267,7 @@ function normalizeCsvRow(row, config) {
   const amountValue = row[Object.keys(row)[Number(config.amount_col) - 1]];
   const noteValue = row[Object.keys(row)[Number(config.note_col) - 1]];
 
-  const amount = Number(amountValue) * Number(config.amount_sign || 1);
+  const amount = parseAmount(amountValue) * Number(config.amount_sign || 1);
 
   return {
     transaction_date: dateValue,
@@ -263,6 +305,11 @@ function importCsvToTransactions(configName) {
   let skippedCount = 0;
 
   for (const row of rows) {
+    if (!shouldImportCsvRow(row, config)) {
+      skippedCount++;
+      continue;
+    }
+
     const txBase = normalizeCsvRow(row, config);
 
     txBase.import_batch = importBatch;
@@ -402,16 +449,17 @@ function reconcileCardSettlementForBatch_(importBatch, rawAccountName) {
 
   // 1件に確定できない場合は自動照合しない
   if (amountMatches.length !== 1) {
-    // 同額候補が複数ある場合だけ、その候補を要確認にする。
-    // 金額一致が0件の場合は、既存のpendingを勝手に変更しない。
+    // 同額候補が複数ある場合だけ要確認にする
     if (amountMatches.length > 1) {
-      for (const candidate of amountMatches) {
-        candidate.row[index["settlement_status"]] = "review";
-      }
+      const statusColumn = index["settlement_status"] + 1;
 
-      sheet
-        .getRange(2, 1, values.length - 1, values[0].length)
-        .setValues(values.slice(1));
+      for (const candidate of amountMatches) {
+        // values配列のindexは0始まり、
+        // Spreadsheetの行番号は1始まり＋ヘッダー分
+        const sheetRow = candidate.sheetIndex + 1;
+
+        sheet.getRange(sheetRow, statusColumn).setValue("review");
+      }
 
       clearTableCache(SHEETS.TRANSACTIONS);
       clearAccountBalanceCache_();
@@ -443,21 +491,31 @@ function reconcileCardSettlementForBatch_(importBatch, rawAccountName) {
 
   const settlementId = "settlement_" + Utilities.getUuid();
 
-  // 銀行側
-  pending.row[index["settlement_status"]] = "matched";
+  const statusColumn = index["settlement_status"] + 1;
 
-  pending.row[index["settlement_id"]] = settlementId;
+  const settlementIdColumn = index["settlement_id"] + 1;
 
-  // カード明細側
+  // -------------------------
+  // 銀行側を更新
+  // -------------------------
+
+  const pendingSheetRow = pending.sheetIndex + 1;
+
+  sheet.getRange(pendingSheetRow, statusColumn).setValue("matched");
+
+  sheet.getRange(pendingSheetRow, settlementIdColumn).setValue(settlementId);
+
+  // -------------------------
+  // 今回のカード明細だけ更新
+  // -------------------------
+
   for (const item of batchRows) {
-    item.row[index["settlement_status"]] = "matched";
+    const sheetRow = item.sheetIndex + 1;
 
-    item.row[index["settlement_id"]] = settlementId;
+    sheet.getRange(sheetRow, statusColumn).setValue("matched");
+
+    sheet.getRange(sheetRow, settlementIdColumn).setValue(settlementId);
   }
-
-  sheet
-    .getRange(2, 1, values.length - 1, values[0].length)
-    .setValues(values.slice(1));
 
   clearTableCache(SHEETS.TRANSACTIONS);
   clearAccountBalanceCache_();
@@ -471,6 +529,20 @@ function reconcileCardSettlementForBatch_(importBatch, rawAccountName) {
   };
 }
 
+let accountAliasCache_ = null;
+
+function getAccountAliases_() {
+  if (accountAliasCache_ === null) {
+    accountAliasCache_ = loadObjects(SHEETS.ACCOUNT_ALIAS);
+  }
+
+  return accountAliasCache_;
+}
+
+function clearAccountAliasCache_() {
+  accountAliasCache_ = null;
+}
+
 function resolveAccountFromAliases_(values) {
   const candidates = (values || [])
     .filter(Boolean)
@@ -481,7 +553,7 @@ function resolveAccountFromAliases_(values) {
     return "";
   }
 
-  const aliases = loadObjects(SHEETS.ACCOUNT_ALIAS);
+  const aliases = getAccountAliases_();
 
   let bestMatch = null;
 
@@ -747,17 +819,34 @@ function getLatestCsvFileFromDrive(folderId) {
 }
 
 function getConfigNameByCsvType(csvType) {
-  const configMap = {
-    smbc_bank_v1: "smbc_bank_v1",
-    paypay_v1: "paypay_v1",
-    olive_credit_v1: "olive_credit_v1",
-    olive_credit_v2: "olive_credit_v1",
-  };
+  const targetType = String(csvType || "").trim();
 
-  const configName = configMap[csvType];
+  if (!targetType) {
+    throw new Error("CSV種別が指定されていません");
+  }
+
+  const configs = loadObjects(SHEETS.IMPORT_CONFIG);
+
+  const config = configs.find((row) => {
+    const rowCsvType = String(row.csv_type || "").trim();
+
+    const active = String(row.active === undefined ? "1" : row.active).trim();
+
+    const isActive = active === "1" || active.toUpperCase() === "TRUE";
+
+    return rowCsvType === targetType && isActive;
+  });
+
+  if (!config) {
+    throw new Error(
+      "M_ImportConfig に対応するCSV設定がありません: " + targetType,
+    );
+  }
+
+  const configName = String(config.config_name || "").trim();
 
   if (!configName) {
-    throw new Error("対応していないCSV種別です: " + csvType);
+    throw new Error("M_ImportConfig の config_name が空です: " + targetType);
   }
 
   return configName;
@@ -1023,6 +1112,28 @@ function importCsvFileAuto(file) {
   return result;
 }
 
+function addImportHistory_(data) {
+  const sheet = getRequiredSheet(SHEETS.IMPORT_HISTORY);
+
+  const row = [
+    String(data.importBatch || ""),
+    data.importedAt || new Date(),
+    String(data.csvType || ""),
+    String(data.configName || ""),
+    String(data.accountName || ""),
+    String(data.fileName || ""),
+    String(data.targetYearMonth || ""),
+    String(data.periodStart || ""),
+    String(data.periodEnd || ""),
+    Number(data.rowCount || 0),
+    Number(data.addedCount || 0),
+    Number(data.skippedCount || 0),
+    String(data.status || "completed"),
+  ];
+
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+}
+
 function importCsvFromApp_(data) {
   const csvText = String(data.csvText || "");
 
@@ -1030,30 +1141,89 @@ function importCsvFromApp_(data) {
     throw new Error("csvTextは必須です");
   }
 
+  const fileName = String(data.fileName || "").trim();
+
   const parsed = readCsvRowsFromText_(csvText);
 
   if (parsed.csvType === "unknown") {
     return createJsonResponse_(
       {
         status: "unknown_csv",
-
         csvType: "unknown",
-
         headerRowIndex: parsed.headerRowIndex,
-
         headers: parsed.headers || [],
-
         sampleRows: parsed.sampleRows || [],
       },
       "ok",
     );
   }
 
+  const importStartedAt = Date.now();
+
+  const configName = getConfigNameByCsvType(parsed.csvType);
+
+  const config = getImportConfig(configName);
+
   const result = importParsedCsvRows_(parsed);
 
-  rebuildReviewQueue();
-  rebuildReviewSummary();
-  rebuildAllViews();
+  const importFinishedAt = Date.now();
+
+  const importPeriod = getImportPeriod_(parsed.rows, config);
+
+  // 新規追加がない場合は後続の再構築を行わない
+  let reviewQueueFinishedAt = importFinishedAt;
+  let reviewSummaryFinishedAt = importFinishedAt;
+  let allViewsFinishedAt = importFinishedAt;
+
+  let allViewsTiming = {
+    summariesMs: 0,
+    monthlyCheckMs: 0,
+    latestMonthMs: 0,
+    dashboardMs: 0,
+  };
+
+  if (result.addedCount > 0) {
+    rebuildReviewQueue();
+
+    reviewQueueFinishedAt = Date.now();
+
+    rebuildReviewSummary();
+
+    reviewSummaryFinishedAt = Date.now();
+
+    allViewsTiming = rebuildAllViews();
+
+    allViewsFinishedAt = Date.now();
+  }
+  addImportHistory_({
+    importBatch: result.importBatch,
+    importedAt: new Date(),
+    csvType: parsed.csvType,
+    configName,
+    accountName: config.account_name,
+    fileName,
+
+    targetYearMonth: importPeriod.targetYearMonth,
+
+    periodStart: importPeriod.periodStart,
+
+    periodEnd: importPeriod.periodEnd,
+
+    rowCount: parsed.rows.length,
+    addedCount: result.addedCount,
+    skippedCount: result.skippedCount,
+    status: "completed",
+  });
+
+  Logger.log(
+    [
+      `CSV本体: ${importFinishedAt - importStartedAt}ms`,
+      `ReviewQueue: ${reviewQueueFinishedAt - importFinishedAt}ms`,
+      `ReviewSummary: ${reviewSummaryFinishedAt - reviewQueueFinishedAt}ms`,
+      `AllViews: ${allViewsFinishedAt - reviewSummaryFinishedAt}ms`,
+      `合計: ${allViewsFinishedAt - importStartedAt}ms`,
+    ].join(" / "),
+  );
 
   return createJsonResponse_(
     {
@@ -1061,14 +1231,186 @@ function importCsvFromApp_(data) {
 
       csvType: parsed.csvType,
 
+      importBatch: result.importBatch,
+
       addedCount: result.addedCount,
 
       skippedCount: result.skippedCount,
 
       settlementResult: result.settlementResult || null,
+
+      debugTiming: {
+        importMs: importFinishedAt - importStartedAt,
+
+        configNameMs: result.debugTiming?.configNameMs || 0,
+
+        configMs: result.debugTiming?.configMs || 0,
+
+        rulesMs: result.debugTiming?.rulesMs || 0,
+
+        normalizeMs: result.debugTiming?.normalizeMs || 0,
+
+        addTransactionsMs: result.debugTiming?.addTransactionsMs || 0,
+
+        settlementMs: result.debugTiming?.settlementMs || 0,
+
+        reviewQueueMs: reviewQueueFinishedAt - importFinishedAt,
+
+        reviewSummaryMs: reviewSummaryFinishedAt - reviewQueueFinishedAt,
+
+        allViewsMs: allViewsFinishedAt - reviewSummaryFinishedAt,
+
+        allViewsSummariesMs: allViewsTiming?.summariesMs || 0,
+
+        allViewsMonthlyCheckMs: allViewsTiming?.monthlyCheckMs || 0,
+
+        allViewsLatestMonthMs: allViewsTiming?.latestMonthMs || 0,
+
+        allViewsDashboardMs: allViewsTiming?.dashboardMs || 0,
+
+        totalMs: allViewsFinishedAt - importStartedAt,
+      },
     },
     "ok",
   );
+}
+
+function getImportPeriod_(rows, config) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return {
+      targetYearMonth: "",
+      periodStart: "",
+      periodEnd: "",
+    };
+  }
+
+  const dateHeader = String(config.date_header || "").trim();
+
+  const dates = [];
+
+  for (const row of rows) {
+    let rawDate = "";
+
+    if (dateHeader && row[dateHeader] !== undefined) {
+      rawDate = row[dateHeader];
+    } else {
+      const keys = Object.keys(row);
+
+      const dateKey = keys[Number(config.date_col) - 1];
+
+      rawDate = row[dateKey];
+    }
+
+    const normalizedDate = normalizeImportDate_(rawDate);
+
+    if (normalizedDate) {
+      dates.push(normalizedDate);
+    }
+  }
+
+  if (dates.length === 0) {
+    return {
+      targetYearMonth: "",
+      periodStart: "",
+      periodEnd: "",
+    };
+  }
+
+  dates.sort();
+
+  const periodStart = dates[0];
+  const periodEnd = dates[dates.length - 1];
+
+  // 現状は「最後に利用があった月」を代表月として扱う
+  const targetYearMonth = periodEnd.substring(0, 7);
+
+  return {
+    targetYearMonth,
+    periodStart,
+    periodEnd,
+  };
+}
+
+function normalizeImportDate_(value) {
+  const text = String(value || "")
+    .normalize("NFKC")
+    .trim();
+
+  if (!text) {
+    return "";
+  }
+
+  const match = text.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+
+  if (!match) {
+    return "";
+  }
+
+  const year = match[1];
+
+  const month = String(Number(match[2])).padStart(2, "0");
+
+  const day = String(Number(match[3])).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getImportHistoryData_(options = {}) {
+  const requestedLimit = Number(options.limit || 50);
+  const limit = Math.min(Math.max(requestedLimit, 1), 200);
+
+  const rows = loadObjects(SHEETS.IMPORT_HISTORY);
+
+  const items = rows
+    .filter((row) => String(row.import_batch || "").trim())
+    .map((row) => ({
+      importBatch: String(row.import_batch || "").trim(),
+
+      importedAt: formatApiDateTime_(row.imported_at),
+
+      csvType: String(row.csv_type || "").trim(),
+
+      configName: String(row.config_name || "").trim(),
+
+      accountName: String(row.account_name || "").trim(),
+
+      fileName: String(row.file_name || "").trim(),
+
+      targetYearMonth: String(row.target_year_month || "").trim(),
+
+      periodStart: formatApiDate_(row.period_start),
+
+      periodEnd: formatApiDate_(row.period_end),
+
+      rowCount: Number(row.row_count || 0),
+
+      addedCount: Number(row.added_count || 0),
+
+      skippedCount: Number(row.skipped_count || 0),
+
+      status: String(row.status || "").trim(),
+    }))
+    .sort((a, b) => b.importedAt.localeCompare(a.importedAt))
+    .slice(0, limit);
+
+  return {
+    items,
+    total: rows.length,
+  };
+}
+
+function formatApiDateTime_(value) {
+  if (!value) {
+    return "";
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+
+  if (isNaN(date.getTime())) {
+    return "";
+  }
+
+  return Utilities.formatDate(date, "Asia/Tokyo", "yyyy-MM-dd'T'HH:mm:ss");
 }
 
 function readCsvRowsFromText_(csvText) {
@@ -1172,11 +1514,19 @@ function readCsvRowsFromText_(csvText) {
 }
 
 function importParsedCsvRows_(parsed) {
+  const startedAt = Date.now();
+
   const configName = getConfigNameByCsvType(parsed.csvType);
+
+  const configNameFinishedAt = Date.now();
 
   const config = getImportConfig(configName);
 
+  const configFinishedAt = Date.now();
+
   const rules = getRules();
+
+  const rulesFinishedAt = Date.now();
 
   const importBatch = Utilities.formatDate(
     new Date(),
@@ -1228,7 +1578,11 @@ function importParsedCsvRows_(parsed) {
     transactions.push(tx);
   }
 
+  const normalizeFinishedAt = Date.now();
+
   const result = addTransactions(transactions);
+
+  const addFinishedAt = Date.now();
 
   let settlementResult = null;
 
@@ -1239,9 +1593,28 @@ function importParsedCsvRows_(parsed) {
     );
   }
 
+  const settlementFinishedAt = Date.now();
+
   return {
     ...result,
+    importBatch,
     settlementResult,
+
+    debugTiming: {
+      configNameMs: configNameFinishedAt - startedAt,
+
+      configMs: configFinishedAt - configNameFinishedAt,
+
+      rulesMs: rulesFinishedAt - configFinishedAt,
+
+      normalizeMs: normalizeFinishedAt - rulesFinishedAt,
+
+      addTransactionsMs: addFinishedAt - normalizeFinishedAt,
+
+      settlementMs: settlementFinishedAt - addFinishedAt,
+
+      totalMs: settlementFinishedAt - startedAt,
+    },
   };
 }
 

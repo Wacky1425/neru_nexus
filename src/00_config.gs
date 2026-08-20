@@ -14,6 +14,7 @@ const SHEETS = Object.freeze({
   REVIEW_QUEUE: "T_ReviewQueue",
   BULK_REVIEW: "T_BulkReview",
   RECURRING_CANDIDATES: "T_RecurringCandidates",
+  IMPORT_HISTORY: "T_ImportHistory",
 
   // ===== Report =====
   HOME: "R_Home",

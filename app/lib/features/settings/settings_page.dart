@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../accounts/account_management_page.dart';
+import '../budget/budget_settings_page.dart';
 import '../categories/category_management_page.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -20,6 +21,7 @@ class SettingsPage extends StatelessWidget {
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             ),
           ),
+
           ListTile(
             leading: const Icon(Icons.category_outlined),
             title: const Text('カテゴリ管理'),
@@ -47,8 +49,31 @@ class SettingsPage extends StatelessWidget {
               );
             },
           ),
-          
+
           const Divider(),
+
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Text(
+              '家計設定',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.account_balance_wallet_outlined),
+            title: const Text('予算・目標設定'),
+            subtitle: const Text('給与・支出予算・資産形成目標を設定'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const BudgetSettingsPage()),
+              );
+            },
+          ),
+
+          const Divider(),
+
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Text(
@@ -56,6 +81,7 @@ class SettingsPage extends StatelessWidget {
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             ),
           ),
+
           const ListTile(
             leading: Icon(Icons.info_outline),
             title: Text('アプリ情報'),

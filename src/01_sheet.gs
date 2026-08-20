@@ -269,9 +269,8 @@ function resolveCanonicalAccountName_(rawName) {
     return "";
   }
 
-  const rows = loadObjects(
-    SHEETS.ACCOUNT_ALIAS
-  );
+  // 毎回シートを読まず、既に作ったキャッシュを使う
+  const rows = getAccountAliases_();
 
   for (const row of rows) {
     const raw = String(

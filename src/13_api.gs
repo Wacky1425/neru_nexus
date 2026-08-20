@@ -17,13 +17,24 @@ function getHomeData() {
 
   const variableExpense = Number(monthly?.variableExpense || 0);
 
+  const totalIncome = Number(monthly?.totalIncome || 0);
+
+  const plannedIncome =
+    Number(budgets["給与予定"] || 0) + Number(budgets["副業予定"] || 0);
+
+  const projectedIncome = Math.max(totalIncome, plannedIncome);
+
   const expenses = {
     fixedExpense,
     variableExpense,
     totalExpense: fixedExpense + variableExpense,
   };
 
-  const availableMoney = calculateAvailableMoney_(budgets, expenses);
+  const availableMoney = calculateAvailableMoney_(
+    budgets,
+    expenses,
+    projectedIncome,
+  );
 
   const savingForecast = calculateSavingForecast_(yearMonth, budgets, expenses);
 
@@ -134,12 +145,27 @@ function doGet(e) {
             majorCategory: parameters.majorCategory,
             reviewOnly: parameters.reviewOnly,
             settlementId: parameters.settlementId,
+            importBatch: parameters.importBatch,
           }),
           "ok",
         );
 
       case "categories":
         return createJsonResponse_(getCategoriesData(), "ok");
+
+      case "budget_settings":
+        return createJsonResponse_(
+          getBudgetSettings(parameters.yearMonth),
+          "ok",
+        );
+
+      case "import_history":
+        return createJsonResponse_(
+          getImportHistoryData_({
+            limit: parameters.limit,
+          }),
+          "ok",
+        );
 
       case "master":
         return createJsonResponse_(getMasterData(), "ok");
@@ -231,6 +257,9 @@ function doPost(e) {
 
       case "account_deactivate":
         return deactivateAccountFromApp_(data);
+
+      case "budget_settings_update":
+        return updateBudgetSettingsFromApp_(data);
 
       default:
         return createJsonErrorResponse_(`未対応のactionです: ${action}`);
@@ -936,6 +965,8 @@ function getTransactionsData(options) {
 
   const settlementId = String(settings.settlementId || "").trim();
 
+  const importBatch = String(settings.importBatch || "").trim();
+
   const filteredRows = table.rows.filter((row) => {
     if (targetMonth) {
       const rowMonth = normalizeYearMonth(row[table.index["transaction_date"]]);
@@ -983,6 +1014,14 @@ function getTransactionsData(options) {
       const rowSettlementId = getString(row, table.index, "settlement_id");
 
       if (rowSettlementId !== settlementId) {
+        return false;
+      }
+    }
+
+    if (importBatch) {
+      const rowImportBatch = getString(row, table.index, "import_batch");
+
+      if (rowImportBatch !== importBatch) {
         return false;
       }
     }

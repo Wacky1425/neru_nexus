@@ -14,6 +14,7 @@ class TransactionService {
     String? keyword,
     String? majorCategory,
     String? settlementId,
+    String? importBatch,
     bool reviewOnly = false,
   }) async {
     final queryParameters = <String, String>{
@@ -36,6 +37,10 @@ class TransactionService {
 
     if (settlementId != null && settlementId.trim().isNotEmpty) {
       queryParameters['settlementId'] = settlementId.trim();
+    }
+
+    if (importBatch != null && importBatch.trim().isNotEmpty) {
+      queryParameters['importBatch'] = importBatch.trim();
     }
 
     queryParameters['reviewOnly'] = reviewOnly.toString();

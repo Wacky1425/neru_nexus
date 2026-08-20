@@ -1,16 +1,20 @@
 function rebuildAllViews() {
+  const startedAt = Date.now();
+
+  // アプリで使用する集計データだけ再構築する
+  const summariesStartedAt = Date.now();
+
   rebuildSummaries();
 
-  const monthlySheet = SS.getSheetByName(SHEETS.MONTHLY_SUMMARY);
-  const hasMonthlyData = monthlySheet.getLastRow() >= 2;
+  const summariesMs = Date.now() - summariesStartedAt;
 
-  if (!hasMonthlyData) {
-    setLatestMonthToDashboard();
-    return;
-  }
-
-  setLatestMonthToDashboard();
-  refreshDashboardFromCell();
+  return {
+    totalMs: Date.now() - startedAt,
+    summariesMs,
+    monthlyCheckMs: 0,
+    latestMonthMs: 0,
+    dashboardMs: 0,
+  };
 }
 
 function refreshDashboard(targetMonth) {
@@ -812,14 +816,33 @@ function clearAccountBalanceCache_() {
   CacheService.getScriptCache().remove(ACCOUNT_BALANCE_CACHE_KEY);
 }
 
-function calculateAvailableMoney_(budgets, expenses) {
-  return (
-    Number(budgets["給与予定"] || 0) -
-    Number(budgets["固定費予算"] || 0) -
-    Number(budgets["NISA積立"] || 0) -
-    Number(budgets["貯金目標"] || 0) -
-    Number(expenses.variableExpense || 0)
+function calculateAvailableMoney_(budgets, expenses, projectedIncome) {
+  const variableBudget = Number(budgets["変動費予算"] || 0);
+
+  const fixedExpenseForecast = Math.max(
+    Number(expenses.fixedExpense || 0),
+    Number(budgets["固定費予算"] || 0),
   );
+
+  const savingTarget = Number(budgets["貯金目標"] || 0);
+
+  const investmentTarget = Number(budgets["NISA積立"] || 0);
+
+  const dreamTarget = Number(budgets["夢積立"] || 0);
+
+  const affordableVariableBudget =
+    Number(projectedIncome || 0) -
+    fixedExpenseForecast -
+    savingTarget -
+    investmentTarget -
+    dreamTarget;
+
+  const usableVariableBudget = Math.min(
+    variableBudget,
+    affordableVariableBudget,
+  );
+
+  return usableVariableBudget - Number(expenses.variableExpense || 0);
 }
 
 function calculateDailyBudget_(yearMonth, availableMoney) {

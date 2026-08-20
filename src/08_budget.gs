@@ -108,6 +108,123 @@ function getBudgetsForMonth(yearMonth) {
   return budgets;
 }
 
+function getBudgetSettings(yearMonth) {
+  const targetMonth = normalizeBudgetYearMonth(yearMonth);
+
+  if (!targetMonth) {
+    throw new Error("対象年月が正しくありません");
+  }
+
+  const directBudgets = getBudgetsForMonth(targetMonth);
+
+  let budgets = directBudgets;
+  let inheritedFrom = "";
+
+  if (Object.keys(directBudgets).length === 0) {
+    const { rows, index } = loadBudgetTable_();
+
+    let latestMonth = "";
+
+    for (const row of rows) {
+      const rowMonth = normalizeBudgetYearMonth(row[index["year_month"]]);
+
+      if (!rowMonth || rowMonth >= targetMonth) {
+        continue;
+      }
+
+      if (!latestMonth || rowMonth > latestMonth) {
+        latestMonth = rowMonth;
+      }
+    }
+
+    if (latestMonth) {
+      budgets = getBudgetsForMonth(latestMonth);
+      inheritedFrom = latestMonth;
+    }
+  }
+
+  return {
+    yearMonth: targetMonth,
+    inherited: inheritedFrom !== "",
+    inheritedFrom,
+
+    salaryPlanned: Number(budgets["給与予定"] || 0),
+    sideIncomePlanned: Number(budgets["副業予定"] || 0),
+    savingTarget: Number(budgets["貯金目標"] || 0),
+    nisaTarget: Number(budgets["NISA積立"] || 0),
+    fixedExpenseBudget: Number(budgets["固定費予算"] || 0),
+    variableExpenseBudget: Number(budgets["変動費予算"] || 0),
+    dreamTarget: Number(budgets["夢積立"] || 0),
+  };
+}
+
+function updateBudgetSettingsFromApp_(data) {
+  const yearMonth = normalizeBudgetYearMonth(data.yearMonth);
+
+  if (!yearMonth) {
+    return createJsonErrorResponse_("対象年月が正しくありません");
+  }
+
+  const values = {
+    給与予定: Number(data.salaryPlanned || 0),
+    副業予定: Number(data.sideIncomePlanned || 0),
+    貯金目標: Number(data.savingTarget || 0),
+    NISA積立: Number(data.nisaTarget || 0),
+    固定費予算: Number(data.fixedExpenseBudget || 0),
+    変動費予算: Number(data.variableExpenseBudget || 0),
+    夢積立: Number(data.dreamTarget || 0),
+  };
+
+  const table = loadBudgetTable_();
+  const sheet = getRequiredSheet(SHEETS.BUDGET);
+
+  assertRequiredColumns(
+    table.index,
+    ["year_month", "item", "value"],
+    SHEETS.BUDGET,
+  );
+
+  const existingRows = new Map();
+
+  for (let i = 0; i < table.rows.length; i++) {
+    const row = table.rows[i];
+
+    const rowMonth = normalizeBudgetYearMonth(row[table.index["year_month"]]);
+
+    if (rowMonth !== yearMonth) {
+      continue;
+    }
+
+    const item = String(row[table.index["item"]] || "").trim();
+
+    if (!item) {
+      continue;
+    }
+
+    existingRows.set(item, i + 2);
+  }
+
+  for (const [item, value] of Object.entries(values)) {
+    const rowNumber = existingRows.get(item);
+
+    if (rowNumber) {
+      sheet.getRange(rowNumber, table.index["value"] + 1).setValue(value);
+
+      continue;
+    }
+
+    sheet.appendRow([yearMonth, item, value]);
+  }
+
+  const cache = CacheService.getScriptCache();
+
+  cache.remove(HOME_BUDGET_CACHE_PREFIX + yearMonth);
+
+  clearAnalyticsSummaryCache_();
+
+  return createJsonResponse_(getBudgetSettings(yearMonth), "ok");
+}
+
 /**
  * 対象月・対象項目の予算を取得する。
  *
