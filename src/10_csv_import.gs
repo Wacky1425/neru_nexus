@@ -1,3 +1,15 @@
+// ============================================================
+// Neru Nexus - CSV Import
+//
+// 現行のFlutterアプリ経由CSV取込に必要な処理を集約。
+// 旧Import_CSVシート方式 / 旧Google Drive直接取込方式は削除済み。
+// 挙動変更は行わず、未使用の旧取込経路のみ整理。
+// ============================================================
+
+// ============================================================
+// CSV解析・種別判定
+// ============================================================
+
 function detectCsvTypeFromRows(values) {
   for (let i = 0; i < values.length; i++) {
     const row = values[i].map((v) => String(v).trim());
@@ -114,75 +126,6 @@ function detectCsvTypeFromRows(values) {
   };
 }
 
-function readCsvRowsFromFile(file) {
-  const values = parseCsvFile(file);
-  const detected = detectCsvTypeFromRows(values);
-
-  if (detected.csvType === "unknown") {
-    throw new Error("CSV種別を判定できません: " + file.getName());
-  }
-
-  if (
-    detected.csvType === "olive_credit_v1" &&
-    detected.headerRowIndex === -1
-  ) {
-    return {
-      csvType: detected.csvType,
-      rows: convertOliveRowsWithoutHeader(values.slice(1)),
-    };
-  }
-
-  if (detected.csvType === "olive_credit_v2") {
-    return {
-      csvType: detected.csvType,
-      rows: convertOliveRowsWithoutHeader(
-        values.slice(detected.headerRowIndex),
-      ),
-    };
-  }
-
-  const headers = values[detected.headerRowIndex].map((value) =>
-    String(value || "").trim(),
-  );
-
-  const rows = values
-    .slice(detected.headerRowIndex + 1)
-    .filter((row) => row.join("").trim() !== "");
-
-  return {
-    csvType: detected.csvType,
-    rows: rows.map((row) => rowToObject(headers, row)),
-  };
-}
-
-function parseCsvFile(file) {
-  const blob = file.getBlob();
-
-  // 日本の金融CSVはShift_JISが多いので先に読む
-  const sjis = blob.getDataAsString("Shift_JIS");
-  const parsedSjis = Utilities.parseCsv(sjis);
-
-  const joined = parsedSjis
-    .slice(0, 5)
-    .map((r) => r.join("|"))
-    .join("|")
-    .normalize("NFKC");
-
-  if (
-    joined.includes("年月日") ||
-    joined.includes("お引出し") ||
-    joined.includes("お預入れ") ||
-    joined.includes("お取り扱い内容") ||
-    joined.includes("Olive") ||
-    joined.includes("クレジット")
-  ) {
-    return parsedSjis;
-  }
-
-  const utf8 = blob.getDataAsString("UTF-8");
-  return Utilities.parseCsv(utf8);
-}
-
 function convertOliveRowsWithoutHeader(rows) {
   return rows
     .filter((row) => row.join("").trim() !== "")
@@ -204,6 +147,10 @@ function convertOliveRowsWithoutHeader(rows) {
       };
     });
 }
+
+// ============================================================
+// Import Config
+// ============================================================
 
 function getImportConfig(configName) {
   const targetName = String(configName || "").trim();
@@ -227,126 +174,9 @@ function getImportConfig(configName) {
   return config;
 }
 
-function readImportCsv() {
-  return loadObjects(SHEETS.IMPORT_CSV);
-}
-
-function shouldImportCsvRow(row, config) {
-  const keys = Object.keys(row);
-
-  const dateKey = keys[Number(config.date_col) - 1];
-  const amountKey = keys[Number(config.amount_col) - 1];
-
-  const dateValue = String(row[dateKey] || "").trim();
-  const amountValue = String(row[amountKey] || "").trim();
-
-  // 日付が空の行は取り込まない
-  if (!dateValue) {
-    return false;
-  }
-
-  // 金額が空の行は取り込まない
-  if (!amountValue) {
-    return false;
-  }
-
-  // 金額として解釈できない行は取り込まない
-  const amount = parseAmount(amountValue);
-
-  if (!Number.isFinite(amount)) {
-    return false;
-  }
-
-  return true;
-}
-
-function normalizeCsvRow(row, config) {
-  const dateValue = row[Object.keys(row)[Number(config.date_col) - 1]];
-  const merchantValue = row[Object.keys(row)[Number(config.merchant_col) - 1]];
-  const itemValue = row[Object.keys(row)[Number(config.item_col) - 1]];
-  const amountValue = row[Object.keys(row)[Number(config.amount_col) - 1]];
-  const noteValue = row[Object.keys(row)[Number(config.note_col) - 1]];
-
-  const amount = parseAmount(amountValue) * Number(config.amount_sign || 1);
-
-  return {
-    transaction_date: dateValue,
-    merchant: merchantValue || "",
-    item_name: itemValue || "",
-    amount: amount,
-    note: noteValue || "",
-    source_type: config.source_type || "CSV",
-    payment_method: config.payment_method || "",
-    account_name: config.account_name || "",
-    evidence_url: "",
-    original_image_url: "",
-    import_batch: Utilities.formatDate(
-      new Date(),
-      "Asia/Tokyo",
-      "yyyyMMdd_HHmmss",
-    ),
-    duplicate_key: "",
-  };
-}
-
-function importCsvToTransactions(configName) {
-  const config = getImportConfig(configName);
-
-  const rows = readImportCsv();
-  const rules = getRules();
-
-  const importBatch = Utilities.formatDate(
-    new Date(),
-    "Asia/Tokyo",
-    "yyyyMMdd_HHmmss",
-  );
-
-  let addedCount = 0;
-  let skippedCount = 0;
-
-  for (const row of rows) {
-    if (!shouldImportCsvRow(row, config)) {
-      skippedCount++;
-      continue;
-    }
-
-    const txBase = normalizeCsvRow(row, config);
-
-    txBase.import_batch = importBatch;
-
-    const classified = classifyTransaction(txBase, rules);
-
-    const tx = {
-      ...txBase,
-      ...classified,
-    };
-
-    applyTransferMetadata_(tx);
-
-    const added = addTransaction(tx);
-
-    if (added) {
-      addedCount++;
-    } else {
-      skippedCount++;
-    }
-  }
-
-  // 今回のCSVがカード明細なら
-  // pendingの銀行引落と照合を試す
-  const settlementResult = reconcileCardSettlementForBatch_(
-    importBatch,
-    config.account_name,
-  );
-
-  Logger.log(`追加: ${addedCount}件 / ` + `重複スキップ: ${skippedCount}件`);
-
-  return {
-    addedCount,
-    skippedCount,
-    settlementResult,
-  };
-}
+// ============================================================
+// クレカ引落照合
+// ============================================================
 
 function reconcileCardSettlementForBatch_(importBatch, rawAccountName) {
   const cardAccount = resolveCanonicalAccountName_(rawAccountName);
@@ -528,6 +358,10 @@ function reconcileCardSettlementForBatch_(importBatch, rawAccountName) {
     detailCount: batchRows.length,
   };
 }
+
+// ============================================================
+// 口座エイリアス・振替処理
+// ============================================================
 
 let accountAliasCache_ = null;
 
@@ -745,10 +579,9 @@ function resolveCreditCardAccount_(tx) {
 
 function applyTransferMetadata_(tx) {
   const type = String(tx.type || "").trim();
-
   const subCategory = String(tx.sub_category || "").trim();
-
   const accountName = String(tx.account_name || "").trim();
+  const sourceType = String(tx.source_type || "").trim();
 
   // 通常の支出・収入
   if (type !== "移動") {
@@ -759,12 +592,31 @@ function applyTransferMetadata_(tx) {
     return;
   }
 
-  // CSVを取り込んだ口座を移動元として扱う
-  tx.from_account = resolveCanonicalAccountName_(accountName);
-
-  tx.to_account = String(tx.to_account || "").trim();
-
   tx.settlement_id = String(tx.settlement_id || "").trim();
+
+  /*
+   * PayPayのチャージは、PayPay CSV上では「PayPayへの入金」。
+   *
+   *   銀行 → PayPay
+   *
+   * なので、通常の「CSV取込元口座 = 移動元」と逆向きになる。
+   * 取引方法(note/raw_text)からチャージ元銀行を解決し、
+   * PayPayを移動先にする。
+   */
+  if (sourceType === "CSV_PayPay" && subCategory === "電子マネーチャージ") {
+    const sourceAccount = resolveAccountFromAliases_([tx.note, tx.raw_text]);
+
+    tx.from_account = sourceAccount;
+    tx.to_account = resolveCanonicalAccountName_(accountName);
+
+    tx.settlement_status = tx.from_account && tx.to_account ? "none" : "review";
+
+    return;
+  }
+
+  // 通常の移動はCSVを取り込んだ口座を移動元として扱う
+  tx.from_account = resolveCanonicalAccountName_(accountName);
+  tx.to_account = String(tx.to_account || "").trim();
 
   if (subCategory === "クレカ引落") {
     tx.to_account = resolveCreditCardAccount_(tx);
@@ -789,33 +641,6 @@ function resolveTransferDestinationAccount_(tx) {
     tx.note,
     tx.raw_text,
   ]);
-}
-
-function getLatestCsvFileFromDrive(folderId) {
-  const folder = DriveApp.getFolderById(folderId);
-  const files = folder.getFiles();
-
-  let latestFile = null;
-  let latestTime = 0;
-
-  while (files.hasNext()) {
-    const file = files.next();
-    const name = file.getName().toLowerCase();
-
-    if (!name.endsWith(".csv")) continue;
-
-    const updatedTime = file.getLastUpdated().getTime();
-    if (updatedTime > latestTime) {
-      latestTime = updatedTime;
-      latestFile = file;
-    }
-  }
-
-  if (!latestFile) {
-    throw new Error("CSVファイルが見つかりません");
-  }
-
-  return latestFile;
 }
 
 function getConfigNameByCsvType(csvType) {
@@ -852,84 +677,52 @@ function getConfigNameByCsvType(csvType) {
   return configName;
 }
 
-function runImportAllCsv() {
-  const folder = DriveApp.getFolderById(FOLDERS.CSV_IMPORT);
-  const files = folder.getFiles();
+// ============================================================
+// CSV正規化
+// ============================================================
 
-  while (files.hasNext()) {
-    const file = files.next();
-    const name = file.getName().toLowerCase();
-
-    if (!name.endsWith(".csv")) continue;
-
-    try {
-      importCsvFileAuto(file);
-    } catch (error) {
-      Logger.log("取込失敗: " + file.getName() + " / " + error.message);
-    }
+function shouldIgnoreCsvRow_(row, txBase, config) {
+  if (String(config.config_name || "").trim() !== "paypay_v1") {
+    return false;
   }
 
-  reclassifyAllTransactions();
-  rebuildReviewQueue();
-  rebuildReviewSummary();
-  rebuildAllViews();
-}
+  const transactionType = String(row["取引内容"] || "")
+    .normalize("NFKC")
+    .trim();
 
-function readCsvRowsFromDrive(folderId) {
-  const file = getLatestCsvFileFromDrive(folderId);
-  const values = parseCsvFile(file);
+  const merchant = String(txBase.merchant || "")
+    .normalize("NFKC")
+    .trim();
 
-  if (values.length < 2) {
-    throw new Error("CSVの中身が空です");
+  const itemName = String(txBase.item_name || "")
+    .normalize("NFKC")
+    .trim();
+
+  // ポイント・残高の獲得
+  if (transactionType === "ポイント、残高の獲得") {
+    return true;
   }
 
-  let headerRowIndex = -1;
-
-  for (let i = 0; i < values.length; i++) {
-    const row = values[i].map((v) => String(v).trim());
-
-    const isSaison = row.includes("利用日") && row.includes("利用金額");
-    const isStacia =
-      row.includes("ご利用日") &&
-      row.includes("ご利用先など") &&
-      row.includes("お支払い金額(￥)");
-    const isJpbank =
-      row.includes("取引日") &&
-      row.includes("受入金額（円）") &&
-      row.includes("払出金額（円）");
-    const isSmbc =
-      row.includes("年月日") &&
-      row.includes("お引出し") &&
-      row.includes("お預入れ") &&
-      row.includes("お取り扱い内容");
-    const isPayPay =
-      row.includes("取引日") &&
-      row.includes("出金金額（円）") &&
-      row.includes("入金金額（円）") &&
-      row.includes("取引内容");
-
-    if (isSaison || isStacia || isJpbank || isSmbc || isPayPay) {
-      headerRowIndex = i;
-      break;
-    }
+  // PayPayポイント運用への移動
+  if (
+    transactionType.includes("PayPayポイント運用") ||
+    merchant.includes("PayPayポイント運用") ||
+    itemName.includes("PayPayポイント運用")
+  ) {
+    return true;
   }
 
-  if (headerRowIndex === -1) {
-    throw new Error("明細ヘッダ行が見つかりません");
+  // ポイント期限切れ・失効
+  if (
+    transactionType.includes("ポイントの期限切れ") ||
+    transactionType.includes("ポイント失効") ||
+    itemName.includes("ポイントの期限切れ") ||
+    itemName.includes("ポイント失効")
+  ) {
+    return true;
   }
 
-  const headers = values[headerRowIndex].map((v) => String(v).trim());
-  const rows = values
-    .slice(headerRowIndex + 1)
-    .filter((row) => row.join("").trim() !== "");
-
-  return rows.map((row) => {
-    const obj = {};
-    headers.forEach((h, i) => {
-      obj[h] = row[i];
-    });
-    return obj;
-  });
+  return false;
 }
 
 function normalizeCsvRowByHeader(row, config) {
@@ -1042,75 +835,9 @@ function normalizeCsvRowByHeader(row, config) {
   };
 }
 
-function importLatestCsvFromDrive(folderId, configName) {
-  const config = getImportConfig(configName);
-  const rows = readCsvRowsFromDrive(folderId);
-  const rules = getRules();
-
-  const transactions = [];
-
-  for (const row of rows) {
-    const txBase = normalizeCsvRowByHeader(row, config);
-
-    txBase.merchant = normalizeMerchant(txBase.merchant);
-
-    if (
-      !txBase.transaction_date ||
-      !txBase.merchant ||
-      Number(txBase.amount) === 0
-    ) {
-      continue;
-    }
-
-    let classified;
-
-    if (
-      config.config_name === "jpbank_v1" ||
-      config.config_name === "smbc_bank_v1" ||
-      config.config_name === "paypay_v1"
-    ) {
-      classified = classifyMoneyTransaction(
-        row,
-        txBase,
-        rules,
-        config.config_name,
-      );
-    } else {
-      classified = classifyTransaction(txBase, rules);
-    }
-
-    transactions.push({
-      ...txBase,
-      ...classified,
-    });
-  }
-
-  const result = addTransactions(transactions);
-
-  Logger.log(
-    `追加: ${result.addedCount}件 / ` +
-      `重複スキップ: ${result.skippedCount}件`,
-  );
-
-  return result;
-}
-
-function importCsvFileAuto(file) {
-  const parsed = readCsvRowsFromFile(file);
-
-  const result = importParsedCsvRows_(parsed);
-
-  Logger.log(
-    [
-      file.getName(),
-      parsed.csvType,
-      `追加: ${result.addedCount}件`,
-      `重複スキップ: ${result.skippedCount}件`,
-    ].join(" / "),
-  );
-
-  return result;
-}
+// ============================================================
+// CSV取込履歴
+// ============================================================
 
 function addImportHistory_(data) {
   const sheet = getRequiredSheet(SHEETS.IMPORT_HISTORY);
@@ -1128,6 +855,7 @@ function addImportHistory_(data) {
     Number(data.rowCount || 0),
     Number(data.addedCount || 0),
     Number(data.skippedCount || 0),
+    Number(data.ignoredCount || 0),
     String(data.status || "completed"),
     String(data.billingYearMonth || ""),
     String((data.billingYearMonths || []).join(",")),
@@ -1135,6 +863,10 @@ function addImportHistory_(data) {
 
   sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
 }
+
+// ============================================================
+// FlutterアプリからのCSV取込 API
+// ============================================================
 
 function importCsvFromApp_(data) {
   const csvText = String(data.csvText || "");
@@ -1222,6 +954,7 @@ function importCsvFromApp_(data) {
     rowCount: parsed.rows.length,
     addedCount: result.addedCount,
     skippedCount: result.skippedCount,
+    ignoredCount: result.ignoredCount || 0,
     status: "completed",
   });
 
@@ -1246,6 +979,8 @@ function importCsvFromApp_(data) {
       addedCount: result.addedCount,
 
       skippedCount: result.skippedCount,
+
+      ignoredCount: result.ignoredCount || 0,
 
       settlementResult: result.settlementResult || null,
 
@@ -1284,6 +1019,10 @@ function importCsvFromApp_(data) {
     "ok",
   );
 }
+
+// ============================================================
+// 取込期間・日付ユーティリティ
+// ============================================================
 
 function getImportPeriod_(rows, config) {
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -1417,6 +1156,8 @@ function getImportHistoryData_(options = {}) {
 
       skippedCount: Number(row.skipped_count || 0),
 
+      ignoredCount: Number(row.ignored_count || 0),
+
       billingYearMonth: normalizeYearMonth(row.billing_year_month),
 
       billingYearMonths: (() => {
@@ -1480,6 +1221,10 @@ function formatApiDateTime_(value) {
 
   return Utilities.formatDate(date, "Asia/Tokyo", "yyyy-MM-dd'T'HH:mm:ss");
 }
+
+// ============================================================
+// CSV本文解析
+// ============================================================
 
 function readCsvRowsFromText_(csvText) {
   const normalizedText = String(csvText || "")
@@ -1581,6 +1326,10 @@ function readCsvRowsFromText_(csvText) {
   };
 }
 
+// ============================================================
+// CSV取込メイン処理
+// ============================================================
+
 function importParsedCsvRows_(parsed) {
   const startedAt = Date.now();
 
@@ -1603,6 +1352,7 @@ function importParsedCsvRows_(parsed) {
   );
 
   const transactions = [];
+  let ignoredCount = 0;
 
   for (const row of parsed.rows) {
     const txBase = normalizeCsvRowByHeader(row, config);
@@ -1616,6 +1366,11 @@ function importParsedCsvRows_(parsed) {
       !txBase.merchant ||
       Number(txBase.amount) === 0
     ) {
+      continue;
+    }
+
+    if (shouldIgnoreCsvRow_(row, txBase, config)) {
+      ignoredCount++;
       continue;
     }
 
@@ -1666,6 +1421,7 @@ function importParsedCsvRows_(parsed) {
   return {
     ...result,
     importBatch,
+    ignoredCount,
     settlementResult,
 
     debugTiming: {
@@ -1684,34 +1440,4 @@ function importParsedCsvRows_(parsed) {
       totalMs: settlementFinishedAt - startedAt,
     },
   };
-}
-
-function runImportTest() {
-  importCsvToTransactions("credit_default");
-}
-
-function runSaisonImportFromDrive() {
-  importLatestCsvFromDrive(
-    "1igN1iH0nFHOqf45uGUBIXe7oBPZIE_Hq",
-    "saison_card_v1",
-  );
-}
-
-function runStaciaImportFromDrive() {
-  importLatestCsvFromDrive(
-    "1igN1iH0nFHOqf45uGUBIXe7oBPZIE_Hq",
-    "stacia_jcb_v1",
-  );
-}
-
-function runJpbankImportFromDrive() {
-  importLatestCsvFromDrive("1igN1iH0nFHOqf45uGUBIXe7oBPZIE_Hq", "jpbank_v1");
-}
-
-function runSmbcImportFromDrive() {
-  importLatestCsvFromDrive("1igN1iH0nFHOqf45uGUBIXe7oBPZIE_Hq", "smbc_bank_v1");
-}
-
-function runPayPayImportFromDrive() {
-  importLatestCsvFromDrive("1igN1iH0nFHOqf45uGUBIXe7oBPZIE_Hq", "paypay_v1");
 }

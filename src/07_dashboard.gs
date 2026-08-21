@@ -817,31 +817,30 @@ function clearAccountBalanceCache_() {
 }
 
 function calculateAvailableMoney_(budgets, expenses, projectedIncome) {
-  const variableBudget = Number(budgets["変動費予算"] || 0);
+  const variableBudget = Math.max(0, Number(budgets["変動費予算"] || 0));
 
   const fixedExpenseForecast = Math.max(
     Number(expenses.fixedExpense || 0),
     Number(budgets["固定費予算"] || 0),
   );
 
-  const savingTarget = Number(budgets["貯金目標"] || 0);
+  // 収入から固定費を払ったあと、
+  // 生活費として使える最大額
+  const affordableVariableBudget = Math.max(
+    0,
+    Number(projectedIncome || 0) - fixedExpenseForecast,
+  );
 
-  const investmentTarget = Number(budgets["NISA積立"] || 0);
-
-  const dreamTarget = Number(budgets["夢積立"] || 0);
-
-  const affordableVariableBudget =
-    Number(projectedIncome || 0) -
-    fixedExpenseForecast -
-    savingTarget -
-    investmentTarget -
-    dreamTarget;
-
+  // 基本は設定した変動費予算。
+  // ただし収入的に払えない場合は、
+  // 実際に払える額を上限にする。
   const usableVariableBudget = Math.min(
     variableBudget,
     affordableVariableBudget,
   );
 
+  // 「今月あと使える」は純粋に
+  // 生活費予算の残額として扱う。
   return usableVariableBudget - Number(expenses.variableExpense || 0);
 }
 
@@ -879,7 +878,99 @@ function calculateDailyBudget_(yearMonth, availableMoney) {
     return 0;
   }
 
-  return Math.floor(availableMoney / remainingDays);
+  return Math.floor(Number(availableMoney || 0) / remainingDays);
+}
+
+function calculateMoneyHealth_(availableMoney, moneyAllocation) {
+  let level = "🟢";
+  let title = "順調です";
+
+  const comments = [];
+
+  const monthlySurplus = Number(moneyAllocation.monthlySurplus || 0);
+
+  const goalShortage = Number(moneyAllocation.goalShortage || 0);
+
+  const emergencyFund = moneyAllocation.emergencyFund || {};
+
+  const emergencyStage = String(emergencyFund.stage || "");
+
+  // ============================================================
+  // 生活費
+  // ============================================================
+
+  if (availableMoney < 0) {
+    level = "🔴";
+    title = "予算オーバー";
+
+    comments.push(
+      `生活費予算を${Math.abs(
+        availableMoney,
+      ).toLocaleString()}円超えています。`,
+    );
+  } else if (availableMoney < 10000) {
+    if (level !== "🔴") {
+      level = "🟡";
+      title = "少し注意";
+    }
+
+    comments.push("今月の生活費予算の残りが1万円未満です。");
+  } else {
+    comments.push("今月の生活費は予算内で推移しています。");
+  }
+
+  // ============================================================
+  // Goal
+  // ============================================================
+
+  if (goalShortage > 0) {
+    level = "🔴";
+    title = "資金計画を確認";
+
+    comments.push(
+      `目的資金の必要ペースに対して${goalShortage.toLocaleString()}円不足しています。`,
+    );
+  }
+
+  // ============================================================
+  // 生活防衛資金
+  // ============================================================
+
+  if (emergencyStage === "critical") {
+    level = "🔴";
+    title = "現金確保を優先";
+
+    comments.push("生活防衛資金が少ないため、現金確保を優先します。");
+  } else if (emergencyStage === "cash_heavy") {
+    if (level === "🟢") {
+      level = "🟡";
+      title = "現金を厚めに";
+    }
+
+    comments.push("生活防衛資金を増やしている段階です。");
+  } else if (emergencyStage === "balanced") {
+    comments.push("生活防衛資金は順調に積み上がっています。");
+  } else if (emergencyStage === "secured") {
+    comments.push("生活防衛資金の目標額を確保できています。");
+  }
+
+  // ============================================================
+  // 余剰資金
+  // ============================================================
+
+  if (monthlySurplus > 0) {
+    comments.push(
+      `今月は${monthlySurplus.toLocaleString()}円を資産形成に回せる見込みです。`,
+    );
+  } else if (monthlySurplus === 0) {
+    comments.push("今月は生活費までで収支がほぼ埋まる見込みです。");
+  }
+
+  return {
+    level,
+    title,
+    message: comments.join("\n"),
+  };
 }
 
 function calculateSavingForecast_(yearMonth, budgets, expenses) {
@@ -916,45 +1007,6 @@ function calculateSavingForecast_(yearMonth, budgets, expenses) {
   }
 
   return salary - fixedCostBudget - projectedVariableExpense - investmentTarget;
-}
-
-function calculateMoneyHealth_(available, savingForecast, expense) {
-  let level = "🟢";
-  let title = "順調です";
-
-  const comments = [];
-
-  if (available < 0) {
-    level = "🔴";
-    title = "予算オーバー";
-
-    comments.push("今月の自由に使えるお金を超えています。");
-  } else if (available < 10000) {
-    level = "🟡";
-    title = "少し注意";
-
-    comments.push("残りの自由枠が1万円未満です。");
-  } else {
-    comments.push("今月は予算内で推移しています。");
-  }
-
-  if (savingForecast < 0) {
-    comments.push("このままでは今月は赤字予測です。");
-  } else {
-    comments.push(
-      `今月は約${savingForecast.toLocaleString()}円貯金できる見込みです。`,
-    );
-  }
-
-  if (expense.variableExpense > expense.fixedExpense) {
-    comments.push("変動費が固定費を上回っています。");
-  }
-
-  return {
-    level,
-    title,
-    message: comments.join("\n"),
-  };
 }
 
 const HOME_BUDGET_CACHE_PREFIX = "home_budget_v1_";
@@ -1250,28 +1302,42 @@ function calculateEmergencyFundStatus_() {
 
   const protectedCashData = calculateProtectedCash_();
 
-  const liquidCash = protectedCashData.protectedCash;
+  const liquidCash = Number(protectedCashData.protectedCash || 0);
 
+  // 最低生活費をまだ計算できない場合
   if (monthlyEssentialCost <= 0) {
     return {
-      monthlyEssentialCost,
+      monthlyEssentialCost: 0,
+
       targetMonths,
-      targetAmount,
+
+      targetAmount: 0,
 
       liquidCash,
 
-      rawLiquidCash: protectedCashData.liquidCash,
+      rawLiquidCash: Number(protectedCashData.liquidCash || 0),
 
-      reservedGoalCash: protectedCashData.reservedGoalCash,
+      reservedGoalCash: Number(protectedCashData.reservedGoalCash || 0),
 
-      upcomingCardPayments: protectedCashData.upcomingCardPayments,
+      upcomingCardPayments: Number(protectedCashData.upcomingCardPayments || 0),
 
-      coveredMonths: Math.round(coveredMonths * 10) / 10,
+      cashNeededUntilPayday: Number(
+        protectedCashData.cashNeededUntilPayday || 0,
+      ),
 
-      stage,
-      cashRatio,
-      nisaRatio,
-      shortage,
+      nextPayday: protectedCashData.nextPayday || "",
+
+      daysUntilPayday: Number(protectedCashData.daysUntilPayday || 0),
+
+      coveredMonths: 0,
+
+      stage: "unknown",
+
+      cashRatio: 1.0,
+
+      nisaRatio: 0.0,
+
+      shortage: 0,
 
       monthsUsed: baseline.monthsUsed || 0,
     };
@@ -1324,6 +1390,18 @@ function calculateEmergencyFundStatus_() {
 
     liquidCash,
 
+    rawLiquidCash: Number(protectedCashData.liquidCash || 0),
+
+    reservedGoalCash: Number(protectedCashData.reservedGoalCash || 0),
+
+    upcomingCardPayments: Number(protectedCashData.upcomingCardPayments || 0),
+
+    cashNeededUntilPayday: Number(protectedCashData.cashNeededUntilPayday || 0),
+
+    nextPayday: protectedCashData.nextPayday || "",
+
+    daysUntilPayday: Number(protectedCashData.daysUntilPayday || 0),
+
     coveredMonths: Math.round(coveredMonths * 10) / 10,
 
     stage,
@@ -1335,16 +1413,6 @@ function calculateEmergencyFundStatus_() {
     shortage,
 
     monthsUsed: baseline.monthsUsed || 0,
-
-    reservedGoalCash: protectedCashData.reservedGoalCash,
-
-    upcomingCardPayments: protectedCashData.upcomingCardPayments,
-
-    cashNeededUntilPayday: protectedCashData.cashNeededUntilPayday,
-
-    nextPayday: protectedCashData.nextPayday,
-
-    daysUntilPayday: protectedCashData.daysUntilPayday,
   };
 }
 

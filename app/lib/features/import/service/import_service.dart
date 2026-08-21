@@ -127,6 +127,7 @@ class CsvImportResult {
     required this.importBatch,
     required this.addedCount,
     required this.skippedCount,
+    required this.ignoredCount,
     this.settlementResult,
     this.debugTiming,
   });
@@ -135,6 +136,7 @@ class CsvImportResult {
   final String importBatch;
   final int addedCount;
   final int skippedCount;
+  final int ignoredCount;
 
   final SettlementResult? settlementResult;
   final CsvImportTiming? debugTiming;
@@ -181,6 +183,7 @@ class ImportService {
       importBatch: data['importBatch']?.toString() ?? '',
       addedCount: _toInt(data['addedCount']),
       skippedCount: _toInt(data['skippedCount']),
+      ignoredCount: _toInt(data['ignoredCount']),
       settlementResult: settlementResult,
       debugTiming: debugTiming,
     );

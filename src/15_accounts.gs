@@ -1,0 +1,973 @@
+// ============================================================
+// Neru Nexus - Accounts
+//
+// M_Accounts の取得・CRUD・残高計算・請求月計算を担当。
+// ============================================================
+
+function createAccountFromApp_(data) {
+  const accountName = String(data.accountName || "").trim();
+  const paymentMethod = String(data.paymentMethod || "").trim();
+  const wallet = String(data.wallet || "").trim();
+  const institution = String(data.institution || "").trim();
+
+  const isAsset = data.isAsset === true;
+  const isLiability = data.isLiability === true;
+
+  const openingBalanceValue = data.openingBalance;
+  const openingBalanceDate = String(data.openingBalanceDate || "").trim();
+
+  if (!accountName) {
+    throw new Error("accountNameは必須です");
+  }
+
+  if (!paymentMethod) {
+    throw new Error("paymentMethodは必須です");
+  }
+
+  if (!wallet) {
+    throw new Error("walletは必須です");
+  }
+
+  if (isAsset && isLiability) {
+    throw new Error("資産口座と負債口座を同時に指定できません");
+  }
+
+  const openingBalance =
+    openingBalanceValue === null ||
+    openingBalanceValue === undefined ||
+    openingBalanceValue === ""
+      ? 0
+      : Number(openingBalanceValue);
+
+  if (!Number.isFinite(openingBalance)) {
+    throw new Error("openingBalanceが不正です");
+  }
+
+  const sheet = getRequiredSheet(SHEETS.ACCOUNTS);
+
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length === 0) {
+    throw new Error("accountsシートにヘッダーがありません");
+  }
+
+  const headers = values[0].map((value) => String(value || "").trim());
+
+  const index = createHeaderIndex(headers);
+
+  assertRequiredColumns(
+    index,
+    [
+      "account_id",
+      "account_name",
+      "payment_method",
+      "wallet",
+      "institution",
+      "is_asset",
+      "is_liability",
+      "active",
+      "note",
+      "sort_order",
+      "opening_balance",
+      "opening_balance_date",
+    ],
+    SHEETS.ACCOUNTS,
+  );
+
+  const existingRows = values.slice(1);
+
+  const sameNameRowIndex = existingRows.findIndex(
+    (row) => String(row[index["account_name"]] || "").trim() === accountName,
+  );
+
+  if (sameNameRowIndex !== -1) {
+    const existingRow = existingRows[sameNameRowIndex];
+
+    const activeValue = existingRow[index["active"]];
+
+    const isActive =
+      activeValue === true ||
+      Number(activeValue) === 1 ||
+      String(activeValue).trim().toLowerCase() === "true";
+
+    // 現在も有効な口座なら普通の重複
+    if (isActive) {
+      throw new Error("同じ名前の口座がすでに存在します");
+    }
+
+    /*
+     * 無効化済みなら新規作成せず、
+     * 既存のaccount_idを使って復活させる
+     */
+    const sheetRowNumber = sameNameRowIndex + 2;
+
+    const existingAccountId = String(
+      existingRow[index["account_id"]] || "",
+    ).trim();
+
+    sheet
+      .getRange(sheetRowNumber, index["payment_method"] + 1)
+      .setValue(paymentMethod);
+
+    sheet.getRange(sheetRowNumber, index["wallet"] + 1).setValue(wallet);
+
+    sheet
+      .getRange(sheetRowNumber, index["institution"] + 1)
+      .setValue(institution);
+
+    sheet
+      .getRange(sheetRowNumber, index["is_asset"] + 1)
+      .setValue(isAsset ? 1 : 0);
+
+    sheet
+      .getRange(sheetRowNumber, index["is_liability"] + 1)
+      .setValue(isLiability ? 1 : 0);
+
+    sheet.getRange(sheetRowNumber, index["active"] + 1).setValue(1);
+
+    sheet
+      .getRange(sheetRowNumber, index["opening_balance"] + 1)
+      .setValue(openingBalance);
+
+    sheet
+      .getRange(sheetRowNumber, index["opening_balance_date"] + 1)
+      .setValue(openingBalanceDate);
+
+    clearTableCache(SHEETS.ACCOUNTS);
+    clearAccountBalanceCache_();
+
+    return createJsonResponse_(
+      {
+        accountId: existingAccountId,
+        accountName,
+        paymentMethod,
+        wallet,
+        institution,
+        isAsset,
+        isLiability,
+        openingBalance,
+        openingBalanceDate,
+        reactivated: true,
+      },
+      "ok",
+    );
+  }
+
+  const accountId = "acc_" + Utilities.getUuid().replace(/-/g, "").slice(0, 16);
+
+  const maxSortOrder = existingRows.reduce((maximum, row) => {
+    const value = Number(row[index["sort_order"]] || 0);
+
+    return value > maximum ? value : maximum;
+  }, 0);
+
+  const row = new Array(headers.length).fill("");
+
+  row[index["account_id"]] = accountId;
+
+  row[index["account_name"]] = accountName;
+
+  row[index["payment_method"]] = paymentMethod;
+
+  row[index["wallet"]] = wallet;
+
+  row[index["institution"]] = institution;
+
+  row[index["is_asset"]] = isAsset ? 1 : 0;
+
+  row[index["is_liability"]] = isLiability ? 1 : 0;
+
+  row[index["active"]] = 1;
+
+  row[index["note"]] = "アプリ追加";
+
+  row[index["sort_order"]] = maxSortOrder + 1;
+
+  row[index["opening_balance"]] = openingBalance;
+
+  row[index["opening_balance_date"]] = openingBalanceDate;
+
+  sheet.appendRow(row);
+
+  clearTableCache(SHEETS.ACCOUNTS);
+
+  clearAccountBalanceCache_();
+
+  return createJsonResponse_(
+    {
+      accountId,
+      accountName,
+      paymentMethod,
+      wallet,
+      institution,
+      isAsset,
+      isLiability,
+      openingBalance,
+      openingBalanceDate,
+    },
+    "ok",
+  );
+}
+
+function updateAccountFromApp_(data) {
+  const accountId = String(data.accountId || "").trim();
+
+  const accountName = String(data.accountName || "").trim();
+
+  const paymentMethod = String(data.paymentMethod || "").trim();
+
+  const wallet = String(data.wallet || "").trim();
+
+  const institution = String(data.institution || "").trim();
+
+  const isAsset = data.isAsset === true;
+
+  const isLiability = data.isLiability === true;
+
+  const openingBalance = Number(data.openingBalance || 0);
+
+  const openingBalanceDate = String(data.openingBalanceDate || "").trim();
+
+  if (!accountId) {
+    throw new Error("accountIdは必須です");
+  }
+
+  if (!accountName) {
+    throw new Error("accountNameは必須です");
+  }
+
+  if (!paymentMethod) {
+    throw new Error("paymentMethodは必須です");
+  }
+
+  if (!wallet) {
+    throw new Error("walletは必須です");
+  }
+
+  if (isAsset && isLiability) {
+    throw new Error("資産口座と負債口座を同時に指定できません");
+  }
+
+  if (!Number.isFinite(openingBalance)) {
+    throw new Error("openingBalanceが不正です");
+  }
+
+  const sheet = getRequiredSheet(SHEETS.ACCOUNTS);
+
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) {
+    throw new Error("口座データがありません");
+  }
+
+  const index = createHeaderIndex(values[0]);
+
+  assertRequiredColumns(
+    index,
+    [
+      "account_id",
+      "account_name",
+      "payment_method",
+      "wallet",
+      "institution",
+      "is_asset",
+      "is_liability",
+      "opening_balance",
+      "opening_balance_date",
+    ],
+    SHEETS.ACCOUNTS,
+  );
+
+  let targetRow = -1;
+  let oldAccountName = "";
+
+  for (let i = 1; i < values.length; i++) {
+    const rowAccountId = String(values[i][index["account_id"]] || "").trim();
+
+    if (rowAccountId === accountId) {
+      targetRow = i + 1;
+
+      oldAccountName = String(values[i][index["account_name"]] || "").trim();
+
+      break;
+    }
+  }
+
+  if (targetRow === -1) {
+    throw new Error("対象の口座が見つかりません");
+  }
+
+  const duplicate = values.slice(1).some((row) => {
+    const rowId = String(row[index["account_id"]] || "").trim();
+
+    const rowName = String(row[index["account_name"]] || "").trim();
+
+    return rowId !== accountId && rowName === accountName;
+  });
+
+  if (duplicate) {
+    throw new Error("同じ名前の口座がすでに存在します");
+  }
+
+  sheet.getRange(targetRow, index["account_name"] + 1).setValue(accountName);
+
+  sheet
+    .getRange(targetRow, index["payment_method"] + 1)
+    .setValue(paymentMethod);
+
+  sheet.getRange(targetRow, index["wallet"] + 1).setValue(wallet);
+
+  sheet.getRange(targetRow, index["institution"] + 1).setValue(institution);
+
+  sheet.getRange(targetRow, index["is_asset"] + 1).setValue(isAsset ? 1 : 0);
+
+  sheet
+    .getRange(targetRow, index["is_liability"] + 1)
+    .setValue(isLiability ? 1 : 0);
+
+  sheet
+    .getRange(targetRow, index["opening_balance"] + 1)
+    .setValue(openingBalance);
+
+  sheet
+    .getRange(targetRow, index["opening_balance_date"] + 1)
+    .setValue(openingBalanceDate);
+
+  if (oldAccountName && oldAccountName !== accountName) {
+    renameAccountInTransactions_(oldAccountName, accountName);
+  }
+
+  clearTableCache(SHEETS.ACCOUNTS);
+  clearTableCache(SHEETS.TRANSACTIONS);
+  clearAccountBalanceCache_();
+  clearHomeRecentTransactionsCache_();
+
+  return createJsonResponse_(
+    {
+      updated: true,
+      accountId,
+      oldAccountName,
+      accountName,
+    },
+    "ok",
+  );
+}
+
+function renameAccountInTransactions_(oldName, newName) {
+  if (!oldName || !newName || oldName === newName) {
+    return;
+  }
+
+  const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
+
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) {
+    return;
+  }
+
+  const index = createHeaderIndex(values[0]);
+
+  assertRequiredColumns(
+    index,
+    ["account_name", "from_account", "to_account"],
+    SHEETS.TRANSACTIONS,
+  );
+
+  let changed = false;
+
+  for (let i = 1; i < values.length; i++) {
+    for (const column of ["account_name", "from_account", "to_account"]) {
+      const current = String(values[i][index[column]] || "").trim();
+
+      if (current === oldName) {
+        values[i][index[column]] = newName;
+
+        changed = true;
+      }
+    }
+  }
+
+  if (!changed) {
+    return;
+  }
+
+  sheet
+    .getRange(2, 1, values.length - 1, values[0].length)
+    .setValues(values.slice(1));
+}
+
+function deactivateAccountFromApp_(data) {
+  const accountId = String(data.accountId || "").trim();
+
+  if (!accountId) {
+    throw new Error("accountIdは必須です");
+  }
+
+  const sheet = getRequiredSheet(SHEETS.ACCOUNTS);
+
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) {
+    throw new Error("口座データがありません");
+  }
+
+  const index = createHeaderIndex(values[0]);
+
+  assertRequiredColumns(index, ["account_id", "active"], SHEETS.ACCOUNTS);
+
+  let targetRow = -1;
+
+  for (let i = 1; i < values.length; i++) {
+    const rowAccountId = String(values[i][index["account_id"]] || "").trim();
+
+    if (rowAccountId === accountId) {
+      targetRow = i + 1;
+      break;
+    }
+  }
+
+  if (targetRow === -1) {
+    throw new Error("対象の口座が見つかりません");
+  }
+
+  sheet.getRange(targetRow, index["active"] + 1).setValue(0);
+
+  clearTableCache(SHEETS.ACCOUNTS);
+
+  clearAccountBalanceCache_();
+
+  return createJsonResponse_(
+    {
+      deactivated: true,
+      accountId,
+    },
+    "ok",
+  );
+}
+
+function getAccountsData_() {
+  const sheet = SS.getSheetByName(SHEETS.ACCOUNTS);
+
+  if (!sheet) {
+    throw new Error("accountsシートがありません");
+  }
+
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length <= 1) {
+    return {
+      items: [],
+    };
+  }
+
+  const headers = values[0].map((value) => String(value || "").trim());
+
+  const index = {};
+
+  headers.forEach((header, i) => {
+    index[header] = i;
+  });
+
+  const requiredColumns = [
+    "account_id",
+    "account_name",
+    "payment_method",
+    "wallet",
+    "active",
+  ];
+
+  for (const column of requiredColumns) {
+    if (index[column] === undefined) {
+      throw new Error(`accountsシートに${column}列がありません`);
+    }
+  }
+
+  const items = [];
+
+  for (const row of values.slice(1)) {
+    const activeValue = row[index["active"]];
+
+    const active =
+      activeValue === true ||
+      Number(activeValue) === 1 ||
+      String(activeValue).trim().toLowerCase() === "true";
+
+    if (!active) {
+      continue;
+    }
+
+    const accountId = String(row[index["account_id"]] || "").trim();
+
+    const accountName = String(row[index["account_name"]] || "").trim();
+
+    const paymentMethod = String(row[index["payment_method"]] || "").trim();
+
+    const wallet = String(row[index["wallet"]] || "").trim();
+
+    if (!accountId || !accountName || !paymentMethod) {
+      continue;
+    }
+
+    items.push({
+      accountId,
+      accountName,
+      paymentMethod,
+      wallet,
+      institution:
+        index["institution"] === undefined
+          ? ""
+          : String(row[index["institution"]] || "").trim(),
+
+      assetType:
+        index["asset_type"] === undefined
+          ? ""
+          : String(row[index["asset_type"]] || "").trim(),
+
+      isAsset:
+        index["is_asset"] === undefined
+          ? false
+          : Number(row[index["is_asset"]] || 0) === 1,
+
+      isLiability:
+        index["is_liability"] === undefined
+          ? false
+          : Number(row[index["is_liability"]] || 0) === 1,
+      active,
+
+      note:
+        index["note"] === undefined
+          ? ""
+          : String(row[index["note"]] || "").trim(),
+
+      openingBalance:
+        index["opening_balance"] === undefined
+          ? 0
+          : Number(row[index["opening_balance"]] || 0),
+
+      openingBalanceDate:
+        index["opening_balance_date"] === undefined
+          ? ""
+          : formatApiDate_(row[index["opening_balance_date"]]),
+
+      sortOrder:
+        index["sort_order"] === undefined
+          ? 999
+          : Number(row[index["sort_order"]] || 999),
+    });
+  }
+  items.sort((a, b) => {
+    return a.sortOrder - b.sortOrder;
+  });
+  return {
+    items,
+  };
+}
+
+function getAccountBalancesData_() {
+  const accountsResult = getAccountsData_();
+
+  const transactionTable = loadTransactions();
+
+  const accounts = accountsResult.items || [];
+
+  if (accounts.length === 0) {
+    return {
+      items: [],
+      totalAssets: 0,
+      totalLiabilities: 0,
+      netAssets: 0,
+    };
+  }
+
+  if (transactionTable.rows.length === 0) {
+    const items = accounts.map((account) => {
+      const currentBalance = Number(account.openingBalance || 0);
+
+      return {
+        ...account,
+        currentBalance,
+      };
+    });
+
+    return buildAccountBalanceResult_(items);
+  }
+
+  assertRequiredColumns(
+    transactionTable.index,
+    [
+      "transaction_date",
+      "type",
+      "amount",
+      "account_name",
+      "from_account",
+      "to_account",
+    ],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const items = accounts.map((account) => {
+    let currentBalance = Number(account.openingBalance || 0);
+
+    const openingDate = String(account.openingBalanceDate || "").trim();
+
+    const accountName = resolveCanonicalAccountName_(account.accountName);
+    const isAsset = account.isAsset === true;
+
+    const isLiability = account.isLiability === true;
+
+    for (const row of transactionTable.rows) {
+      const transactionDate = formatApiDate_(
+        row[transactionTable.index["transaction_date"]],
+      );
+
+      // 基準日より前の取引は使わない
+      if (openingDate && transactionDate && transactionDate <= openingDate) {
+        continue;
+      }
+
+      const type = getString(row, transactionTable.index, "type");
+
+      const amount = getNumber(row, transactionTable.index, "amount");
+
+      const rowAccount = resolveCanonicalAccountName_(
+        getString(row, transactionTable.index, "account_name"),
+      );
+
+      const fromAccount = resolveCanonicalAccountName_(
+        getString(row, transactionTable.index, "from_account"),
+      );
+
+      const toAccount = resolveCanonicalAccountName_(
+        getString(row, transactionTable.index, "to_account"),
+      );
+
+      if (type === "収入") {
+        if (rowAccount === accountName) {
+          if (isLiability) {
+            currentBalance -= amount;
+          } else {
+            currentBalance += amount;
+          }
+        }
+
+        continue;
+      }
+
+      if (type === "支出") {
+        if (rowAccount === accountName) {
+          if (isLiability) {
+            currentBalance += amount;
+          } else {
+            currentBalance -= amount;
+          }
+        }
+
+        continue;
+      }
+
+      if (type === "移動" || type === "振替") {
+        if (fromAccount === accountName) {
+          if (isLiability) {
+            currentBalance += amount;
+          } else {
+            currentBalance -= amount;
+          }
+        }
+
+        if (toAccount === accountName) {
+          if (isLiability) {
+            currentBalance -= amount;
+          } else {
+            currentBalance += amount;
+          }
+        }
+      }
+    }
+
+    return {
+      ...account,
+      currentBalance,
+    };
+  });
+
+  return buildAccountBalanceResult_(items);
+}
+
+function buildAccountBalanceResult_(items) {
+  let totalAssets = 0;
+  let totalLiabilities = 0;
+
+  for (const account of items) {
+    const balance = Number(account.currentBalance || 0);
+
+    if (account.isAsset) {
+      totalAssets += balance;
+    }
+
+    if (account.isLiability) {
+      totalLiabilities += balance;
+    }
+  }
+
+  return {
+    items,
+    totalAssets,
+    totalLiabilities,
+    netAssets: totalAssets - totalLiabilities,
+  };
+}
+
+function updateAccountOpeningBalanceFromApp_(data) {
+  const accountId = String(data.accountId || "").trim();
+
+  const openingBalanceValue = data.openingBalance;
+
+  const openingBalanceDate = String(data.openingBalanceDate || "").trim();
+
+  if (!accountId) {
+    throw new Error("accountIdは必須です");
+  }
+
+  if (
+    openingBalanceValue === null ||
+    openingBalanceValue === undefined ||
+    openingBalanceValue === ""
+  ) {
+    throw new Error("openingBalanceは必須です");
+  }
+
+  const openingBalance = Number(openingBalanceValue);
+
+  if (!Number.isFinite(openingBalance)) {
+    throw new Error("openingBalanceが不正です");
+  }
+
+  if (!openingBalanceDate) {
+    throw new Error("openingBalanceDateは必須です");
+  }
+
+  const sheet = getRequiredSheet(SHEETS.ACCOUNTS);
+
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) {
+    throw new Error("口座データがありません");
+  }
+
+  const index = createHeaderIndex(values[0]);
+
+  assertRequiredColumns(
+    index,
+    ["account_id", "opening_balance", "opening_balance_date"],
+    SHEETS.ACCOUNTS,
+  );
+
+  let targetRow = -1;
+
+  for (let i = 1; i < values.length; i++) {
+    const rowAccountId = String(values[i][index["account_id"]] || "").trim();
+
+    if (rowAccountId === accountId) {
+      targetRow = i + 1;
+      break;
+    }
+  }
+
+  if (targetRow === -1) {
+    throw new Error("対象の口座が見つかりません");
+  }
+
+  sheet
+    .getRange(targetRow, index["opening_balance"] + 1)
+    .setValue(openingBalance);
+
+  sheet
+    .getRange(targetRow, index["opening_balance_date"] + 1)
+    .setValue(openingBalanceDate);
+
+  clearTableCache(SHEETS.ACCOUNTS);
+
+  clearAccountBalanceCache_();
+
+  return createJsonResponse_(
+    {
+      updated: true,
+      accountId,
+      openingBalance,
+      openingBalanceDate,
+    },
+    "ok",
+  );
+}
+
+function getAccountBillingSettings_(rawAccountName) {
+  const accountName = resolveCanonicalAccountName_(rawAccountName);
+
+  if (!accountName) {
+    return null;
+  }
+
+  const rows = loadObjects(SHEETS.ACCOUNTS);
+
+  const row = rows.find((item) => {
+    return String(item.account_name || "").trim() === accountName;
+  });
+
+  if (!row) {
+    return null;
+  }
+
+  const closingDay = Number(row.closing_day || 0);
+
+  const paymentDay = Number(row.payment_day || 0);
+
+  const paymentMonthOffset = Number(row.payment_month_offset || 0);
+
+  if (
+    !Number.isInteger(closingDay) ||
+    closingDay <= 0 ||
+    !Number.isInteger(paymentDay) ||
+    paymentDay <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    accountName,
+    closingDay,
+    paymentDay,
+    paymentMonthOffset,
+  };
+}
+
+function calculateBillingYearMonth_(transactionDate, rawAccountName) {
+  const settings = getAccountBillingSettings_(rawAccountName);
+
+  if (!settings) {
+    return "";
+  }
+
+  const text = normalizeImportDate_(transactionDate);
+
+  if (!text) {
+    return "";
+  }
+
+  const [year, month, day] = text.split("-").map(Number);
+
+  let closingYear = year;
+  let closingMonth = month;
+
+  // 月末締め
+  if (settings.closingDay === 31) {
+    // その利用月の締めに入る
+  } else if (day > settings.closingDay) {
+    // 締め日を過ぎていたら次回締め
+    closingMonth++;
+
+    if (closingMonth > 12) {
+      closingMonth = 1;
+      closingYear++;
+    }
+  }
+
+  let billingMonth = closingMonth + settings.paymentMonthOffset;
+
+  let billingYear = closingYear;
+
+  while (billingMonth > 12) {
+    billingMonth -= 12;
+    billingYear++;
+  }
+
+  return `${billingYear}-` + String(billingMonth).padStart(2, "0");
+}
+
+function getImportBillingYearMonth_(rows, config) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return "";
+  }
+
+  // クレカCSV以外は請求月を持たない
+  if (String(config.source_type || "").trim() !== "CSV_クレカ") {
+    return "";
+  }
+
+  const accountName = String(config.account_name || "").trim();
+
+  if (!accountName) {
+    return "";
+  }
+
+  const billingMonths = new Set();
+
+  for (const row of rows) {
+    const keys = Object.keys(row);
+
+    const dateKey = keys[Number(config.date_col) - 1];
+
+    if (!dateKey) {
+      continue;
+    }
+
+    const transactionDate = row[dateKey];
+
+    const billingYearMonth = calculateBillingYearMonth_(
+      transactionDate,
+      accountName,
+    );
+
+    if (billingYearMonth) {
+      billingMonths.add(billingYearMonth);
+    }
+  }
+
+  // CSV全体が1つの請求月に収まる場合だけ確定
+  if (billingMonths.size === 1) {
+    return Array.from(billingMonths)[0];
+  }
+
+  // 複数請求月が含まれるCSVは
+  // 無理に代表月を設定しない
+  return "";
+}
+
+function getImportBillingYearMonths_(rows, config) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return [];
+  }
+
+  if (String(config.source_type || "").trim() !== "CSV_クレカ") {
+    return [];
+  }
+
+  const accountName = String(config.account_name || "").trim();
+
+  if (!accountName) {
+    return [];
+  }
+
+  const billingMonths = new Set();
+
+  for (const row of rows) {
+    const keys = Object.keys(row);
+
+    const dateKey = keys[Number(config.date_col) - 1];
+
+    if (!dateKey) {
+      continue;
+    }
+
+    const billingYearMonth = calculateBillingYearMonth_(
+      row[dateKey],
+      accountName,
+    );
+
+    if (billingYearMonth) {
+      billingMonths.add(billingYearMonth);
+    }
+  }
+
+  return Array.from(billingMonths).sort();
+}

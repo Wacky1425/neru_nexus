@@ -38,10 +38,16 @@ class TransactionFormResult {
 }
 
 class TransactionFormPageResult {
-  const TransactionFormPageResult({required this.form, this.transaction});
+  const TransactionFormPageResult({
+    required this.form,
+    required this.transaction,
+    this.savedRule = false,
+  });
 
   final TransactionFormResult form;
-  final TransactionModel? transaction;
+  final TransactionModel transaction;
+
+  final bool savedRule;
 }
 
 enum TransactionType { expense, income, transfer }
@@ -535,6 +541,8 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
           TransactionFormPageResult(
             form: result,
             transaction: updatedTransaction,
+
+            savedRule: widget.fromReview && _saveRule,
           ),
         );
       }

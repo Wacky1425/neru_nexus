@@ -1,9 +1,11 @@
 function getHomeData() {
-  const yearMonth = getLatestBudgetMonth();
+  const currentYearMonth = Utilities.formatDate(
+    new Date(),
+    "Asia/Tokyo",
+    "yyyy-MM",
+  );
 
-  if (!yearMonth) {
-    throw new Error("対象月がありません");
-  }
+  const yearMonth = currentYearMonth;
 
   ensureSummaryFresh_(yearMonth);
 
@@ -22,6 +24,8 @@ function getHomeData() {
   const plannedIncome =
     Number(budgets["給与予定"] || 0) + Number(budgets["副業予定"] || 0);
 
+  // 月途中でも予定収入を使えるようにする。
+  // 実収入が予定を上回った場合は実収入を採用。
   const projectedIncome = Math.max(totalIncome, plannedIncome);
 
   const expenses = {
@@ -30,9 +34,9 @@ function getHomeData() {
     totalExpense: fixedExpense + variableExpense,
   };
 
-  // ==========================================
-  // 今月使っていいお金
-  // ==========================================
+  // ============================================================
+  // 今月使える生活費
+  // ============================================================
 
   const availableMoney = calculateAvailableMoney_(
     budgets,
@@ -42,10 +46,17 @@ function getHomeData() {
 
   const dailyBudget = calculateDailyBudget_(yearMonth, availableMoney);
 
-  // ==========================================
+  // ============================================================
   // 今月の資金配分
-  // Goal / 防衛資金 / NISA
-  // ==========================================
+  //
+  // 期限付きGoal
+  //   ↓
+  // 生活防衛資金
+  //   ↓
+  // 基本NISA
+  //   ↓
+  // 追加NISA
+  // ============================================================
 
   const moneyAllocation = calculateMonthlyMoneyAllocation_(
     yearMonth,
@@ -54,32 +65,40 @@ function getHomeData() {
     projectedIncome,
   );
 
-  // ==========================================
+  // ============================================================
   // 現金・安全資金
-  // ==========================================
+  // ============================================================
 
-  const emergencyFund = moneyAllocation.emergencyFund;
+  const emergencyFund = moneyAllocation.emergencyFund || {};
 
+  // 全流動現金
   const liquidCash = Number(emergencyFund.rawLiquidCash || 0);
 
+  // Goal予約・カード支払・給料日までの生活費を
+  // 差し引いた後の、防衛資金として使える現金
   const protectedCash = Number(emergencyFund.liquidCash || 0);
 
-  // ==========================================
-  // 従来表示
-  // ==========================================
+  // ============================================================
+  // 資産
+  // ============================================================
 
-  const savingForecast = calculateSavingForecast_(
-    yearMonth,
-    budgets,
-    expenses,
-    projectedIncome,
-  );
+  const accountBalances = getAccountBalancesData();
 
-  const moneyHealth = calculateMoneyHealth_(
-    availableMoney,
-    savingForecast,
-    expenses,
-  );
+  const totalAssets = Number(accountBalances.totalAssets || 0);
+
+  const totalLiabilities = Number(accountBalances.totalLiabilities || 0);
+
+  const netAssets = Number(accountBalances.netAssets || 0);
+
+  // ============================================================
+  // Money Health
+  // ============================================================
+
+  const moneyHealth = calculateMoneyHealth_(availableMoney, moneyAllocation);
+
+  // ============================================================
+  // その他
+  // ============================================================
 
   const sideBusinessProfit = Number(monthly?.businessProfit || 0);
 
@@ -90,13 +109,16 @@ function getHomeData() {
   return {
     yearMonth,
 
-    // 今月使える
+    // ==========================================================
+    // 今月の生活費
+    // ==========================================================
+
     availableMoney,
     dailyBudget,
 
-    // ========================================
+    // ==========================================================
     // 今月のおすすめ資金配分
-    // ========================================
+    // ==========================================================
 
     monthlySurplus: moneyAllocation.monthlySurplus,
 
@@ -122,47 +144,53 @@ function getHomeData() {
 
     goalFundingDetails: moneyAllocation.goalDetails,
 
-    // ========================================
-    // 生活防衛資金
-    // ========================================
+    // ==========================================================
+    // 現金・生活防衛資金
+    // ==========================================================
 
     liquidCash,
-
     protectedCash,
 
     emergencyFund: {
-      monthlyEssentialCost: emergencyFund.monthlyEssentialCost,
+      monthlyEssentialCost: Number(emergencyFund.monthlyEssentialCost || 0),
 
-      targetMonths: emergencyFund.targetMonths,
+      targetMonths: Number(emergencyFund.targetMonths || 0),
 
-      targetAmount: emergencyFund.targetAmount,
+      targetAmount: Number(emergencyFund.targetAmount || 0),
 
-      coveredMonths: emergencyFund.coveredMonths,
+      coveredMonths: Number(emergencyFund.coveredMonths || 0),
 
-      shortage: emergencyFund.shortage,
+      shortage: Number(emergencyFund.shortage || 0),
 
-      stage: emergencyFund.stage,
+      stage: String(emergencyFund.stage || ""),
 
-      cashRatio: emergencyFund.cashRatio,
+      cashRatio: Number(emergencyFund.cashRatio || 0),
 
-      nisaRatio: emergencyFund.nisaRatio,
+      nisaRatio: Number(emergencyFund.nisaRatio || 0),
 
-      reservedGoalCash: emergencyFund.reservedGoalCash || 0,
+      reservedGoalCash: Number(emergencyFund.reservedGoalCash || 0),
 
-      upcomingCardPayments: emergencyFund.upcomingCardPayments || 0,
+      upcomingCardPayments: Number(emergencyFund.upcomingCardPayments || 0),
 
-      cashNeededUntilPayday: emergencyFund.cashNeededUntilPayday || 0,
+      cashNeededUntilPayday: Number(emergencyFund.cashNeededUntilPayday || 0),
 
-      nextPayday: emergencyFund.nextPayday || "",
+      nextPayday: String(emergencyFund.nextPayday || ""),
 
-      daysUntilPayday: emergencyFund.daysUntilPayday || 0,
+      daysUntilPayday: Number(emergencyFund.daysUntilPayday || 0),
     },
 
-    // ========================================
-    // 既存情報
-    // ========================================
+    // ==========================================================
+    // 資産
+    // ==========================================================
 
-    savingForecast,
+    totalAssets,
+    totalLiabilities,
+    netAssets,
+
+    // ==========================================================
+    // その他
+    // ==========================================================
+
     sideBusinessProfit,
     moneyHealth,
     featuredDream,
@@ -848,6 +876,10 @@ function updateTransactionFromApp_(data) {
       wallet,
       intent,
     });
+
+    if (ruleResult.rule) {
+      ruleResult.applied = applyRuleToPendingTransactions_(ruleResult.rule, id);
+    }
   }
 
   const newExpenseAmount = amount * expenseRatio;

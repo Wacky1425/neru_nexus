@@ -25,6 +25,7 @@ class _ImportPageState extends State<ImportPage> {
 
   int? _addedCount;
   int? _skippedCount;
+  int? _ignoredCount;
   String? _detectedCsvType;
   String? _importBatch;
   CsvImportTiming? _debugTiming;
@@ -154,6 +155,7 @@ class _ImportPageState extends State<ImportPage> {
 
         _addedCount = null;
         _skippedCount = null;
+        _ignoredCount = null;
         _detectedCsvType = null;
         _importBatch = null;
         _debugTiming = null;
@@ -214,6 +216,7 @@ class _ImportPageState extends State<ImportPage> {
       _errorMessage = null;
       _addedCount = null;
       _skippedCount = null;
+      _ignoredCount = null;
       _detectedCsvType = null;
       _importBatch = null;
       _debugTiming = null;
@@ -236,6 +239,7 @@ class _ImportPageState extends State<ImportPage> {
         _importBatch = result.importBatch;
         _addedCount = result.addedCount;
         _skippedCount = result.skippedCount;
+        _ignoredCount = result.ignoredCount;
         _debugTiming = result.debugTiming;
         // 取込成功後は選択中CSVを解除
         _selectedFileName = null;
@@ -250,7 +254,8 @@ class _ImportPageState extends State<ImportPage> {
         SnackBar(
           content: Text(
             '${result.addedCount}件追加・'
-            '${result.skippedCount}件重複スキップしました',
+            '${result.skippedCount}件重複・'
+            '${result.ignoredCount}件除外しました',
           ),
         ),
       );
@@ -551,6 +556,10 @@ class _ImportPageState extends State<ImportPage> {
                       const SizedBox(height: 12),
 
                       _ResultRow(label: '重複スキップ', value: '$_skippedCount件'),
+
+                      const SizedBox(height: 12),
+
+                      _ResultRow(label: '除外', value: '${_ignoredCount ?? 0}件'),
 
                       if (_importBatch != null && _importBatch!.isNotEmpty) ...[
                         const SizedBox(height: 20),
@@ -986,7 +995,8 @@ class _ImportHistoryTile extends StatelessWidget {
 
           Text(
             '追加 ${history.addedCount}件'
-            ' ・ 重複 ${history.skippedCount}件',
+            ' ・ 重複 ${history.skippedCount}件'
+            ' ・ 除外 ${history.ignoredCount}件',
           ),
         ],
       ),
