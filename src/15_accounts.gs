@@ -16,6 +16,16 @@ function createAccountFromApp_(data) {
   const openingBalanceValue = data.openingBalance;
   const openingBalanceDate = String(data.openingBalanceDate || "").trim();
 
+  // ============================================================
+  // クレカ請求設定
+  // ============================================================
+
+  const closingDay = Number(data.closingDay || 0);
+
+  const paymentDay = Number(data.paymentDay || 0);
+
+  const paymentMonthOffset = Number(data.paymentMonthOffset || 0);
+
   if (!accountName) {
     throw new Error("accountNameは必須です");
   }
@@ -41,6 +51,36 @@ function createAccountFromApp_(data) {
 
   if (!Number.isFinite(openingBalance)) {
     throw new Error("openingBalanceが不正です");
+  }
+
+  // ============================================================
+  // 請求設定チェック
+  //
+  // 0 は「未設定」
+  // ============================================================
+
+  if (!Number.isInteger(closingDay) || closingDay < 0 || closingDay > 31) {
+    throw new Error("closingDayは0〜31で指定してください");
+  }
+
+  if (!Number.isInteger(paymentDay) || paymentDay < 0 || paymentDay > 31) {
+    throw new Error("paymentDayは0〜31で指定してください");
+  }
+
+  if (
+    !Number.isInteger(paymentMonthOffset) ||
+    paymentMonthOffset < 0 ||
+    paymentMonthOffset > 12
+  ) {
+    throw new Error("paymentMonthOffsetが不正です");
+  }
+
+  // 片方だけ設定されている状態は禁止
+  if (
+    (closingDay > 0 && paymentDay === 0) ||
+    (closingDay === 0 && paymentDay > 0)
+  ) {
+    throw new Error("締め日と支払日は両方設定してください");
   }
 
   const sheet = getRequiredSheet(SHEETS.ACCOUNTS);
@@ -70,6 +110,11 @@ function createAccountFromApp_(data) {
       "sort_order",
       "opening_balance",
       "opening_balance_date",
+
+      // クレカ請求設定
+      "closing_day",
+      "payment_day",
+      "payment_month_offset",
     ],
     SHEETS.ACCOUNTS,
   );
@@ -79,6 +124,10 @@ function createAccountFromApp_(data) {
   const sameNameRowIndex = existingRows.findIndex(
     (row) => String(row[index["account_name"]] || "").trim() === accountName,
   );
+
+  // ============================================================
+  // 無効化済み口座の復活
+  // ============================================================
 
   if (sameNameRowIndex !== -1) {
     const existingRow = existingRows[sameNameRowIndex];
@@ -90,15 +139,10 @@ function createAccountFromApp_(data) {
       Number(activeValue) === 1 ||
       String(activeValue).trim().toLowerCase() === "true";
 
-    // 現在も有効な口座なら普通の重複
     if (isActive) {
       throw new Error("同じ名前の口座がすでに存在します");
     }
 
-    /*
-     * 無効化済みなら新規作成せず、
-     * 既存のaccount_idを使って復活させる
-     */
     const sheetRowNumber = sameNameRowIndex + 2;
 
     const existingAccountId = String(
@@ -133,25 +177,50 @@ function createAccountFromApp_(data) {
       .getRange(sheetRowNumber, index["opening_balance_date"] + 1)
       .setValue(openingBalanceDate);
 
+    // クレカ請求設定
+    sheet
+      .getRange(sheetRowNumber, index["closing_day"] + 1)
+      .setValue(closingDay);
+
+    sheet
+      .getRange(sheetRowNumber, index["payment_day"] + 1)
+      .setValue(paymentDay);
+
+    sheet
+      .getRange(sheetRowNumber, index["payment_month_offset"] + 1)
+      .setValue(paymentMonthOffset);
+
     clearTableCache(SHEETS.ACCOUNTS);
+
     clearAccountBalanceCache_();
 
     return createJsonResponse_(
       {
         accountId: existingAccountId,
+
         accountName,
         paymentMethod,
         wallet,
         institution,
         isAsset,
         isLiability,
+
         openingBalance,
         openingBalanceDate,
+
+        closingDay,
+        paymentDay,
+        paymentMonthOffset,
+
         reactivated: true,
       },
       "ok",
     );
   }
+
+  // ============================================================
+  // 新規作成
+  // ============================================================
 
   const accountId = "acc_" + Utilities.getUuid().replace(/-/g, "").slice(0, 16);
 
@@ -187,6 +256,13 @@ function createAccountFromApp_(data) {
 
   row[index["opening_balance_date"]] = openingBalanceDate;
 
+  // クレカ請求設定
+  row[index["closing_day"]] = closingDay;
+
+  row[index["payment_day"]] = paymentDay;
+
+  row[index["payment_month_offset"]] = paymentMonthOffset;
+
   sheet.appendRow(row);
 
   clearTableCache(SHEETS.ACCOUNTS);
@@ -202,8 +278,13 @@ function createAccountFromApp_(data) {
       institution,
       isAsset,
       isLiability,
+
       openingBalance,
       openingBalanceDate,
+
+      closingDay,
+      paymentDay,
+      paymentMonthOffset,
     },
     "ok",
   );
@@ -227,6 +308,20 @@ function updateAccountFromApp_(data) {
   const openingBalance = Number(data.openingBalance || 0);
 
   const openingBalanceDate = String(data.openingBalanceDate || "").trim();
+
+  // ============================================================
+  // クレカ請求設定
+  // ============================================================
+
+  const closingDay = Number(data.closingDay || 0);
+
+  const paymentDay = Number(data.paymentDay || 0);
+
+  const paymentMonthOffset = Number(data.paymentMonthOffset || 0);
+
+  // ============================================================
+  // バリデーション
+  // ============================================================
 
   if (!accountId) {
     throw new Error("accountIdは必須です");
@@ -252,6 +347,33 @@ function updateAccountFromApp_(data) {
     throw new Error("openingBalanceが不正です");
   }
 
+  if (!Number.isInteger(closingDay) || closingDay < 0 || closingDay > 31) {
+    throw new Error("closingDayは0〜31で指定してください");
+  }
+
+  if (!Number.isInteger(paymentDay) || paymentDay < 0 || paymentDay > 31) {
+    throw new Error("paymentDayは0〜31で指定してください");
+  }
+
+  if (
+    !Number.isInteger(paymentMonthOffset) ||
+    paymentMonthOffset < 0 ||
+    paymentMonthOffset > 12
+  ) {
+    throw new Error("paymentMonthOffsetが不正です");
+  }
+
+  if (
+    (closingDay > 0 && paymentDay === 0) ||
+    (closingDay === 0 && paymentDay > 0)
+  ) {
+    throw new Error("締め日と支払日は両方設定してください");
+  }
+
+  // ============================================================
+  // Accounts取得
+  // ============================================================
+
   const sheet = getRequiredSheet(SHEETS.ACCOUNTS);
 
   const values = sheet.getDataRange().getValues();
@@ -274,28 +396,56 @@ function updateAccountFromApp_(data) {
       "is_liability",
       "opening_balance",
       "opening_balance_date",
+      "closing_day",
+      "payment_day",
+      "payment_month_offset",
     ],
     SHEETS.ACCOUNTS,
   );
 
+  // ============================================================
+  // 更新対象検索
+  // ============================================================
+
   let targetRow = -1;
+
   let oldAccountName = "";
+
+  let oldClosingDay = 0;
+
+  let oldPaymentDay = 0;
+
+  let oldPaymentMonthOffset = 0;
 
   for (let i = 1; i < values.length; i++) {
     const rowAccountId = String(values[i][index["account_id"]] || "").trim();
 
-    if (rowAccountId === accountId) {
-      targetRow = i + 1;
-
-      oldAccountName = String(values[i][index["account_name"]] || "").trim();
-
-      break;
+    if (rowAccountId !== accountId) {
+      continue;
     }
+
+    targetRow = i + 1;
+
+    oldAccountName = String(values[i][index["account_name"]] || "").trim();
+
+    oldClosingDay = Number(values[i][index["closing_day"]] || 0);
+
+    oldPaymentDay = Number(values[i][index["payment_day"]] || 0);
+
+    oldPaymentMonthOffset = Number(
+      values[i][index["payment_month_offset"]] || 0,
+    );
+
+    break;
   }
 
   if (targetRow === -1) {
     throw new Error("対象の口座が見つかりません");
   }
+
+  // ============================================================
+  // 名前重複チェック
+  // ============================================================
 
   const duplicate = values.slice(1).some((row) => {
     const rowId = String(row[index["account_id"]] || "").trim();
@@ -308,6 +458,19 @@ function updateAccountFromApp_(data) {
   if (duplicate) {
     throw new Error("同じ名前の口座がすでに存在します");
   }
+
+  // ============================================================
+  // 請求設定変更判定
+  // ============================================================
+
+  const billingSettingsChanged =
+    oldClosingDay !== closingDay ||
+    oldPaymentDay !== paymentDay ||
+    oldPaymentMonthOffset !== paymentMonthOffset;
+
+  // ============================================================
+  // Accounts更新
+  // ============================================================
 
   sheet.getRange(targetRow, index["account_name"] + 1).setValue(accountName);
 
@@ -333,21 +496,90 @@ function updateAccountFromApp_(data) {
     .getRange(targetRow, index["opening_balance_date"] + 1)
     .setValue(openingBalanceDate);
 
+  // ============================================================
+  // クレカ請求設定更新
+  // ============================================================
+
+  sheet.getRange(targetRow, index["closing_day"] + 1).setValue(closingDay);
+
+  sheet.getRange(targetRow, index["payment_day"] + 1).setValue(paymentDay);
+
+  sheet
+    .getRange(targetRow, index["payment_month_offset"] + 1)
+    .setValue(paymentMonthOffset);
+
+  // ============================================================
+  // 口座名変更
+  // ============================================================
+
   if (oldAccountName && oldAccountName !== accountName) {
     renameAccountInTransactions_(oldAccountName, accountName);
   }
 
+  // ============================================================
+  // キャッシュ削除
+  //
+  // 再照合より先に行う。
+  // getAccountBillingSettings_() が
+  // 古い締め日設定を参照するのを防ぐ。
+  // ============================================================
+
   clearTableCache(SHEETS.ACCOUNTS);
+
   clearTableCache(SHEETS.TRANSACTIONS);
+
   clearAccountBalanceCache_();
+
   clearHomeRecentTransactionsCache_();
+
+  // ============================================================
+  // 請求設定変更時の再照合
+  // ============================================================
+
+  let reconciliationResult = null;
+
+  /*
+   * 条件：
+   *
+   * ・負債口座
+   * ・締め日 / 支払日 / 支払月のどれかが変更
+   * ・請求設定が有効
+   *
+   * matched / manual_matched は
+   * reconcilePendingCardSettlements_() 側で除外される。
+   */
+  if (
+    isLiability &&
+    billingSettingsChanged &&
+    closingDay > 0 &&
+    paymentDay > 0
+  ) {
+    reconciliationResult = reconcilePendingCardSettlements_(accountName);
+  }
+
+  // ============================================================
+  // Response
+  // ============================================================
 
   return createJsonResponse_(
     {
       updated: true,
+
       accountId,
+
       oldAccountName,
+
       accountName,
+
+      closingDay,
+
+      paymentDay,
+
+      paymentMonthOffset,
+
+      billingSettingsChanged,
+
+      reconciliation: reconciliationResult,
     },
     "ok",
   );
@@ -514,6 +746,7 @@ function getAccountsData_() {
       accountName,
       paymentMethod,
       wallet,
+
       institution:
         index["institution"] === undefined
           ? ""
@@ -533,6 +766,7 @@ function getAccountsData_() {
         index["is_liability"] === undefined
           ? false
           : Number(row[index["is_liability"]] || 0) === 1,
+
       active,
 
       note:
@@ -554,11 +788,30 @@ function getAccountsData_() {
         index["sort_order"] === undefined
           ? 999
           : Number(row[index["sort_order"]] || 999),
+
+      // ========================================================
+      // クレカ請求設定
+      // ========================================================
+
+      closingDay:
+        index["closing_day"] === undefined
+          ? 0
+          : Number(row[index["closing_day"]] || 0),
+
+      paymentDay:
+        index["payment_day"] === undefined
+          ? 0
+          : Number(row[index["payment_day"]] || 0),
+
+      paymentMonthOffset:
+        index["payment_month_offset"] === undefined
+          ? 0
+          : Number(row[index["payment_month_offset"]] || 0),
     });
   }
-  items.sort((a, b) => {
-    return a.sortOrder - b.sortOrder;
-  });
+
+  items.sort((a, b) => a.sortOrder - b.sortOrder);
+
   return {
     items,
   };
@@ -580,6 +833,10 @@ function getAccountBalancesData_() {
     };
   }
 
+  // ============================================================
+  // Transactionsがない場合
+  // ============================================================
+
   if (transactionTable.rows.length === 0) {
     const items = accounts.map((account) => {
       const currentBalance = Number(account.openingBalance || 0);
@@ -587,11 +844,22 @@ function getAccountBalancesData_() {
       return {
         ...account,
         currentBalance,
+
+        // クレジットカード請求情報
+        nextBillingYearMonth: "",
+        nextBillingAmount: 0,
+        laterBillingAmount: account.isLiability
+          ? Math.max(0, currentBalance)
+          : 0,
       };
     });
 
     return buildAccountBalanceResult_(items);
   }
+
+  // ============================================================
+  // 必須列
+  // ============================================================
 
   assertRequiredColumns(
     transactionTable.index,
@@ -602,9 +870,201 @@ function getAccountBalancesData_() {
       "account_name",
       "from_account",
       "to_account",
+
+      // カード請求予定計算で使用
+      "source_type",
+      "merchant",
+      "item_name",
+      "note",
+      "settlement_status",
+      "settlement_id",
     ],
     SHEETS.TRANSACTIONS,
   );
+
+  // ============================================================
+  // カード請求設定
+  //
+  // M_Accountsはここで1回だけ読む。
+  // ============================================================
+
+  const billingSettingsMap = buildAccountBillingSettingsMap_();
+
+  // ============================================================
+  // 未照合カード明細を
+  //
+  // カード口座
+  // +
+  // 請求年月
+  //
+  // ごとに集計する。
+  //
+  // Map構造：
+  //
+  // cardBillingMonthTotals
+  //
+  // 三井住友カードOlive
+  //   ├ 2026-09 → 18240
+  //   └ 2026-10 → 14240
+  //
+  // ============================================================
+
+  const cardBillingMonthTotals = new Map();
+
+  for (const row of transactionTable.rows) {
+    const sourceType = getString(row, transactionTable.index, "source_type");
+
+    // クレジットカードCSV明細のみ
+    if (sourceType !== "CSV_クレカ") {
+      continue;
+    }
+
+    // ----------------------------------------------------------
+    // カード口座
+    // ----------------------------------------------------------
+
+    const cardAccount = resolveCanonicalAccountName_(
+      getString(row, transactionTable.index, "account_name"),
+    );
+
+    if (!cardAccount) {
+      continue;
+    }
+
+    // ----------------------------------------------------------
+    // 既に照合済みの明細は未払請求から除外
+    // ----------------------------------------------------------
+
+    const settlementStatus = getString(
+      row,
+      transactionTable.index,
+      "settlement_status",
+    );
+
+    const settlementId = getString(
+      row,
+      transactionTable.index,
+      "settlement_id",
+    );
+
+    if (
+      settlementStatus === "matched" ||
+      settlementStatus === "manual_matched" ||
+      settlementId
+    ) {
+      continue;
+    }
+
+    // ----------------------------------------------------------
+    // 利用日
+    // ----------------------------------------------------------
+
+    const transactionDate = formatApiDate_(
+      row[transactionTable.index["transaction_date"]],
+    );
+
+    if (!transactionDate) {
+      continue;
+    }
+
+    // ----------------------------------------------------------
+    // 遅延損害金判定
+    //
+    // Settlementと同じ仕様。
+    // ----------------------------------------------------------
+
+    const merchant = getString(row, transactionTable.index, "merchant")
+      .normalize("NFKC")
+      .trim();
+
+    const itemName = getString(row, transactionTable.index, "item_name")
+      .normalize("NFKC")
+      .trim();
+
+    const note = getString(row, transactionTable.index, "note")
+      .normalize("NFKC")
+      .trim();
+
+    const isLateFee =
+      merchant.includes("遅延損害金") ||
+      itemName.includes("遅延損害金") ||
+      note.includes("遅延損害金");
+
+    // ----------------------------------------------------------
+    // 請求年月
+    // ----------------------------------------------------------
+
+    let billingYearMonth = "";
+
+    if (isLateFee) {
+      // 遅延損害金は利用日の年月をそのまま請求月にする
+      billingYearMonth = transactionDate.substring(0, 7);
+    } else {
+      billingYearMonth = calculateBillingYearMonthFromSettings_(
+        transactionDate,
+        cardAccount,
+        billingSettingsMap,
+      );
+    }
+
+    if (!billingYearMonth) {
+      continue;
+    }
+
+    // ----------------------------------------------------------
+    // 金額
+    // ----------------------------------------------------------
+
+    const amount = getNumber(row, transactionTable.index, "amount");
+
+    if (amount <= 0) {
+      continue;
+    }
+
+    // ----------------------------------------------------------
+    // カード × 請求月 で集計
+    // ----------------------------------------------------------
+
+    if (!cardBillingMonthTotals.has(cardAccount)) {
+      cardBillingMonthTotals.set(cardAccount, new Map());
+    }
+
+    const monthMap = cardBillingMonthTotals.get(cardAccount);
+
+    const currentAmount = Number(monthMap.get(billingYearMonth) || 0);
+
+    monthMap.set(billingYearMonth, currentAmount + amount);
+  }
+
+  // ============================================================
+  // 各カードの「次回請求」を作る
+  //
+  // 未照合の請求年月のうち
+  // 最も古いものを次回請求とする。
+  // ============================================================
+
+  const cardBillingSummaryMap = new Map();
+
+  for (const [cardAccount, monthMap] of cardBillingMonthTotals.entries()) {
+    const billingMonths = Array.from(monthMap.keys()).sort();
+
+    if (billingMonths.length === 0) {
+      continue;
+    }
+
+    const nextBillingYearMonth = billingMonths[0];
+
+    const nextBillingAmount = Number(monthMap.get(nextBillingYearMonth) || 0);
+
+    cardBillingSummaryMap.set(cardAccount, {
+      nextBillingYearMonth,
+      nextBillingAmount,
+    });
+  }
+
+  // ============================================================
+  // 口座残高計算
+  // ============================================================
 
   const items = accounts.map((account) => {
     let currentBalance = Number(account.openingBalance || 0);
@@ -612,9 +1072,14 @@ function getAccountBalancesData_() {
     const openingDate = String(account.openingBalanceDate || "").trim();
 
     const accountName = resolveCanonicalAccountName_(account.accountName);
+
     const isAsset = account.isAsset === true;
 
     const isLiability = account.isLiability === true;
+
+    // ----------------------------------------------------------
+    // 現在残高
+    // ----------------------------------------------------------
 
     for (const row of transactionTable.rows) {
       const transactionDate = formatApiDate_(
@@ -642,6 +1107,10 @@ function getAccountBalancesData_() {
         getString(row, transactionTable.index, "to_account"),
       );
 
+      // --------------------------------------------------------
+      // 収入
+      // --------------------------------------------------------
+
       if (type === "収入") {
         if (rowAccount === accountName) {
           if (isLiability) {
@@ -654,6 +1123,10 @@ function getAccountBalancesData_() {
         continue;
       }
 
+      // --------------------------------------------------------
+      // 支出
+      // --------------------------------------------------------
+
       if (type === "支出") {
         if (rowAccount === accountName) {
           if (isLiability) {
@@ -665,6 +1138,10 @@ function getAccountBalancesData_() {
 
         continue;
       }
+
+      // --------------------------------------------------------
+      // 移動 / 振替
+      // --------------------------------------------------------
 
       if (type === "移動" || type === "振替") {
         if (fromAccount === accountName) {
@@ -685,9 +1162,41 @@ function getAccountBalancesData_() {
       }
     }
 
+    // ==========================================================
+    // クレジットカード請求情報
+    // ==========================================================
+
+    const billingSummary = cardBillingSummaryMap.get(accountName);
+
+    const nextBillingYearMonth =
+      isLiability && billingSummary ? billingSummary.nextBillingYearMonth : "";
+
+    const nextBillingAmount =
+      isLiability && billingSummary
+        ? Number(billingSummary.nextBillingAmount || 0)
+        : 0;
+
+    /*
+     * 現在のカード負債残高から
+     * 次回請求分を除いた残り。
+     *
+     * 手動照合時は銀行側の実引落額を正としているため、
+     * 明細全体を再集計せずcurrentBalanceを基準にする。
+     */
+    const laterBillingAmount = isLiability
+      ? Math.max(0, currentBalance - nextBillingAmount)
+      : 0;
+
     return {
       ...account,
+
       currentBalance,
+
+      nextBillingYearMonth,
+
+      nextBillingAmount,
+
+      laterBillingAmount,
     };
   });
 

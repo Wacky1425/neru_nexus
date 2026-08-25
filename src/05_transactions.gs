@@ -424,6 +424,15 @@ function buildTransactionRow(tx, id, createdAt, yearMonth, duplicateKey) {
     tx.to_account || "",
     tx.settlement_status || "",
     tx.settlement_id || "",
+
+    // Gmail速報など、元データの一意ID
+    tx.source_id || "",
+
+    // preliminary / confirmed / ignored / manual_confirmed
+    tx.source_status || "",
+
+    // 元データを受信した日時
+    tx.source_received_at || "",
   ];
 }
 
@@ -458,38 +467,120 @@ function createTransactionAccessor(row, index) {
 }
 
 function buildDuplicateKey(tx) {
-  return [
-    tx.source_type || "",
-    tx.transaction_date || "",
-    tx.amount || 0,
-    tx.merchant || "",
-  ].join("|");
+  const sourceType = String(tx.source_type || "")
+    .normalize("NFKC")
+    .trim();
+
+  const accountName = resolveCanonicalAccountName_(
+    String(tx.account_name || "").trim(),
+  );
+
+  const transactionDate = normalizeDuplicateDate_(tx.transaction_date);
+
+  const amount = Number(tx.amount || 0);
+
+  const merchant = normalizeMerchant(
+    String(tx.merchant || "")
+      .normalize("NFKC")
+      .trim(),
+  );
+
+  return [sourceType, accountName, transactionDate, amount, merchant].join("|");
 }
 
-function getExistingDuplicateKeys() {
+function normalizeDuplicateDate_(value) {
+  if (!value) {
+    return "";
+  }
+
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) {
+      return "";
+    }
+
+    return Utilities.formatDate(value, "Asia/Tokyo", "yyyy-MM-dd");
+  }
+
+  const text = String(value).normalize("NFKC").trim();
+
+  if (!text) {
+    return "";
+  }
+
+  // yyyy/MM/dd
+  // yyyy-MM-dd
+  // 月・日は1桁でも可
+  const match = text.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+
+  if (match) {
+    const year = match[1];
+
+    const month = String(Number(match[2])).padStart(2, "0");
+
+    const day = String(Number(match[3])).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  }
+
+  const parsed = new Date(text);
+
+  if (!isNaN(parsed.getTime())) {
+    return Utilities.formatDate(parsed, "Asia/Tokyo", "yyyy-MM-dd");
+  }
+
+  return text;
+}
+
+function getExistingDuplicateKeyCounts() {
   const sheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
+
+  if (!sheet) {
+    throw new Error(`${SHEETS.TRANSACTIONS}シートがありません`);
+  }
+
   const values = sheet.getDataRange().getValues();
 
-  if (values.length < 2) return new Set();
+  const counts = new Map();
 
-  const headers = values[0];
-  const duplicateKeyIndex = headers.indexOf("duplicate_key");
-
-  if (duplicateKeyIndex === -1) {
-    throw new Error(
-      `${SHEETS.TRANSACTIONS}シートに` + "duplicate_key列がありません",
-    );
+  if (values.length < 2) {
+    return counts;
   }
 
-  const rows = values.slice(1);
-  const keySet = new Set();
+  const index = createHeaderIndex(values[0]);
 
-  for (const row of rows) {
-    const key = row[duplicateKeyIndex];
-    if (key) keySet.add(String(key));
+  assertRequiredColumns(
+    index,
+    ["transaction_date", "source_type", "account_name", "amount", "merchant"],
+    SHEETS.TRANSACTIONS,
+  );
+
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+
+    const tx = {
+      transaction_date: row[index["transaction_date"]],
+
+      source_type: row[index["source_type"]],
+
+      account_name: row[index["account_name"]],
+
+      amount: row[index["amount"]],
+
+      merchant: row[index["merchant"]],
+    };
+
+    // 保存済みduplicate_keyは信用せず、
+    // 現在のルールで既存Transactionから再生成する。
+    const key = buildDuplicateKey(tx);
+
+    if (!key) {
+      continue;
+    }
+
+    counts.set(key, Number(counts.get(key) || 0) + 1);
   }
 
-  return keySet;
+  return counts;
 }
 
 function reclassifyAllTransactions() {
@@ -862,11 +953,17 @@ function addTransactions(transactions, options = {}) {
 
   const skipDuplicateCheck = options.skipDuplicateCheck === true;
 
-  const existingKeys = skipDuplicateCheck
-    ? new Set()
-    : getExistingDuplicateKeys();
+  // DBに既に何件存在するか
+  const existingCounts = skipDuplicateCheck
+    ? new Map()
+    : getExistingDuplicateKeyCounts();
+
+  // 今回のCSV内で、
+  // 同じキーが何件目まで出てきたか
+  const incomingCounts = new Map();
 
   const rows = [];
+
   const addedIds = [];
 
   let skippedCount = 0;
@@ -874,20 +971,47 @@ function addTransactions(transactions, options = {}) {
   for (const originalTransaction of transactions) {
     const tx = {
       ...originalTransaction,
+
       account_name: normalizeAccountName(originalTransaction.account_name),
     };
 
     const duplicateKey = buildDuplicateKey(tx);
 
-    if (existingKeys.has(duplicateKey)) {
-      Logger.log("重複のためスキップ: " + duplicateKey);
+    // ------------------------------------------
+    // 同一キーの出現回数
+    // ------------------------------------------
+
+    const incomingCount = Number(incomingCounts.get(duplicateKey) || 0) + 1;
+
+    incomingCounts.set(duplicateKey, incomingCount);
+
+    const existingCount = Number(existingCounts.get(duplicateKey) || 0);
+
+    /*
+     * 例：
+     *
+     * DBに同一キーが2件ある
+     *
+     * CSV側
+     * 1件目 → skip
+     * 2件目 → skip
+     * 3件目 → 新規追加
+     *
+     * これにより、
+     * 本当に同日・同額・同店舗の取引が
+     * 複数回存在しても保持できる。
+     */
+    if (!skipDuplicateCheck && incomingCount <= existingCount) {
+      Logger.log(
+        "重複のためスキップ: " +
+          duplicateKey +
+          ` (${incomingCount}/${existingCount})`,
+      );
 
       skippedCount++;
+
       continue;
     }
-
-    // 同一バッチ内の重複も防ぐ
-    existingKeys.add(duplicateKey);
 
     const createdAt = new Date();
 
@@ -911,3 +1035,4 @@ function addTransactions(transactions, options = {}) {
     addedIds,
   };
 }
+

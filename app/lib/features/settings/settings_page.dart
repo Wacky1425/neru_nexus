@@ -4,6 +4,7 @@ import '../accounts/account_management_page.dart';
 import '../budget/budget_settings_page.dart';
 import '../categories/category_management_page.dart';
 import '../goals/goal_management_page.dart';
+import '../settlement/settlement_status_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -81,6 +82,18 @@ class SettingsPage extends StatelessWidget {
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const BudgetSettingsPage()),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.link_outlined),
+            title: const Text('カード照合状況'),
+            subtitle: const Text('カード明細と銀行引落の一致状況を確認'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettlementStatusPage()),
               );
             },
           ),

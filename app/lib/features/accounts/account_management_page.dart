@@ -36,7 +36,6 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('口座管理')),
-
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           final created = await Navigator.of(context).push<bool>(
@@ -49,7 +48,6 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
         },
         child: const Icon(Icons.add),
       ),
-
       body: FutureBuilder<AccountBalancesResult>(
         future: _future,
         builder: (context, snapshot) {
@@ -100,13 +98,19 @@ class _AccountManagementPageState extends State<AccountManagementPage> {
                 return _AccountTile(
                   account: account,
                   onTap: () async {
-                    final updated = await Navigator.of(context).push<bool>(
-                      MaterialPageRoute(
-                        builder: (_) => AccountEditPage(account: account),
-                      ),
-                    );
+                    final editResult = await Navigator.of(context)
+                        .push<Object?>(
+                          MaterialPageRoute(
+                            builder: (_) => AccountEditPage(account: account),
+                          ),
+                        );
 
-                    if (updated == true && mounted) {
+                    if (!mounted) {
+                      return;
+                    }
+
+                    if (editResult is AccountUpdateResult ||
+                        editResult is AccountEditDeletedResult) {
                       await _reload();
                     }
                   },

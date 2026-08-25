@@ -6,6 +6,97 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/api_constants.dart';
 import '../model/account_balance_model.dart';
 
+class AccountReconciliationResult {
+  const AccountReconciliationResult({
+    required this.matched,
+    required this.reason,
+    required this.processedCount,
+    required this.matchedCount,
+    required this.reviewCount,
+  });
+
+  final bool matched;
+  final String reason;
+
+  final int processedCount;
+  final int matchedCount;
+  final int reviewCount;
+
+  factory AccountReconciliationResult.fromJson(Map<String, dynamic> json) {
+    return AccountReconciliationResult(
+      matched: json['matched'] == true,
+      reason: json['reason']?.toString() ?? '',
+      processedCount: _toInt(json['processedCount']),
+      matchedCount: _toInt(json['matchedCount']),
+      reviewCount: _toInt(json['reviewCount']),
+    );
+  }
+
+  static int _toInt(dynamic value) {
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+}
+
+class AccountUpdateResult {
+  const AccountUpdateResult({
+    required this.updated,
+    required this.accountId,
+    required this.oldAccountName,
+    required this.accountName,
+    required this.closingDay,
+    required this.paymentDay,
+    required this.paymentMonthOffset,
+    required this.billingSettingsChanged,
+    required this.reconciliation,
+  });
+
+  final bool updated;
+
+  final String accountId;
+  final String oldAccountName;
+  final String accountName;
+
+  final int closingDay;
+  final int paymentDay;
+  final int paymentMonthOffset;
+
+  final bool billingSettingsChanged;
+
+  final AccountReconciliationResult? reconciliation;
+
+  factory AccountUpdateResult.fromJson(Map<String, dynamic> json) {
+    final rawReconciliation = json['reconciliation'];
+
+    return AccountUpdateResult(
+      updated: json['updated'] == true,
+      accountId: json['accountId']?.toString() ?? '',
+      oldAccountName: json['oldAccountName']?.toString() ?? '',
+      accountName: json['accountName']?.toString() ?? '',
+      closingDay: _toInt(json['closingDay']),
+      paymentDay: _toInt(json['paymentDay']),
+      paymentMonthOffset: _toInt(json['paymentMonthOffset']),
+      billingSettingsChanged: json['billingSettingsChanged'] == true,
+      reconciliation: rawReconciliation is Map
+          ? AccountReconciliationResult.fromJson(
+              Map<String, dynamic>.from(rawReconciliation),
+            )
+          : null,
+    );
+  }
+
+  static int _toInt(dynamic value) {
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+}
+
 class AccountBalanceService {
   const AccountBalanceService();
 
@@ -81,10 +172,7 @@ class AccountBalanceService {
     try {
       decodedValue = jsonDecode(response.body);
     } on FormatException {
-      throw Exception(
-        '口座残高APIから'
-        '不正なレスポンスが返されました',
-      );
+      throw Exception('口座残高APIから不正なレスポンスが返されました');
     }
 
     if (decodedValue is! Map) {
@@ -144,6 +232,7 @@ class AccountBalanceService {
     required String openingBalanceDate,
   }) async {
     late http.Response response;
+
     final request = http.Request('POST', Uri.parse(ApiConstants.baseUrl));
 
     request.headers['Content-Type'] = 'application/json';
@@ -170,9 +259,7 @@ class AccountBalanceService {
           throw Exception('口座更新APIのリダイレクト先がありません');
         }
 
-        final redirectedResponse = await client.get(Uri.parse(location));
-
-        response = redirectedResponse;
+        response = await client.get(Uri.parse(location));
       } else {
         response = await http.Response.fromStream(firstResponse);
       }
@@ -180,43 +267,17 @@ class AccountBalanceService {
       client.close();
     }
 
-    if (response.statusCode != 200) {
-      throw Exception(
-        '口座情報の更新に失敗しました: '
-        '${response.statusCode}',
-      );
-    }
+    _validateSuccessResponse(
+      response,
+      statusMessage: '口座情報の更新に失敗しました',
+      invalidResponseMessage: '口座更新APIから不正なレスポンスが返されました',
+      invalidFormatMessage: '口座更新APIの形式が正しくありません',
+    );
 
-    final dynamic decodedValue;
-
-    try {
-      decodedValue = jsonDecode(response.body);
-    } on FormatException {
-      throw Exception(
-        '口座更新APIから'
-        '不正なレスポンスが返されました',
-      );
-    }
-
-    if (decodedValue is! Map) {
-      throw Exception('口座更新APIの形式が正しくありません');
-    }
-
-    final decoded = Map<String, dynamic>.from(decodedValue);
-
-    if (decoded['success'] != true) {
-      final error = decoded['error'];
-
-      if (error is Map) {
-        throw Exception(error['message']?.toString() ?? '口座情報の更新に失敗しました');
-      }
-
-      throw Exception(error?.toString() ?? '口座情報の更新に失敗しました');
-    }
     clearCache();
   }
 
-  Future<void> updateAccount({
+  Future<AccountUpdateResult> updateAccount({
     required String accountId,
     required String accountName,
     required String paymentMethod,
@@ -226,6 +287,9 @@ class AccountBalanceService {
     required bool isLiability,
     required int openingBalance,
     required String openingBalanceDate,
+    required int closingDay,
+    required int paymentDay,
+    required int paymentMonthOffset,
   }) async {
     late http.Response response;
 
@@ -245,6 +309,9 @@ class AccountBalanceService {
       'isLiability': isLiability,
       'openingBalance': openingBalance,
       'openingBalanceDate': openingBalanceDate,
+      'closingDay': closingDay,
+      'paymentDay': paymentDay,
+      'paymentMonthOffset': paymentMonthOffset,
     });
 
     request.followRedirects = false;
@@ -300,7 +367,19 @@ class AccountBalanceService {
       throw Exception(error?.toString() ?? '口座情報の更新に失敗しました');
     }
 
+    final data = decoded['data'];
+
+    if (data is! Map) {
+      throw Exception('口座更新APIのデータ形式が正しくありません');
+    }
+
+    final result = AccountUpdateResult.fromJson(
+      Map<String, dynamic>.from(data),
+    );
+
     clearCache();
+
+    return result;
   }
 
   Future<void> deactivateAccount({required String accountId}) async {
@@ -338,36 +417,12 @@ class AccountBalanceService {
       client.close();
     }
 
-    if (response.statusCode != 200) {
-      throw Exception(
-        '口座の削除に失敗しました: '
-        '${response.statusCode}',
-      );
-    }
-
-    final dynamic decodedValue;
-
-    try {
-      decodedValue = jsonDecode(response.body);
-    } on FormatException {
-      throw Exception('口座削除APIから不正なレスポンスが返されました');
-    }
-
-    if (decodedValue is! Map) {
-      throw Exception('口座削除APIの形式が正しくありません');
-    }
-
-    final decoded = Map<String, dynamic>.from(decodedValue);
-
-    if (decoded['success'] != true) {
-      final error = decoded['error'];
-
-      if (error is Map) {
-        throw Exception(error['message']?.toString() ?? '口座の削除に失敗しました');
-      }
-
-      throw Exception(error?.toString() ?? '口座の削除に失敗しました');
-    }
+    _validateSuccessResponse(
+      response,
+      statusMessage: '口座の削除に失敗しました',
+      invalidResponseMessage: '口座削除APIから不正なレスポンスが返されました',
+      invalidFormatMessage: '口座削除APIの形式が正しくありません',
+    );
 
     clearCache();
   }
@@ -423,9 +478,25 @@ class AccountBalanceService {
       client.close();
     }
 
+    _validateSuccessResponse(
+      response,
+      statusMessage: '口座の追加に失敗しました',
+      invalidResponseMessage: '口座追加APIから不正なレスポンスが返されました',
+      invalidFormatMessage: '口座追加APIの形式が正しくありません',
+    );
+
+    clearCache();
+  }
+
+  static void _validateSuccessResponse(
+    http.Response response, {
+    required String statusMessage,
+    required String invalidResponseMessage,
+    required String invalidFormatMessage,
+  }) {
     if (response.statusCode != 200) {
       throw Exception(
-        '口座の追加に失敗しました: '
+        '$statusMessage: '
         '${response.statusCode}',
       );
     }
@@ -435,11 +506,11 @@ class AccountBalanceService {
     try {
       decodedValue = jsonDecode(response.body);
     } on FormatException {
-      throw Exception('口座追加APIから不正なレスポンスが返されました');
+      throw Exception(invalidResponseMessage);
     }
 
     if (decodedValue is! Map) {
-      throw Exception('口座追加APIの形式が正しくありません');
+      throw Exception(invalidFormatMessage);
     }
 
     final decoded = Map<String, dynamic>.from(decodedValue);
@@ -448,10 +519,10 @@ class AccountBalanceService {
       final error = decoded['error'];
 
       if (error is Map) {
-        throw Exception(error['message']?.toString() ?? '口座の追加に失敗しました');
+        throw Exception(error['message']?.toString() ?? statusMessage);
       }
 
-      throw Exception(error?.toString() ?? '口座の追加に失敗しました');
+      throw Exception(error?.toString() ?? statusMessage);
     }
   }
 

@@ -28,6 +28,10 @@ class _AccountEditPageState extends State<AccountEditPage> {
   late bool _isAsset;
   late bool _isLiability;
 
+  late int _closingDay;
+  late int _paymentDay;
+  late int _paymentMonthOffset;
+
   DateTime? _openingBalanceDate;
 
   bool _saving = false;
@@ -54,7 +58,14 @@ class _AccountEditPageState extends State<AccountEditPage> {
     _wallet = account.wallet.isEmpty ? '生活' : account.wallet;
 
     _isAsset = account.isAsset;
+
     _isLiability = account.isLiability;
+
+    _closingDay = account.closingDay;
+
+    _paymentDay = account.paymentDay;
+
+    _paymentMonthOffset = account.paymentMonthOffset;
 
     _openingBalanceDate = _parseDate(account.openingBalanceDate);
   }
@@ -142,12 +153,24 @@ class _AccountEditPageState extends State<AccountEditPage> {
       return;
     }
 
+    if (_isLiability) {
+      if (_closingDay < 1 || _closingDay > 31) {
+        _showMessage('締め日を設定してください');
+        return;
+      }
+
+      if (_paymentDay < 1 || _paymentDay > 31) {
+        _showMessage('支払日を設定してください');
+        return;
+      }
+    }
+
     setState(() {
       _saving = true;
     });
 
     try {
-      await _service.updateAccount(
+      final result = await _service.updateAccount(
         accountId: widget.account.accountId,
         accountName: accountName,
         paymentMethod: paymentMethod,
@@ -157,13 +180,16 @@ class _AccountEditPageState extends State<AccountEditPage> {
         isLiability: _isLiability,
         openingBalance: balance,
         openingBalanceDate: _formatApiDate(date),
+        closingDay: _isLiability ? _closingDay : 0,
+        paymentDay: _isLiability ? _paymentDay : 0,
+        paymentMonthOffset: _isLiability ? _paymentMonthOffset : 0,
       );
 
       if (!mounted) {
         return;
       }
 
-      Navigator.of(context).pop(true);
+      Navigator.of(context).pop(result);
     } catch (error) {
       if (!mounted) {
         return;
@@ -227,7 +253,7 @@ class _AccountEditPageState extends State<AccountEditPage> {
         return;
       }
 
-      Navigator.of(context).pop(true);
+      Navigator.of(context).pop(const AccountEditDeletedResult());
     } catch (error) {
       if (!mounted) {
         return;
@@ -270,6 +296,14 @@ class _AccountEditPageState extends State<AccountEditPage> {
     return '${date.year}年'
         '${date.month}月'
         '${date.day}日';
+  }
+
+  String _closingDayText(int value) {
+    if (value == 31) {
+      return '月末';
+    }
+
+    return '$value日';
   }
 
   @override
@@ -379,6 +413,108 @@ class _AccountEditPageState extends State<AccountEditPage> {
                   },
           ),
 
+          if (_isLiability) ...[
+            const SizedBox(height: 24),
+
+            const Divider(),
+
+            const SizedBox(height: 12),
+
+            Text('カード請求設定', style: Theme.of(context).textTheme.titleMedium),
+
+            const SizedBox(height: 6),
+
+            Text(
+              'カード明細と銀行引落の'
+              '自動照合に使用します。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+
+            const SizedBox(height: 16),
+
+            DropdownButtonFormField<int>(
+              value: _closingDay > 0 ? _closingDay : null,
+              decoration: const InputDecoration(
+                labelText: '締め日',
+                border: OutlineInputBorder(),
+              ),
+              hint: const Text('締め日を選択'),
+              items: List.generate(31, (index) {
+                final value = index + 1;
+
+                return DropdownMenuItem(
+                  value: value,
+                  child: Text(_closingDayText(value)),
+                );
+              }),
+              onChanged: busy
+                  ? null
+                  : (value) {
+                      if (value == null) {
+                        return;
+                      }
+
+                      setState(() {
+                        _closingDay = value;
+                      });
+                    },
+            ),
+
+            const SizedBox(height: 16),
+
+            DropdownButtonFormField<int>(
+              value: _paymentDay > 0 ? _paymentDay : null,
+              decoration: const InputDecoration(
+                labelText: '支払日',
+                border: OutlineInputBorder(),
+              ),
+              hint: const Text('支払日を選択'),
+              items: List.generate(31, (index) {
+                final value = index + 1;
+
+                return DropdownMenuItem(value: value, child: Text('$value日'));
+              }),
+              onChanged: busy
+                  ? null
+                  : (value) {
+                      if (value == null) {
+                        return;
+                      }
+
+                      setState(() {
+                        _paymentDay = value;
+                      });
+                    },
+            ),
+
+            const SizedBox(height: 16),
+
+            DropdownButtonFormField<int>(
+              value: _paymentMonthOffset,
+              decoration: const InputDecoration(
+                labelText: '支払月',
+                border: OutlineInputBorder(),
+                helperText: '締め月から何か月後に支払うか',
+              ),
+              items: const [
+                DropdownMenuItem(value: 0, child: Text('当月')),
+                DropdownMenuItem(value: 1, child: Text('翌月')),
+                DropdownMenuItem(value: 2, child: Text('翌々月')),
+              ],
+              onChanged: busy
+                  ? null
+                  : (value) {
+                      if (value == null) {
+                        return;
+                      }
+
+                      setState(() {
+                        _paymentMonthOffset = value;
+                      });
+                    },
+            ),
+          ],
+
           const SizedBox(height: 24),
 
           TextField(
@@ -452,4 +588,9 @@ class _AccountEditPageState extends State<AccountEditPage> {
       ),
     );
   }
+}
+
+/// AccountEditPageから「削除された」ことだけ返すための型。
+class AccountEditDeletedResult {
+  const AccountEditDeletedResult();
 }

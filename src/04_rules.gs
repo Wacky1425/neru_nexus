@@ -127,9 +127,17 @@ function isRuleMatched(targetText, keyword, ruleType) {
 }
 
 function classifyMoneyTransaction(row, txBase, rules, configName) {
+  // ============================================================
+  // PayPayは専用分類
+  // ============================================================
+
   if (configName === "paypay_v1") {
     return classifyPayPayTransaction_(row, txBase, rules);
   }
+
+  // ============================================================
+  // 元CSVの入出金額
+  // ============================================================
 
   let inAmount = 0;
   let outAmount = 0;
@@ -142,42 +150,146 @@ function classifyMoneyTransaction(row, txBase, rules, configName) {
     outAmount = parseAmount(row["お引出し"]);
   }
 
+  // ============================================================
+  // 通常ルール分類
+  // ============================================================
+
   const classified = classifyTransaction(txBase, rules);
 
-  const creditCardAccount = resolveCreditCardAccount_(txBase);
-  const isCreditCardSettlement = outAmount > 0 && creditCardAccount;
   const isRuleConfirmed = classified.status === "確定";
+
+  // ============================================================
+  // ルールが「移動」を意味しているか
+  //
+  // typeだけではなくカテゴリ・intentも見る。
+  // 過去ルールに
+  //
+  // type=収入
+  // major_category=移動
+  //
+  // のような不整合があっても補正する。
+  // ============================================================
+
+  const classifiedType = String(classified.type || "").trim();
+
+  const majorCategory = String(classified.major_category || "").trim();
+
+  const subCategory = String(classified.sub_category || "").trim();
+
+  const intent = String(classified.intent || "").trim();
+
+  const transferSubCategories = [
+    "口座移動",
+    "電子マネーチャージ",
+    "クレカ引落",
+    "証券口座移動",
+    "現金引出",
+    "個人間送金",
+  ];
+
+  const isTransferClassification =
+    classifiedType === "移動" ||
+    classifiedType === "振替" ||
+    majorCategory === "移動" ||
+    intent === "移動" ||
+    transferSubCategories.includes(subCategory);
+
+  // ============================================================
+  // クレカ引落判定
+  // ============================================================
+
+  const creditCardAccount = resolveCreditCardAccount_(txBase);
+
+  const isCreditCardSettlement = outAmount > 0 && Boolean(creditCardAccount);
+
+  // ============================================================
+  // type決定
+  // ============================================================
 
   let transactionType = "";
 
-  if (isRuleConfirmed) {
-    transactionType = classified.type;
-  } else if (isCreditCardSettlement) {
+  // ルールが移動系なら、
+  // 入金・出金に関係なく必ず「移動」
+  //
+  // 移動方向そのものは
+  // money_direction + applyTransferMetadata_()
+  // で決める。
+  if (isRuleConfirmed && isTransferClassification) {
     transactionType = "移動";
-  } else if (inAmount > 0) {
-    transactionType = "収入";
-  } else if (outAmount > 0) {
-    transactionType = "支出";
-  } else {
-    transactionType = classified.type || "支出";
   }
+
+  // 移動ではない確定ルール
+  else if (isRuleConfirmed) {
+    transactionType = classifiedType || (inAmount > 0 ? "収入" : "支出");
+  }
+
+  // 未登録でもクレカ引落なら移動
+  else if (isCreditCardSettlement) {
+    transactionType = "移動";
+  }
+
+  // 通常の銀行入金
+  else if (inAmount > 0) {
+    transactionType = "収入";
+  }
+
+  // 通常の銀行出金
+  else if (outAmount > 0) {
+    transactionType = "支出";
+  }
+
+  // 保険
+  else {
+    transactionType = classifiedType || "支出";
+  }
+
+  // ============================================================
+  // 未登録のクレカ引落
+  // ============================================================
 
   if (isCreditCardSettlement && !isRuleConfirmed) {
     return {
       ...classified,
+
       type: "移動",
+
       major_category: "移動",
+
       sub_category: "クレカ引落",
+
       purpose_type: "私用",
+
       expense_ratio: 0,
+
       status: "確定",
+
       wallet: "生活",
+
       intent: "移動",
     };
   }
 
+  // ============================================================
+  // 確定済み移動ルールもtype/intentを整合させる
+  // ============================================================
+
+  if (isRuleConfirmed && isTransferClassification) {
+    return {
+      ...classified,
+
+      type: "移動",
+
+      intent: "移動",
+    };
+  }
+
+  // ============================================================
+  // 通常取引
+  // ============================================================
+
   return {
     ...classified,
+
     type: transactionType,
   };
 }

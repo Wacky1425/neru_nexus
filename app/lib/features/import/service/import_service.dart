@@ -155,8 +155,14 @@ class ImportService {
 
     final data = await ApiClient.post(
       action: 'csv_import',
-      body: {'csvText': csvText, 'fileName': fileName},
+      body: {'csvText': csvText, 'fileName': fileName, 'dryRun': false},
     );
+
+    final analysis = data['analysis'] as Map<String, dynamic>?;
+
+    final early = analysis?['earlyRepayment'] as Map<String, dynamic>?;
+
+    final normal = analysis?['normalBilling'] as Map<String, dynamic>?;
 
     final settlementValue = data['settlementResult'];
 

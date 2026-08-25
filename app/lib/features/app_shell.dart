@@ -38,7 +38,7 @@ class _AppShellState extends State<AppShell> {
       const TransactionsPage(),
       const ImportPage(),
       const AnalyticsPage(),
-      const AccountBalancePage(),
+      AccountBalancePage(),
       const SettingsPage(),
     ];
 

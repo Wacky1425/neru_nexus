@@ -328,6 +328,9 @@ function doGet(e) {
           "ok",
         );
 
+      case "settlement_statuses":
+        return createJsonResponse_(getSettlementStatusesData_(), "ok");
+
       case "goals":
         return createJsonResponse_(getGoalsData(), "ok");
       default:
@@ -383,6 +386,12 @@ function doPost(e) {
 
       case "settlement_confirm":
         return confirmSettlementManually_(data);
+
+      case "settlement_manual_match":
+        return confirmSettlementManually_(data);
+
+      case "settlement_manual_unmatch":
+        return cancelSettlementManualMatch_(data);
 
       case "update_account_opening_balance":
         return updateAccountOpeningBalanceFromApp_(data);
