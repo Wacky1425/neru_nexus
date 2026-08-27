@@ -5,11 +5,9 @@ class BudgetModel {
     required this.inheritedFrom,
     required this.salaryPlanned,
     required this.sideIncomePlanned,
-    required this.savingTarget,
     required this.nisaTarget,
     required this.fixedExpenseBudget,
     required this.variableExpenseBudget,
-    required this.dreamTarget,
   });
 
   final String yearMonth;
@@ -22,15 +20,11 @@ class BudgetModel {
 
   final int sideIncomePlanned;
 
-  final int savingTarget;
-
   final int nisaTarget;
 
   final int fixedExpenseBudget;
 
   final int variableExpenseBudget;
-
-  final int dreamTarget;
 
   factory BudgetModel.fromJson(Map<String, dynamic> json) {
     return BudgetModel(
@@ -39,12 +33,10 @@ class BudgetModel {
       inheritedFrom: json['inheritedFrom']?.toString() ?? '',
       salaryPlanned: (json['salaryPlanned'] as num?)?.toInt() ?? 0,
       sideIncomePlanned: (json['sideIncomePlanned'] as num?)?.toInt() ?? 0,
-      savingTarget: (json['savingTarget'] as num?)?.toInt() ?? 0,
       nisaTarget: (json['nisaTarget'] as num?)?.toInt() ?? 0,
       fixedExpenseBudget: (json['fixedExpenseBudget'] as num?)?.toInt() ?? 0,
       variableExpenseBudget:
           (json['variableExpenseBudget'] as num?)?.toInt() ?? 0,
-      dreamTarget: (json['dreamTarget'] as num?)?.toInt() ?? 0,
     );
   }
 }

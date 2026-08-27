@@ -1,9 +1,3 @@
-function addTransaction(tx) {
-  const result = addTransactions([tx]);
-
-  return result.addedCount === 1;
-}
-
 /**
  * 対象月の取引金額を指定列ごとに集計する。
  *
@@ -16,121 +10,6 @@ function addTransaction(tx) {
  * }=} options
  * @return {Array<Array<*>>} [[名称, 金額], ...]
  */
-function summarizeTransactionsByField(
-  yearMonth,
-  groupColumn,
-  options,
-  transactionTable,
-) {
-  const table = transactionTable || loadTransactions();
-  const settings = options || {};
-
-  if (table.rows.length === 0) {
-    return [];
-  }
-
-  const requiredColumns = [
-    "transaction_date",
-    "type",
-    "wallet",
-    "amount",
-    "source_status",
-    groupColumn,
-  ];
-
-  assertRequiredColumns(table.index, requiredColumns, SHEETS.TRANSACTIONS);
-
-  const targetMonth = normalizeBudgetYearMonth(yearMonth);
-
-  const targetType = String(settings.type || "").trim();
-
-  const targetWallet = String(settings.wallet || "").trim();
-
-  const skipBlank = settings.skipBlank === true;
-
-  const amountMap = new Map();
-
-  for (const row of table.rows) {
-    // ==========================================================
-    // 論理除外済み取引は集計しない
-    // ==========================================================
-
-    if (isIgnoredTransactionRow_(row, table.index)) {
-      continue;
-    }
-
-    const transactionMonth = normalizeYearMonth(
-      row[table.index["transaction_date"]],
-    );
-
-    if (transactionMonth !== targetMonth) {
-      continue;
-    }
-
-    const type = String(row[table.index["type"]] || "").trim();
-
-    if (targetType && type !== targetType) {
-      continue;
-    }
-
-    const wallet = String(row[table.index["wallet"]] || "").trim();
-
-    if (targetWallet && wallet !== targetWallet) {
-      continue;
-    }
-
-    const groupName = String(row[table.index[groupColumn]] || "").trim();
-
-    if (skipBlank && !groupName) {
-      continue;
-    }
-
-    const amount = Number(row[table.index["amount"]] || 0);
-
-    if (amount === 0) {
-      continue;
-    }
-
-    amountMap.set(groupName, (amountMap.get(groupName) || 0) + amount);
-  }
-
-  return Array.from(amountMap.entries()).sort((a, b) => b[1] - a[1]);
-}
-
-function filterTransactions(options) {
-  const table = loadTable(SHEETS.TRANSACTIONS);
-
-  if (table.rows.length === 0) {
-    return [];
-  }
-
-  const opt = options || {};
-
-  return table.rows.filter((row) => {
-    if (opt.yearMonth) {
-      const month = normalizeYearMonth(row[table.index["transaction_date"]]);
-
-      if (month !== opt.yearMonth) {
-        return false;
-      }
-    }
-
-    if (opt.type) {
-      if (String(row[table.index["type"]]).trim() !== opt.type) {
-        return false;
-      }
-    }
-
-    if (opt.wallet) {
-      if (String(row[table.index["wallet"]]).trim() !== opt.wallet) {
-        return false;
-      }
-    }
-
-    return true;
-  });
-}
-
 /**
  * 条件に一致するtransactionsの行を取得する。
  *
@@ -149,219 +28,6 @@ function filterTransactions(options) {
  *   index: Object<string, number>
  * }}
  */
-function filterTransactionRows(options, transactionTable) {
-  const table = transactionTable || loadTransactions();
-
-  const settings = options || {};
-
-  if (table.rows.length === 0) {
-    return {
-      rows: [],
-      index: table.index,
-    };
-  }
-
-  assertRequiredColumns(
-    table.index,
-    ["transaction_date", "type", "wallet", "source_status"],
-    SHEETS.TRANSACTIONS,
-  );
-
-  const targetMonth = settings.yearMonth
-    ? normalizeBudgetYearMonth(settings.yearMonth)
-    : "";
-
-  const targetType = String(settings.type || "").trim();
-
-  const targetWallet = String(settings.wallet || "").trim();
-
-  const targetIntent = String(settings.intent || "").trim();
-
-  if (targetIntent && table.index["intent"] === undefined) {
-    throw new Error("transactions に intent 列がありません");
-  }
-
-  const rows = table.rows.filter((row) => {
-    // ========================================================
-    // 論理除外済み取引は通常フィルタから除外
-    // ========================================================
-
-    if (isIgnoredTransactionRow_(row, table.index)) {
-      return false;
-    }
-
-    if (targetMonth) {
-      const rowMonth = normalizeYearMonth(row[table.index["transaction_date"]]);
-
-      if (rowMonth !== targetMonth) {
-        return false;
-      }
-    }
-
-    if (targetType) {
-      const rowType = getString(row, table.index, "type");
-
-      if (rowType !== targetType) {
-        return false;
-      }
-    }
-
-    if (targetWallet) {
-      const rowWallet = getString(row, table.index, "wallet");
-
-      if (rowWallet !== targetWallet) {
-        return false;
-      }
-    }
-
-    if (targetIntent) {
-      const rowIntent = getString(row, table.index, "intent");
-
-      if (rowIntent !== targetIntent) {
-        return false;
-      }
-    }
-
-    return true;
-  });
-
-  return {
-    rows,
-    index: table.index,
-  };
-}
-
-function getMonthlyLivingExpense(yearMonth, table) {
-  const filtered = filterTransactionRows(
-    {
-      yearMonth,
-      type: "支出",
-      wallet: "生活",
-    },
-    table,
-  );
-
-  assertRequiredColumns(filtered.index, ["amount"], SHEETS.TRANSACTIONS);
-
-  return filtered.rows.reduce(
-    (total, row) => total + getNumber(row, filtered.index, "amount"),
-    0,
-  );
-}
-
-function getMonthlyLivingExpenseBreakdown(yearMonth, monthlyTable) {
-  const targetMonth = normalizeBudgetYearMonth(yearMonth);
-
-  const result = {
-    fixedExpense: 0,
-    variableExpense: 0,
-    totalExpense: 0,
-  };
-
-  if (!targetMonth) {
-    return result;
-  }
-
-  const table = monthlyTable || loadTable(SHEETS.MONTHLY_SUMMARY);
-
-  if (table.rows.length === 0) {
-    return result;
-  }
-
-  assertRequiredColumns(
-    table.index,
-    ["year_month", "fixed_expense", "variable_expense"],
-    SHEETS.MONTHLY_SUMMARY,
-  );
-
-  const row = table.rows.find((row) => {
-    const rowMonth = normalizeYearMonth(row[table.index["year_month"]]);
-
-    return rowMonth === targetMonth;
-  });
-
-  if (!row) {
-    return result;
-  }
-
-  const fixedExpense = getNumber(row, table.index, "fixed_expense");
-
-  const variableExpense = getNumber(row, table.index, "variable_expense");
-
-  return {
-    fixedExpense,
-    variableExpense,
-    totalExpense: fixedExpense + variableExpense,
-  };
-}
-
-function getExpenseCategoryBreakdown(yearMonth, categoryTable) {
-  const targetMonth = normalizeBudgetYearMonth(yearMonth);
-
-  if (!targetMonth) {
-    return [];
-  }
-
-  const table = categoryTable || loadTable(SHEETS.CATEGORY_SUMMARY);
-
-  if (table.rows.length === 0) {
-    return [];
-  }
-
-  assertRequiredColumns(
-    table.index,
-    ["year_month", "major_category", "total_amount"],
-    SHEETS.CATEGORY_SUMMARY,
-  );
-
-  return table.rows
-    .filter((row) => {
-      const rowMonth = normalizeYearMonth(row[table.index["year_month"]]);
-
-      return rowMonth === targetMonth;
-    })
-    .map((row) => ({
-      category: getString(row, table.index, "major_category"),
-
-      amount: getNumber(row, table.index, "total_amount"),
-    }))
-    .sort((a, b) => b.amount - a.amount);
-}
-
-function getSideBusinessProfit(yearMonth) {
-  const filtered = filterTransactionRows({
-    yearMonth,
-    wallet: "事業",
-  });
-
-  if (filtered.rows.length === 0) {
-    return 0;
-  }
-
-  assertRequiredColumns(
-    filtered.index,
-    ["type", "amount"],
-    SHEETS.TRANSACTIONS,
-  );
-
-  let income = 0;
-  let expense = 0;
-
-  for (const row of filtered.rows) {
-    const type = getString(row, filtered.index, "type");
-
-    const amount = getNumber(row, filtered.index, "amount");
-
-    if (type === "収入") {
-      income += amount;
-    } else if (type === "支出") {
-      expense += amount;
-    }
-  }
-
-  return income - expense;
-}
-
 function loadTransactions() {
   return loadTable(SHEETS.TRANSACTIONS);
 }
@@ -454,12 +120,6 @@ function buildTransactionRow(tx, id, createdAt, yearMonth, duplicateKey) {
   ];
 }
 
-function appendTransactionRow(row) {
-  getRequiredSheet(SHEETS.TRANSACTIONS).appendRow(row);
-
-  clearTableCache();
-}
-
 function resolveTransactionYearMonth(transactionDate, fallbackDate) {
   if (transactionDate) {
     const parsedDate = new Date(String(transactionDate).replace(/\./g, "/"));
@@ -470,18 +130,6 @@ function resolveTransactionYearMonth(transactionDate, fallbackDate) {
   }
 
   return Utilities.formatDate(fallbackDate, "Asia/Tokyo", "yyyy-MM");
-}
-
-function createTransactionAccessor(row, index) {
-  return {
-    get(name) {
-      return getString(row, index, name);
-    },
-
-    number(name) {
-      return getNumber(row, index, name);
-    },
-  };
 }
 
 function buildDuplicateKey(tx) {
@@ -601,72 +249,6 @@ function getExistingDuplicateKeyCounts() {
   return counts;
 }
 
-function reclassifyAllTransactions() {
-  const txSheet = getRequiredSheet(SHEETS.TRANSACTIONS);
-  const rules = getRules();
-
-  const values = txSheet.getDataRange().getValues();
-
-  if (values.length < 2) {
-    return;
-  }
-
-  const index = createHeaderIndex(values[0]);
-
-  assertRequiredColumns(
-    index,
-    [
-      "merchant",
-      "item_name",
-      "note",
-      "amount",
-      "type",
-      "major_category",
-      "sub_category",
-      "purpose_type",
-      "expense_ratio",
-      "expense_amount",
-      "status",
-      "wallet",
-      "intent",
-    ],
-    SHEETS.TRANSACTIONS,
-  );
-
-  let updatedCount = 0;
-
-  for (let rowIndex = 1; rowIndex < values.length; rowIndex++) {
-    const row = values[rowIndex];
-
-    const transaction = {
-      merchant: row[index["merchant"]] || "",
-      item_name: row[index["item_name"]] || "",
-      note: row[index["note"]] || "",
-    };
-
-    const classified = classifyTransaction(transaction, rules);
-    const amount = Number(row[index["amount"]] || 0);
-    const expenseRatio = Number(classified.expense_ratio || 0);
-
-    row[index["type"]] = classified.type;
-    row[index["major_category"]] = classified.major_category;
-    row[index["sub_category"]] = classified.sub_category;
-    row[index["purpose_type"]] = classified.purpose_type;
-    row[index["expense_ratio"]] = expenseRatio;
-    row[index["expense_amount"]] = amount * expenseRatio;
-    row[index["status"]] = classified.status;
-    row[index["wallet"]] = classified.wallet || "生活";
-    row[index["intent"]] = classified.intent || "その他";
-
-    updatedCount++;
-  }
-
-  txSheet
-    .getRange(2, 1, values.length - 1, values[0].length)
-    .setValues(values.slice(1));
-
-  Logger.log(`再分類完了: ${updatedCount}件`);
-}
 
 function normalizeMerchant(merchant) {
   if (!merchant) return "";
@@ -690,25 +272,6 @@ function normalizeMerchant(merchant) {
   return merchant;
 }
 
-function normalizeAllTransactions() {
-  const sheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
-
-  const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return;
-
-  const headers = values[0];
-  const idx = {};
-  headers.forEach((h, i) => (idx[h] = i));
-
-  for (let i = 1; i < values.length; i++) {
-    const merchant = values[i][idx["merchant"]];
-    values[i][idx["merchant"]] = normalizeMerchant(merchant);
-  }
-
-  sheet
-    .getRange(2, 1, values.length - 1, values[0].length)
-    .setValues(values.slice(1));
-}
 
 function normalizeTextBase(value) {
   return String(value || "")
@@ -754,195 +317,6 @@ function applyMerchantAlias(merchant, aliasMap) {
   return merchant;
 }
 
-function normalizeAllTransactionsWithAlias() {
-  const sheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
-  const aliasMap = loadMerchantAliases();
-
-  const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return;
-
-  const headers = values[0];
-  const idx = {};
-  headers.forEach((h, i) => (idx[h] = i));
-
-  for (let i = 1; i < values.length; i++) {
-    let merchant = values[i][idx["merchant"]];
-
-    merchant = normalizeMerchant(merchant);
-    merchant = applyMerchantAlias(merchant, aliasMap);
-
-    values[i][idx["merchant"]] = merchant;
-  }
-
-  sheet
-    .getRange(2, 1, values.length - 1, values[0].length)
-    .setValues(values.slice(1));
-}
-
-function buildMerchantFrequencyMap() {
-  const sheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
-
-  const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return {};
-
-  const headers = values[0];
-  const idx = {};
-  headers.forEach((h, i) => (idx[h] = i));
-
-  const map = {};
-
-  for (const row of values.slice(1)) {
-    const merchant = String(row[idx["merchant"]] || "").trim();
-    if (!merchant) continue;
-
-    map[merchant] = (map[merchant] || 0) + 1;
-  }
-
-  return map;
-}
-
-function validateTransactionAccounts() {
-  const txSheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
-  const accountSheet = SS.getSheetByName(SHEETS.ACCOUNTS);
-
-  if (!txSheet) {
-    throw new Error("transactions シートがありません");
-  }
-
-  if (!accountSheet) {
-    throw new Error("accounts シートがありません");
-  }
-
-  const txValues = txSheet.getDataRange().getValues();
-  const accountValues = accountSheet.getDataRange().getValues();
-
-  if (txValues.length < 2) {
-    Logger.log("transactions にデータがありません");
-    return;
-  }
-
-  if (accountValues.length < 2) {
-    throw new Error("accounts にデータがありません");
-  }
-
-  const txHeaders = txValues[0];
-  const txIdx = {};
-  txHeaders.forEach((h, i) => {
-    txIdx[String(h).trim()] = i;
-  });
-
-  if (txIdx["account_name"] === undefined) {
-    throw new Error("transactions に account_name 列がありません");
-  }
-
-  const accountHeaders = accountValues[0];
-  const accountIdx = {};
-  accountHeaders.forEach((h, i) => {
-    accountIdx[String(h).trim()] = i;
-  });
-
-  if (accountIdx["account_name"] === undefined) {
-    throw new Error("accounts に account_name 列がありません");
-  }
-
-  const validAccounts = new Set();
-
-  for (const row of accountValues.slice(1)) {
-    const accountName = String(row[accountIdx["account_name"]] || "").trim();
-
-    if (accountName) {
-      validAccounts.add(accountName);
-    }
-  }
-
-  const unknownMap = new Map();
-
-  for (const row of txValues.slice(1)) {
-    const accountName = String(row[txIdx["account_name"]] || "").trim();
-
-    if (!accountName) {
-      unknownMap.set("(空欄)", (unknownMap.get("(空欄)") || 0) + 1);
-      continue;
-    }
-
-    if (!validAccounts.has(accountName)) {
-      unknownMap.set(accountName, (unknownMap.get(accountName) || 0) + 1);
-    }
-  }
-
-  if (unknownMap.size === 0) {
-    Logger.log("全ての account_name が accounts マスタに登録されています");
-    return;
-  }
-
-  Logger.log("未登録の account_name:");
-
-  for (const [accountName, count] of unknownMap.entries()) {
-    Logger.log(`${accountName}: ${count}件`);
-  }
-
-  throw new Error(`未登録の account_name が ${unknownMap.size}種類あります`);
-}
-
-function normalizeAccountName(accountName) {
-  const raw = String(accountName || "").trim();
-
-  if (!raw) {
-    return "";
-  }
-
-  const aliasMap = getAccountAliasMap_();
-
-  return aliasMap.get(raw) || raw;
-}
-
-const ACCOUNT_ALIAS_CACHE_KEY = "account_alias_map_v1";
-
-function getAccountAliasMap_() {
-  const cache = CacheService.getScriptCache();
-
-  const cached = cache.get(ACCOUNT_ALIAS_CACHE_KEY);
-
-  if (cached) {
-    return new Map(Object.entries(JSON.parse(cached)));
-  }
-
-  const sheet = SS.getSheetByName(SHEETS.ACCOUNT_ALIAS);
-
-  if (!sheet) {
-    return new Map();
-  }
-
-  const values = sheet.getDataRange().getValues();
-
-  if (values.length < 2) {
-    return new Map();
-  }
-
-  const headers = values[0].map((value) => String(value || "").trim());
-
-  const index = {};
-
-  headers.forEach((header, i) => {
-    index[header] = i;
-  });
-
-  const map = {};
-
-  for (const row of values.slice(1)) {
-    const alias = String(row[index["raw_account_name"]] || "").trim();
-
-    const canonical = String(row[index["canonical_account_name"]] || "").trim();
-
-    if (alias && canonical) {
-      map[alias] = canonical;
-    }
-  }
-
-  cache.put(ACCOUNT_ALIAS_CACHE_KEY, JSON.stringify(map), 21600);
-
-  return new Map(Object.entries(map));
-}
 
 function appendTransactionRows(rows) {
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -990,7 +364,7 @@ function addTransactions(transactions, options = {}) {
     const tx = {
       ...originalTransaction,
 
-      account_name: normalizeAccountName(originalTransaction.account_name),
+      account_name: resolveCanonicalAccountName_(originalTransaction.account_name),
     };
 
     const duplicateKey = buildDuplicateKey(tx);
@@ -1053,3 +427,862 @@ function addTransactions(transactions, options = {}) {
     addedIds,
   };
 }
+
+// ============================================================
+// Transaction API Handlers
+// ============================================================
+
+function createTransactionFromApp_(data) {
+  const transactionDate = String(data.transactionDate || "").trim();
+
+  const type = String(data.type || "").trim();
+
+  const amount = Number(data.amount || 0);
+
+  const majorCategory = String(data.majorCategory || "").trim();
+
+  const subCategory = String(data.subCategory || "").trim();
+
+  const title = String(data.title || "").trim();
+
+  const paymentMethod = String(data.paymentMethod || "").trim();
+
+  const status = String(data.status || "要確認").trim();
+
+  const accountName = String(data.accountName || "").trim();
+
+  const memo = String(data.memo || "").trim();
+
+  if (!transactionDate) {
+    throw new Error("transactionDateは必須です");
+  }
+
+  const parsedDate = new Date(`${transactionDate}T00:00:00+09:00`);
+
+  if (isNaN(parsedDate.getTime())) {
+    throw new Error("transactionDateの形式が不正です");
+  }
+
+  if (type !== "支出" && type !== "収入") {
+    throw new Error("typeは支出または収入を指定してください");
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("amountは1以上で指定してください");
+  }
+
+  if (!majorCategory) {
+    throw new Error("majorCategoryは必須です");
+  }
+
+  if (!subCategory) {
+    throw new Error("subCategoryは必須です");
+  }
+
+  if (!title) {
+    throw new Error("titleは必須です");
+  }
+
+  if (!paymentMethod) {
+    throw new Error("paymentMethodは必須です");
+  }
+
+  if (status !== "確定" && status !== "要確認") {
+    throw new Error("statusは確定または要確認を指定してください");
+  }
+
+  const purposeType = type === "収入" ? "私用" : guessPurposeType(majorCategory, subCategory);
+
+  const wallet = purposeType === "経費" ? "事業" : "生活";
+
+  const tx = {
+    transaction_date: transactionDate,
+
+    merchant: normalizeMerchant(title),
+
+    item_name: title,
+
+    amount,
+
+    note: memo,
+
+    source_type: "Neru Nexus App",
+
+    payment_method: paymentMethod,
+
+    evidence_url: "",
+
+    original_image_url: "",
+
+    import_batch: Utilities.formatDate(
+      new Date(),
+      "Asia/Tokyo",
+      "yyyyMMdd_HHmmss",
+    ),
+
+    type,
+
+    major_category: majorCategory,
+
+    sub_category: subCategory,
+
+    purpose_type: purposeType,
+
+    expense_ratio: type === "支出" ? guessExpenseRatio(majorCategory, subCategory) : 0,
+
+    status: status,
+
+    account_name: accountName,
+
+    wallet,
+
+    intent: type === "収入" ? "収入" : guessIntent(type, majorCategory, subCategory),
+  };
+
+  const result = addTransactions([tx], {
+    skipDuplicateCheck: true,
+  });
+
+  if (result.addedCount === 0) {
+    if (result.skippedCount > 0) {
+      throw new Error("同じ内容の取引がすでに登録されています");
+    }
+
+    throw new Error("取引を登録できませんでした");
+  }
+
+  clearTableCache(SHEETS.TRANSACTIONS);
+  clearAccountBalanceCache_();
+  clearHomeRecentTransactionsCache_();
+
+  const createdId =
+    result.addedIds && result.addedIds.length > 0 ? result.addedIds[0] : "";
+
+  const yearMonth = normalizeYearMonth(transactionDate);
+
+  if (yearMonth) {
+    markSummaryDirty_(yearMonth);
+  }
+
+  return createJsonResponse_(
+    {
+      addedCount: result.addedCount,
+
+      skippedCount: result.skippedCount,
+
+      source: "app",
+
+      transaction: {
+        id: createdId,
+
+        transactionDate: tx.transaction_date,
+
+        merchant: tx.merchant || "",
+
+        itemName: tx.item_name || "",
+
+        amount: tx.amount,
+
+        type: tx.type,
+
+        majorCategory: tx.major_category,
+
+        subCategory: tx.sub_category,
+
+        status: tx.status,
+
+        wallet: tx.wallet,
+
+        intent: tx.intent || "",
+
+        paymentMethod: tx.payment_method,
+
+        accountName: tx.account_name || "",
+
+        rawText: tx.raw_text || "",
+
+        settlementStatus: "",
+
+        settlementId: "",
+
+        fromAccount: "",
+
+        toAccount: "",
+
+        importBatch: tx.import_batch || "",
+
+        note: tx.note || "",
+      },
+    },
+    "ok",
+  );
+}
+
+function updateTransactionFromApp_(data) {
+  const id = String(data.id || "").trim();
+
+  const transactionDate = String(data.transactionDate || "").trim();
+
+  const type = String(data.type || "").trim();
+
+  const amount = Number(data.amount || 0);
+
+  const majorCategory = String(data.majorCategory || "").trim();
+
+  const subCategory = String(data.subCategory || "").trim();
+
+  const title = String(data.title || "").trim();
+
+  const paymentMethod = String(data.paymentMethod || "").trim();
+
+  const status = String(data.status || "要確認").trim();
+
+  const memo = String(data.memo || "").trim();
+
+  const saveRule = toBoolean_(data.saveRule, false);
+
+  const ruleMerchant = String(data.merchant || "").trim();
+
+  const fromAccount = String(data.fromAccount || "").trim();
+
+  const toAccount = String(data.toAccount || "").trim();
+
+  if (!id) {
+    throw new Error("idは必須です");
+  }
+
+  if (!transactionDate) {
+    throw new Error("transactionDateは必須です");
+  }
+
+  if (type !== "支出" && type !== "収入" && type !== "移動") {
+    throw new Error("typeは支出、収入、移動を指定してください");
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("amountは1以上で指定してください");
+  }
+
+  if (!majorCategory) {
+    throw new Error("majorCategoryは必須です");
+  }
+
+  if (!subCategory) {
+    throw new Error("subCategoryは必須です");
+  }
+
+  if (!title) {
+    throw new Error("titleは必須です");
+  }
+
+  if (!paymentMethod) {
+    throw new Error("paymentMethodは必須です");
+  }
+
+  if (status !== "確定" && status !== "要確認") {
+    throw new Error("statusは確定または要確認を指定してください");
+  }
+
+  const found = findTransactionById_(id);
+
+  if (!found) {
+    throw new Error("更新対象の取引が見つかりません");
+  }
+
+  assertRequiredColumns(
+    found.index,
+    [
+      "id",
+      "transaction_date",
+      "recorded_at",
+      "year_month",
+      "type",
+      "source_type",
+      "payment_method",
+      "account_name",
+      "merchant",
+      "item_name",
+      "raw_text",
+      "amount",
+      "major_category",
+      "sub_category",
+      "purpose_type",
+      "expense_ratio",
+      "expense_amount",
+      "note",
+      "evidence_url",
+      "original_image_url",
+      "import_batch",
+      "duplicate_key",
+      "status",
+      "wallet",
+      "intent",
+      "from_account",
+      "to_account",
+      "settlement_status",
+      "settlement_id",
+      "source_id",
+      "source_status",
+      "source_received_at",
+    ],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const existingRow = found.row;
+  const tableIndex = found.index;
+
+  const oldStatus = getString(existingRow, tableIndex, "status");
+
+  const oldTransactionDate = existingRow[tableIndex["transaction_date"]];
+
+  const oldType = getString(existingRow, tableIndex, "type");
+
+  const oldAmount = getNumber(existingRow, tableIndex, "amount");
+
+  const oldMajorCategory = getString(existingRow, tableIndex, "major_category");
+
+  const oldExpenseAmount = getNumber(existingRow, tableIndex, "expense_amount");
+
+  const existingSettlementStatus = getString(
+    existingRow,
+    tableIndex,
+    "settlement_status",
+  );
+
+  const existingSettlementId = getString(
+    existingRow,
+    tableIndex,
+    "settlement_id",
+  );
+
+  const existingSourceId = getString(existingRow, tableIndex, "source_id");
+
+  const existingSourceStatus = getString(
+    existingRow,
+    tableIndex,
+    "source_status",
+  );
+
+  const existingSourceReceivedAt =
+    existingRow[tableIndex["source_received_at"]] || "";
+
+  // ============================================================
+  // Gmail速報をユーザーが編集したことを記録
+  //
+  // preliminary
+  //   → preliminary_edited
+  //
+  // すでにpreliminary_editedならそのまま。
+  // CSV等の通常取引には影響しない。
+  // ============================================================
+
+  let nextSourceStatus = existingSourceStatus;
+
+  if (
+    existingSourceStatus === "preliminary" ||
+    existingSourceStatus === "preliminary_edited"
+  ) {
+    nextSourceStatus = "preliminary_edited";
+  }
+
+  const isCreditCardSettlement = subCategory === "クレカ引落";
+
+  const purposeType = type === "収入" ? "私用" : guessPurposeType(majorCategory, subCategory);
+
+  const expenseRatio = type === "支出" ? guessExpenseRatio(majorCategory, subCategory) : 0;
+
+  const wallet = purposeType === "経費" ? "事業" : "生活";
+
+  const intent = type === "収入" ? "収入" : guessIntent(type, majorCategory, subCategory);
+
+  const updatedTransaction = {
+    transaction_date: transactionDate,
+
+    type,
+
+    source_type:
+      getString(existingRow, tableIndex, "source_type") || "Neru Nexus App",
+
+    payment_method: paymentMethod,
+
+    account_name:
+      getString(existingRow, tableIndex, "account_name") || "App Manual",
+
+    merchant: normalizeMerchant(title),
+
+    item_name: title,
+
+    raw_text: getString(existingRow, tableIndex, "raw_text"),
+
+    amount,
+
+    major_category: majorCategory,
+
+    sub_category: subCategory,
+
+    purpose_type: purposeType,
+
+    expense_ratio: expenseRatio,
+
+    note: memo,
+
+    evidence_url: getString(existingRow, tableIndex, "evidence_url"),
+
+    original_image_url: getString(
+      existingRow,
+      tableIndex,
+      "original_image_url",
+    ),
+
+    import_batch: getString(existingRow, tableIndex, "import_batch"),
+
+    status,
+
+    wallet,
+
+    intent,
+
+    from_account:
+      type === "移動"
+        ? resolveCanonicalAccountName_(
+            fromAccount || getString(existingRow, tableIndex, "from_account"),
+          )
+        : "",
+
+    to_account:
+      type === "移動"
+        ? resolveCanonicalAccountName_(
+            toAccount || getString(existingRow, tableIndex, "to_account"),
+          )
+        : "",
+
+    settlement_status:
+      type !== "移動"
+        ? ""
+        : isCreditCardSettlement
+          ? existingSettlementStatus
+          : toAccount || getString(existingRow, tableIndex, "to_account")
+            ? "none"
+            : "review",
+
+    settlement_id: type === "移動" ? existingSettlementId : "",
+
+    source_id: existingSourceId,
+
+    source_status: nextSourceStatus,
+
+    source_received_at: existingSourceReceivedAt,
+  };
+
+  const needsReviewRefresh =
+    oldStatus === "要確認" ||
+    status === "要確認" ||
+    existingSettlementStatus === "review" ||
+    updatedTransaction.settlement_status === "review" ||
+    saveRule;
+
+  const recordedAt = existingRow[tableIndex["recorded_at"]] || new Date();
+
+  const yearMonth = resolveTransactionYearMonth(transactionDate, recordedAt);
+
+  const duplicateKey = buildDuplicateKey(updatedTransaction);
+
+  const updatedRow = buildTransactionRow(
+    updatedTransaction,
+    id,
+    recordedAt,
+    yearMonth,
+    duplicateKey,
+  );
+
+  const sheet = found.sheet;
+
+  const sheetRowNumber = found.rowNumber;
+
+  sheet
+    .getRange(sheetRowNumber, 1, 1, updatedRow.length)
+    .setValues([updatedRow]);
+
+  clearTableCache(SHEETS.TRANSACTIONS);
+
+  clearAccountBalanceCache_();
+
+  clearHomeRecentTransactionsCache_();
+
+  let ruleResult = null;
+
+  if (saveRule) {
+    const merchantForRule =
+      ruleMerchant || getString(existingRow, tableIndex, "merchant");
+
+    if (!merchantForRule) {
+      throw new Error("ルール登録対象の取引先を取得できません");
+    }
+
+    ruleResult = addRuleFromTransaction_({
+      merchant: merchantForRule,
+      type,
+      majorCategory,
+      subCategory,
+      purposeType,
+      expenseRatio,
+      wallet,
+      intent,
+    });
+
+    if (ruleResult.rule) {
+      ruleResult.applied = applyRuleToPendingTransactions_(ruleResult.rule, id);
+    }
+  }
+
+  const newExpenseAmount = amount * expenseRatio;
+
+  const needsSummaryRefresh =
+    normalizeYearMonth(oldTransactionDate) !== yearMonth ||
+    oldType !== type ||
+    oldAmount !== amount ||
+    oldMajorCategory !== majorCategory ||
+    oldExpenseAmount !== newExpenseAmount;
+
+  if (needsSummaryRefresh) {
+    const oldYearMonth = normalizeYearMonth(oldTransactionDate);
+
+    if (oldYearMonth) {
+      markSummaryDirty_(oldYearMonth);
+    }
+
+    if (yearMonth && yearMonth !== oldYearMonth) {
+      markSummaryDirty_(yearMonth);
+    }
+  }
+
+  return createJsonResponse_(
+    {
+      updated: true,
+
+      id,
+
+      transaction: {
+        id,
+
+        transactionDate,
+
+        merchant: updatedTransaction.merchant || "",
+
+        itemName: updatedTransaction.item_name || "",
+
+        amount,
+
+        type,
+
+        majorCategory,
+
+        subCategory,
+
+        status,
+
+        wallet,
+
+        intent: updatedTransaction.intent || "",
+
+        paymentMethod,
+
+        accountName: updatedTransaction.account_name || "",
+
+        rawText: updatedTransaction.raw_text || "",
+
+        settlementStatus: updatedTransaction.settlement_status || "",
+
+        settlementId: updatedTransaction.settlement_id || "",
+
+        fromAccount: updatedTransaction.from_account || "",
+
+        toAccount: updatedTransaction.to_account || "",
+
+        importBatch: updatedTransaction.import_batch || "",
+
+        note: updatedTransaction.note || "",
+
+        sourceId: updatedTransaction.source_id || "",
+
+        sourceStatus: updatedTransaction.source_status || "",
+
+        sourceReceivedAt: updatedTransaction.source_received_at || "",
+      },
+    },
+    "ok",
+  );
+}
+
+function deleteTransactionFromApp_(data) {
+  const id = String(data.id || "").trim();
+
+  if (!id) {
+    throw new Error("idは必須です");
+  }
+
+  const found = findTransactionById_(id);
+
+  if (!found) {
+    throw new Error("削除対象が見つかりません");
+  }
+
+  assertRequiredColumns(
+    found.index,
+    ["id", "transaction_date", "status", "settlement_status"],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const targetRow = found.row;
+  const tableIndex = found.index;
+
+  const transactionDate = targetRow[tableIndex["transaction_date"]];
+
+  const status = getString(targetRow, tableIndex, "status");
+
+  const settlementStatus = getString(
+    targetRow,
+    tableIndex,
+    "settlement_status",
+  );
+
+  const yearMonth = normalizeYearMonth(transactionDate);
+
+  const needsReviewRefresh =
+    status === "要確認" || settlementStatus === "review";
+
+  const sheet = found.sheet;
+
+  const sheetRowNumber = found.rowNumber;
+
+  /*
+   * 本体を削除
+   */
+
+  sheet.deleteRow(sheetRowNumber);
+
+  /*
+   * キャッシュ破棄
+   */
+  clearTableCache(SHEETS.TRANSACTIONS);
+
+  clearAccountBalanceCache_();
+
+  clearHomeRecentTransactionsCache_();
+
+  /*
+   * 派生データ更新。
+   *
+   * 本体の削除自体は完了しているので、
+   * 派生データ更新失敗によって
+   * API全体を失敗扱いにはしない。
+   */
+  const rebuildErrors = [];
+
+  if (yearMonth) {
+    markSummaryDirty_(yearMonth);
+  }
+
+  return createJsonResponse_(
+    {
+      deleted: true,
+      id,
+      rebuildErrors,
+    },
+    "ok",
+  );
+}
+
+function getTransactionsData(options) {
+  const settings = options || {};
+
+  const requestedLimit = Number(settings.limit || 50);
+  const requestedOffset = Number(settings.offset || 0);
+
+  const limit = Math.min(Math.max(requestedLimit, 1), 200);
+  const offset = Math.max(requestedOffset, 0);
+
+  const targetMonth = settings.yearMonth
+    ? normalizeBudgetYearMonth(settings.yearMonth)
+    : "";
+
+  const keyword = String(settings.keyword || "")
+    .normalize("NFKC")
+    .trim()
+    .toLowerCase();
+
+  const majorCategory = String(settings.majorCategory || "").trim();
+
+  const reviewOnly = toBoolean_(settings.reviewOnly, false);
+
+  const table = loadTransactions();
+
+  if (table.rows.length === 0) {
+    return {
+      items: [],
+      total: 0,
+      limit,
+      offset,
+      hasMore: false,
+    };
+  }
+
+  assertRequiredColumns(
+    table.index,
+    [
+      "id",
+      "transaction_date",
+      "recorded_at",
+      "merchant",
+      "item_name",
+      "amount",
+      "type",
+      "major_category",
+      "sub_category",
+      "status",
+      "wallet",
+      "raw_text",
+      "intent",
+      "payment_method",
+      "account_name",
+      "settlement_status",
+      "settlement_id",
+      "from_account",
+      "to_account",
+      "import_batch",
+      "note",
+      "source_id",
+      "source_status",
+      "source_received_at",
+    ],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const settlementId = String(settings.settlementId || "").trim();
+  const importBatch = String(settings.importBatch || "").trim();
+
+  const filteredRows = table.rows.filter((row) => {
+    // ignoredは通常一覧に表示しない
+    if (isIgnoredTransactionRow_(row, table.index)) {
+      return false;
+    }
+
+    if (targetMonth) {
+      const rowMonth = normalizeYearMonth(row[table.index["transaction_date"]]);
+
+      if (rowMonth !== targetMonth) {
+        return false;
+      }
+    }
+
+    if (majorCategory) {
+      const rowMajorCategory = getString(row, table.index, "major_category");
+
+      if (rowMajorCategory !== majorCategory) {
+        return false;
+      }
+    }
+
+    if (reviewOnly) {
+      const status = getString(row, table.index, "status");
+
+      if (status !== "要確認") {
+        return false;
+      }
+    }
+
+    if (keyword) {
+      const searchableText = [
+        getString(row, table.index, "merchant"),
+        getString(row, table.index, "item_name"),
+        getString(row, table.index, "major_category"),
+        getString(row, table.index, "sub_category"),
+        getString(row, table.index, "wallet"),
+        getString(row, table.index, "intent"),
+      ]
+        .join(" ")
+        .normalize("NFKC")
+        .toLowerCase();
+
+      if (!searchableText.includes(keyword)) {
+        return false;
+      }
+    }
+
+    if (settlementId) {
+      const rowSettlementId = getString(row, table.index, "settlement_id");
+
+      if (rowSettlementId !== settlementId) {
+        return false;
+      }
+    }
+
+    if (importBatch) {
+      const rowImportBatch = getString(row, table.index, "import_batch");
+
+      if (rowImportBatch !== importBatch) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  filteredRows.sort((a, b) => {
+    const dateA = new Date(a[table.index["transaction_date"]]);
+    const dateB = new Date(b[table.index["transaction_date"]]);
+
+    const dateDifference = dateB.getTime() - dateA.getTime();
+
+    if (dateDifference !== 0) {
+      return dateDifference;
+    }
+
+    const recordedAtA = new Date(a[table.index["recorded_at"]]);
+    const recordedAtB = new Date(b[table.index["recorded_at"]]);
+
+    return recordedAtB.getTime() - recordedAtA.getTime();
+  });
+
+  const total = filteredRows.length;
+
+  const items = filteredRows.slice(offset, offset + limit).map((row) => ({
+    id: getString(row, table.index, "id"),
+
+    transactionDate: formatApiDate_(row[table.index["transaction_date"]]),
+
+    merchant: getString(row, table.index, "merchant"),
+    itemName: getString(row, table.index, "item_name"),
+    amount: getNumber(row, table.index, "amount"),
+    type: getString(row, table.index, "type"),
+    majorCategory: getString(row, table.index, "major_category"),
+    subCategory: getString(row, table.index, "sub_category"),
+    status: getString(row, table.index, "status"),
+    wallet: getString(row, table.index, "wallet"),
+    intent: getString(row, table.index, "intent"),
+    rawText: getString(row, table.index, "raw_text"),
+    paymentMethod: getString(row, table.index, "payment_method"),
+    accountName: getString(row, table.index, "account_name"),
+    settlementStatus: getString(row, table.index, "settlement_status"),
+    settlementId: getString(row, table.index, "settlement_id"),
+    fromAccount: getString(row, table.index, "from_account"),
+    toAccount: getString(row, table.index, "to_account"),
+    importBatch: getString(row, table.index, "import_batch"),
+    note: getString(row, table.index, "note"),
+    sourceId: getString(row, table.index, "source_id"),
+    sourceStatus: getString(row, table.index, "source_status"),
+
+    sourceReceivedAt: formatApiDateTime_(
+      row[table.index["source_received_at"]],
+    ),
+  }));
+
+  return {
+    items,
+    total,
+    limit,
+    offset,
+    hasMore: offset + items.length < total,
+  };
+}
+

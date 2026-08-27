@@ -17,11 +17,9 @@ class BudgetService {
     required String yearMonth,
     required int salaryPlanned,
     required int sideIncomePlanned,
-    required int savingTarget,
     required int nisaTarget,
     required int fixedExpenseBudget,
     required int variableExpenseBudget,
-    required int dreamTarget,
   }) async {
     final data = await ApiClient.post(
       action: 'budget_settings_update',
@@ -29,11 +27,9 @@ class BudgetService {
         'yearMonth': yearMonth,
         'salaryPlanned': salaryPlanned,
         'sideIncomePlanned': sideIncomePlanned,
-        'savingTarget': savingTarget,
         'nisaTarget': nisaTarget,
         'fixedExpenseBudget': fixedExpenseBudget,
         'variableExpenseBudget': variableExpenseBudget,
-        'dreamTarget': dreamTarget,
       },
     );
 

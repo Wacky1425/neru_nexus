@@ -84,42 +84,6 @@ class _ImportPageState extends State<ImportPage> {
     return result;
   }
 
-  Map<String, Map<String, ImportHistoryModel>> _buildImportStatus(
-    List<ImportHistoryModel> histories,
-  ) {
-    final result = <String, Map<String, ImportHistoryModel>>{};
-
-    for (final history in histories) {
-      final yearMonth = history.targetYearMonth.trim();
-
-      final accountName = history.accountName.trim();
-
-      if (yearMonth.isEmpty || accountName.isEmpty) {
-        continue;
-      }
-
-      result.putIfAbsent(yearMonth, () => <String, ImportHistoryModel>{});
-
-      final existing = result[yearMonth]![accountName];
-
-      if (existing == null) {
-        result[yearMonth]![accountName] = history;
-        continue;
-      }
-
-      final existingDate = existing.importedAt;
-
-      final newDate = history.importedAt;
-
-      if (newDate != null &&
-          (existingDate == null || newDate.isAfter(existingDate))) {
-        result[yearMonth]![accountName] = history;
-      }
-    }
-
-    return result;
-  }
-
   Future<void> _selectCsvFile() async {
     if (_isImporting) {
       return;
@@ -250,6 +214,10 @@ class _ImportPageState extends State<ImportPage> {
 
       await _reloadHistory();
 
+      if (!mounted) {
+        return;
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -324,92 +292,6 @@ class _ImportPageState extends State<ImportPage> {
     final result = values.toList()..sort((a, b) => b.compareTo(a));
 
     return result;
-  }
-
-  ImportCoverageStatus _getCoverageStatus({
-    required String yearMonth,
-    required String accountName,
-    required List<ImportHistoryModel> histories,
-  }) {
-    final parts = yearMonth.split('-');
-
-    if (parts.length != 2) {
-      return ImportCoverageStatus.none;
-    }
-
-    final year = int.tryParse(parts[0]);
-    final month = int.tryParse(parts[1]);
-
-    if (year == null || month == null) {
-      return ImportCoverageStatus.none;
-    }
-
-    final monthStart = DateTime(year, month, 1);
-    final monthEnd = DateTime(year, month + 1, 0);
-
-    final now = DateTime.now();
-
-    final isCurrentMonth = now.year == year && now.month == month;
-
-    final requiredEnd = isCurrentMonth
-        ? DateTime(now.year, now.month, now.day)
-        : monthEnd;
-
-    final ranges = <({DateTime start, DateTime end})>[];
-
-    for (final history in histories) {
-      if (history.accountName.trim() != accountName.trim()) {
-        continue;
-      }
-
-      final start = DateTime.tryParse(history.periodStart);
-
-      final end = DateTime.tryParse(history.periodEnd);
-
-      if (start == null || end == null) {
-        continue;
-      }
-
-      if (end.isBefore(monthStart) || start.isAfter(requiredEnd)) {
-        continue;
-      }
-
-      final clippedStart = start.isBefore(monthStart) ? monthStart : start;
-
-      final clippedEnd = end.isAfter(requiredEnd) ? requiredEnd : end;
-
-      ranges.add((start: clippedStart, end: clippedEnd));
-    }
-
-    if (ranges.isEmpty) {
-      return ImportCoverageStatus.none;
-    }
-
-    ranges.sort((a, b) => a.start.compareTo(b.start));
-
-    var coveredUntil = ranges.first.end;
-
-    if (ranges.first.start.isAfter(monthStart)) {
-      return ImportCoverageStatus.partial;
-    }
-
-    for (final range in ranges.skip(1)) {
-      final nextDay = coveredUntil.add(const Duration(days: 1));
-
-      if (range.start.isAfter(nextDay)) {
-        return ImportCoverageStatus.partial;
-      }
-
-      if (range.end.isAfter(coveredUntil)) {
-        coveredUntil = range.end;
-      }
-    }
-
-    if (!coveredUntil.isBefore(requiredEnd)) {
-      return ImportCoverageStatus.complete;
-    }
-
-    return ImportCoverageStatus.partial;
   }
 
   @override

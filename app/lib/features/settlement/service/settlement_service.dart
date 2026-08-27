@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../core/constants/api_constants.dart';
+import '../../../core/network/api_client.dart';
 import '../model/settlement_status_model.dart';
 
 class SettlementService {
@@ -189,49 +190,10 @@ class SettlementService {
   // ============================================================
 
   Future<void> manualMatch({required String settlementTransactionId}) async {
-    final body = {
-      'action': 'settlement_manual_match',
-      'key': ApiConstants.apiKey,
-      'settlementTransactionId': settlementTransactionId,
-    };
-
-    final response = await http.post(
-      Uri.parse(ApiConstants.baseUrl),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
+    await ApiClient.post(
+      action: 'settlement_manual_match',
+      body: {'settlementTransactionId': settlementTransactionId},
     );
-
-    if (response.statusCode != 200) {
-      throw Exception(
-        '手動照合に失敗しました: '
-        '${response.statusCode}',
-      );
-    }
-
-    final dynamic decodedValue;
-
-    try {
-      decodedValue = jsonDecode(response.body);
-    } on FormatException {
-      throw Exception('手動照合APIから不正なレスポンスが返されました');
-    }
-
-    if (decodedValue is! Map) {
-      throw Exception('手動照合APIの形式が正しくありません');
-    }
-
-    final decoded = Map<String, dynamic>.from(decodedValue);
-
-    if (decoded['success'] != true) {
-      final error = decoded['error'];
-
-      if (error is Map) {
-        throw Exception(error['message']?.toString() ?? '手動照合APIでエラーが発生しました');
-      }
-
-      throw Exception(error?.toString() ?? '手動照合APIでエラーが発生しました');
-    }
-
     clearCache();
   }
 
@@ -242,49 +204,11 @@ class SettlementService {
   Future<void> cancelManualMatch({
     required String settlementTransactionId,
   }) async {
-    final body = {
-      'action': 'settlement_manual_unmatch',
-      'key': ApiConstants.apiKey,
-      'settlementTransactionId': settlementTransactionId,
-    };
-
-    final response = await http.post(
-      Uri.parse(ApiConstants.baseUrl),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
+    await ApiClient.post(
+      action: 'settlement_manual_unmatch',
+      body: {'settlementTransactionId': settlementTransactionId},
     );
-
-    if (response.statusCode != 200) {
-      throw Exception(
-        '手動照合の解除に失敗しました: '
-        '${response.statusCode}',
-      );
-    }
-
-    final dynamic decodedValue;
-
-    try {
-      decodedValue = jsonDecode(response.body);
-    } on FormatException {
-      throw Exception('手動照合解除APIから不正なレスポンスが返されました');
-    }
-
-    if (decodedValue is! Map) {
-      throw Exception('手動照合解除APIの形式が正しくありません');
-    }
-
-    final decoded = Map<String, dynamic>.from(decodedValue);
-
-    if (decoded['success'] != true) {
-      final error = decoded['error'];
-
-      if (error is Map) {
-        throw Exception(error['message']?.toString() ?? '手動照合解除APIでエラーが発生しました');
-      }
-
-      throw Exception(error?.toString() ?? '手動照合解除APIでエラーが発生しました');
-    }
-
     clearCache();
   }
+
 }

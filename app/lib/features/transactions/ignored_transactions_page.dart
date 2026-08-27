@@ -141,7 +141,7 @@ class _IgnoredTransactionsPageState extends State<IgnoredTransactionsPage> {
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 8),
               itemCount: items.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, index) {
                 final transaction = items[index];
 

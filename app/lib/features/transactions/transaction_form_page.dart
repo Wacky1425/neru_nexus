@@ -80,8 +80,6 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
 
   final MasterRepository _masterRepository = const MasterRepository();
 
-  late Future<MasterModel> _masterFuture;
-
   MasterModel? _master;
 
   TransactionType _selectedType = TransactionType.expense;
@@ -191,7 +189,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
   void initState() {
     super.initState();
 
-    _masterFuture = _loadMaster();
+    _loadMaster();
 
     final tx = widget.initialTransaction;
 
@@ -869,7 +867,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
 
                   if (_selectedType == TransactionType.transfer) ...[
                     DropdownButtonFormField<String>(
-                      value: _selectedFromAccountId.isEmpty
+                      initialValue: _selectedFromAccountId.isEmpty
                           ? null
                           : _selectedFromAccountId,
                       decoration: const InputDecoration(
@@ -910,7 +908,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                     const SizedBox(height: 20),
 
                     DropdownButtonFormField<String>(
-                      value: _selectedToAccountId.isEmpty
+                      initialValue: _selectedToAccountId.isEmpty
                           ? null
                           : _selectedToAccountId,
                       decoration: const InputDecoration(
@@ -953,7 +951,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                     ),
                   ] else ...[
                     DropdownButtonFormField<String>(
-                      value: _selectedAccountId.isEmpty
+                      initialValue: _selectedAccountId.isEmpty
                           ? null
                           : _selectedAccountId,
                       decoration: const InputDecoration(

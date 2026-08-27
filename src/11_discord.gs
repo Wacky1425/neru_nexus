@@ -139,31 +139,33 @@ function createDiscordTransaction_(data) {
       data.category &&
       String(data.category).trim() !== ""
     ) {
-      const category =
-        String(data.category).trim();
+      // Discordの旧category指定は小カテゴリ名だけだったため、
+      // 現在のカテゴリマスタから一意に解決する。
+      const category = String(data.category).trim();
+      const categoryData = getCategoriesData();
+      const matches = (categoryData.items || []).filter(
+        (item) => item.type === "支出" && item.subCategory === category,
+      );
 
-      const purposeType =
-        guessPurposeType(category);
+      if (matches.length !== 1) {
+        throw new Error(
+          `Discord categoryを一意に解決できません: ${category}`,
+        );
+      }
+
+      const majorCategory = matches[0].majorCategory;
+      const subCategory = matches[0].subCategory;
+      const purposeType = guessPurposeType(majorCategory, subCategory);
 
       classified = {
         type: "支出",
-        major_category:
-  majorCategory,
-
-sub_category:
-  subCategory,
-        purpose_type:
-          purposeType,
-        expense_ratio:
-          guessExpenseRatio(subCategory),
-        status:
-          "確定",
-        wallet:
-          purposeType === "経費"
-            ? "事業"
-            : "生活",
-        intent:
-          guessIntent(subCategory),
+        major_category: majorCategory,
+        sub_category: subCategory,
+        purpose_type: purposeType,
+        expense_ratio: guessExpenseRatio(majorCategory, subCategory),
+        status: "確定",
+        wallet: purposeType === "経費" ? "事業" : "生活",
+        intent: guessIntent("支出", majorCategory, subCategory),
       };
 
     } else {
@@ -182,8 +184,6 @@ sub_category:
     const result =
       addTransactions([tx]);
 
-    rebuildReviewQueue();
-    rebuildReviewSummary();
     rebuildAllViews();
 
     return createJsonResponse_(

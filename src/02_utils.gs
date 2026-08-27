@@ -24,10 +24,6 @@ function normalizeYearMonth(value) {
   return "";
 }
 
-function toText(value) {
-  return String(value || "").trim();
-}
-
 function getString(row, index, columnName) {
   return String(
     row[index[columnName]] || ""
@@ -66,3 +62,26 @@ function parseAmount(value) {
 
   return isNaN(amount) ? 0 : amount;
 }
+
+// ============================================================
+// API Date Formatting
+// ============================================================
+
+function formatApiDate_(value) {
+  if (!value) {
+    return "";
+  }
+
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, "Asia/Tokyo", "yyyy-MM-dd");
+  }
+
+  const parsedDate = new Date(String(value).replace(/\./g, "/"));
+
+  if (!isNaN(parsedDate.getTime())) {
+    return Utilities.formatDate(parsedDate, "Asia/Tokyo", "yyyy-MM-dd");
+  }
+
+  return String(value);
+}
+

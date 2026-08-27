@@ -228,7 +228,7 @@ function writeTable(
     .getRange(startRow + 1, startColumn, dataRows.length, columnCount)
     .setValues(dataRows);
 
-  clearTableCache();
+  clearTableCache(sheet.getName());
 }
 
 function clearTableCache(sheetName) {
@@ -242,28 +242,4 @@ function clearTableCache(sheetName) {
   });
 }
 
-function resolveCanonicalAccountName_(rawName) {
-  const target = String(rawName || "")
-    .normalize("NFKC")
-    .trim();
 
-  if (!target) {
-    return "";
-  }
-
-  // 毎回シートを読まず、既に作ったキャッシュを使う
-  const rows = getAccountAliases_();
-
-  for (const row of rows) {
-    const raw = String(row.raw_account_name || "")
-      .normalize("NFKC")
-      .trim();
-
-    if (raw === target) {
-      return String(row.canonical_account_name || "").trim();
-    }
-  }
-
-  // マスタに無ければ元の名前を返す
-  return target;
-}

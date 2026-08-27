@@ -1,8 +1,4 @@
-import 'dart:convert';
-
-import 'package:http/http.dart' as http;
-
-import '../../../core/constants/api_constants.dart';
+import '../../../core/network/api_client.dart';
 import '../../transactions/model/transaction_model.dart';
 
 class ReviewTransactionsResult {
@@ -28,32 +24,13 @@ class ReviewService {
     int limit = 100,
     int offset = 0,
   }) async {
-    final uri = Uri.parse(ApiConstants.baseUrl).replace(
+    final data = await ApiClient.get(
+      action: 'review_transactions',
       queryParameters: {
-        'action': 'review_transactions',
-        'key': ApiConstants.apiKey,
         'limit': limit.toString(),
         'offset': offset.toString(),
       },
     );
-
-    final response = await http.get(uri);
-
-    if (response.statusCode != 200) {
-      throw Exception('要確認一覧を取得できませんでした');
-    }
-
-    final decoded = jsonDecode(response.body);
-
-    if (decoded['success'] != true) {
-      throw Exception(decoded['error']['message']);
-    }
-
-    final data = decoded['data'];
-
-    if (data is! Map) {
-      throw Exception('要確認一覧APIのデータ形式が正しくありません');
-    }
 
     final itemsValue = data['items'];
 
@@ -79,41 +56,9 @@ class ReviewService {
   }
 
   Future<int> fetchReviewCount() async {
-    final uri = Uri.parse(ApiConstants.baseUrl).replace(
-      queryParameters: {'action': 'review_count', 'key': ApiConstants.apiKey},
-    );
+    final data = await ApiClient.get(action: 'review_count');
 
-    final response = await http.get(uri);
-
-    if (response.statusCode != 200) {
-      throw Exception('要確認件数を取得できませんでした');
-    }
-
-    final dynamic decodedValue = jsonDecode(response.body);
-
-    if (decodedValue is! Map) {
-      throw Exception('要確認件数APIの形式が正しくありません');
-    }
-
-    final decoded = Map<String, dynamic>.from(decodedValue);
-
-    if (decoded['success'] != true) {
-      throw Exception('要確認件数を取得できませんでした');
-    }
-
-    final data = decoded['data'];
-
-    if (data is! Map) {
-      throw Exception('要確認件数APIのデータ形式が正しくありません');
-    }
-
-    final count = data['count'];
-
-    if (count is num) {
-      return count.toInt();
-    }
-
-    return int.tryParse(count?.toString() ?? '') ?? 0;
+    return _toInt(data['count']);
   }
 
   static int _toInt(dynamic value) {

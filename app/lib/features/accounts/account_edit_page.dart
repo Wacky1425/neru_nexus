@@ -433,7 +433,7 @@ class _AccountEditPageState extends State<AccountEditPage> {
             const SizedBox(height: 16),
 
             DropdownButtonFormField<int>(
-              value: _closingDay > 0 ? _closingDay : null,
+              initialValue: _closingDay > 0 ? _closingDay : null,
               decoration: const InputDecoration(
                 labelText: '締め日',
                 border: OutlineInputBorder(),
@@ -463,7 +463,7 @@ class _AccountEditPageState extends State<AccountEditPage> {
             const SizedBox(height: 16),
 
             DropdownButtonFormField<int>(
-              value: _paymentDay > 0 ? _paymentDay : null,
+              initialValue: _paymentDay > 0 ? _paymentDay : null,
               decoration: const InputDecoration(
                 labelText: '支払日',
                 border: OutlineInputBorder(),
@@ -490,7 +490,7 @@ class _AccountEditPageState extends State<AccountEditPage> {
             const SizedBox(height: 16),
 
             DropdownButtonFormField<int>(
-              value: _paymentMonthOffset,
+              initialValue: _paymentMonthOffset,
               decoration: const InputDecoration(
                 labelText: '支払月',
                 border: OutlineInputBorder(),

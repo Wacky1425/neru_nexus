@@ -150,11 +150,9 @@ function getBudgetSettings(yearMonth) {
 
     salaryPlanned: Number(budgets["給与予定"] || 0),
     sideIncomePlanned: Number(budgets["副業予定"] || 0),
-    savingTarget: Number(budgets["貯金目標"] || 0),
     nisaTarget: Number(budgets["NISA積立"] || 0),
     fixedExpenseBudget: Number(budgets["固定費予算"] || 0),
     variableExpenseBudget: Number(budgets["変動費予算"] || 0),
-    dreamTarget: Number(budgets["夢積立"] || 0),
   };
 }
 
@@ -168,11 +166,9 @@ function updateBudgetSettingsFromApp_(data) {
   const values = {
     給与予定: Number(data.salaryPlanned || 0),
     副業予定: Number(data.sideIncomePlanned || 0),
-    貯金目標: Number(data.savingTarget || 0),
     NISA積立: Number(data.nisaTarget || 0),
     固定費予算: Number(data.fixedExpenseBudget || 0),
     変動費予算: Number(data.variableExpenseBudget || 0),
-    夢積立: Number(data.dreamTarget || 0),
   };
 
   const table = loadBudgetTable_();
@@ -226,20 +222,6 @@ function updateBudgetSettingsFromApp_(data) {
 }
 
 /**
- * 対象月・対象項目の予算を取得する。
- *
- * @param {*} yearMonth
- * @param {*} itemName
- * @return {number}
- */
-function getBudget(yearMonth, itemName) {
-  const budgets = getBudgetsForMonth(yearMonth);
-  const item = String(itemName || "").trim();
-
-  return Number(budgets[item] || 0);
-}
-
-/**
  * budgetsに登録された最新月を取得する。
  *
  * @return {string}
@@ -280,39 +262,4 @@ function getLatestBudgetMonth() {
  * @param {*} itemName
  * @return {number}
  */
-function getLatestBudget(itemName) {
-  const latestMonth = getLatestBudgetMonth();
 
-  if (!latestMonth) {
-    return 0;
-  }
-
-  return getBudget(latestMonth, itemName);
-}
-
-function testGetBudget() {
-  Logger.log(`貯金目標: ${getBudget("2026-08", "貯金目標")}`);
-}
-
-function testGetLatestBudget() {
-  Logger.log(`最新月の貯金目標: ${getLatestBudget("貯金目標")}`);
-}
-
-function getLatestYearMonth() {
-  const sheet = SS.getSheetByName(SHEETS.MONTHLY_SUMMARY);
-  const values = sheet.getDataRange().getValues();
-
-  if (values.length < 2) {
-    throw new Error("monthly_summary にデータがありません");
-  }
-
-  const rows = values.slice(1).filter((r) => r[0]);
-  const latestRaw = rows[rows.length - 1][0];
-  const latest = normalizeYearMonth(latestRaw);
-
-  if (!latest) {
-    throw new Error("最新の year_month を正規化できません");
-  }
-
-  return latest;
-}

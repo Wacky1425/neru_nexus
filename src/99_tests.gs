@@ -10,11 +10,13 @@ function testLoadTable() {
 function testObjectLoaders() {
   const rules = getRules();
   const configs = loadObjects(SHEETS.IMPORT_CONFIG);
-  const importRows = readImportCsv();
+  const accounts = loadObjects(SHEETS.ACCOUNTS);
+  const categories = loadObjects(SHEETS.CATEGORIES);
 
   Logger.log(`rules: ${rules.length}`);
   Logger.log(`configs: ${configs.length}`);
-  Logger.log(`import_csv: ${importRows.length}`);
+  Logger.log(`accounts: ${accounts.length}`);
+  Logger.log(`categories: ${categories.length}`);
 
   if (rules.length > 0) {
     Logger.log(`先頭rule: ${JSON.stringify(rules[0])}`);
@@ -23,6 +25,10 @@ function testObjectLoaders() {
   const olive = getImportConfig("olive_credit_v1");
 
   Logger.log(`config取得: ${olive.config_name}`);
+
+  if (olive.config_name !== "olive_credit_v1") {
+    throw new Error("Olive configを取得できません");
+  }
 }
 
 function testClassifyMoneyTransaction() {
@@ -82,13 +88,10 @@ function testClassifyMoneyTransaction() {
 function testOliveCsvTypeMapping() {
   const configV1 = getConfigNameByCsvType("olive_credit_v1");
 
-  const configV2 = getConfigNameByCsvType("olive_credit_v2");
-
   Logger.log(`v1 config: ${configV1}`);
-  Logger.log(`v2 config: ${configV2}`);
 
-  if (configV1 !== "olive_credit_v1" || configV2 !== "olive_credit_v1") {
-    throw new Error("Oliveのconfig変換に失敗しました");
+  if (!configV1) {
+    throw new Error("Olive v1のconfigを取得できません");
   }
 
   const rows = convertOliveRowsWithoutHeader([
@@ -97,43 +100,11 @@ function testOliveCsvTypeMapping() {
 
   Logger.log(JSON.stringify(rows));
 
-  if (rows.length !== 1 || rows[0]["請求額"] !== 610) {
+  if (rows.length !== 1 || Number(rows[0]["請求額"]) !== 610) {
     throw new Error("Olive明細変換に失敗しました");
   }
 
   Logger.log("Olive CSVテスト成功");
-}
-
-function testDoPostCash() {
-  const e = {
-    postData: {
-      contents: JSON.stringify({
-        merchant: "ローソン",
-        amount: 500,
-        mode: "cash",
-        memo: "テスト現金",
-      }),
-    },
-  };
-
-  const result = doPost(e);
-  Logger.log(result.getContent());
-}
-
-function testDoPostMemo() {
-  const e = {
-    postData: {
-      contents: JSON.stringify({
-        merchant: "BOOTH",
-        amount: 3200,
-        mode: "memo",
-        memo: "配信素材テスト",
-      }),
-    },
-  };
-
-  const result = doPost(e);
-  Logger.log(result.getContent());
 }
 
 function testAccess() {
@@ -145,67 +116,6 @@ function testAccess() {
   console.log(folder.getName());
   console.log(response.getResponseCode());
   console.log(file.getUrl());
-}
-
-function testAddTransaction() {
-  const rules = getRules();
-
-  const sample = {
-    transaction_date: "2026-04-18",
-    merchant: "マクドナルド",
-    item_name: "てりやきセット",
-    amount: 850,
-    note: "",
-    source_type: "test",
-  };
-
-  const result = classifyTransaction(sample, rules);
-
-  const tx = {
-    ...sample,
-    ...result,
-  };
-
-  addTransaction(tx);
-}
-
-function testGetAvailableMoney() {
-  const value = getAvailableMoney("2026-08");
-  Logger.log(`あと使えるお金: ${value}`);
-}
-
-function testDreamFund() {
-  const dream = getDreamFund("dream_001");
-
-  Logger.log(JSON.stringify(dream, null, 2));
-}
-
-function testFeaturedDreamFund() {
-  const dream = getFeaturedDreamFund();
-  Logger.log(JSON.stringify(dream, null, 2));
-}
-
-function testCategorySummary() {
-  Logger.log(
-    JSON.stringify(getCategorySummary(getLatestBudgetMonth()), null, 2),
-  );
-}
-
-function debugCsvHeader() {
-  const folderId = "YOUR_FOLDER_ID";
-  const folder = DriveApp.getFolderById(folderId);
-  const files = folder.getFiles();
-
-  while (files.hasNext()) {
-    const file = files.next();
-    if (!file.getName().endsWith(".csv")) continue;
-
-    const values = parseCsvFile(file);
-    const row = values[0].map((v) => String(v).trim());
-
-    Logger.log(file.getName());
-    Logger.log(JSON.stringify(row));
-  }
 }
 
 function testGetHomeData() {
@@ -221,8 +131,28 @@ function testGetHomeData() {
     throw new Error("availableMoney が数値ではありません");
   }
 
-  if (typeof data.savingForecast !== "number") {
-    throw new Error("savingForecast が数値ではありません");
+  if (typeof data.monthlySurplus !== "number") {
+    throw new Error("monthlySurplus が数値ではありません");
+  }
+
+  if (typeof data.baseNisa !== "number") {
+    throw new Error("baseNisa が数値ではありません");
+  }
+
+  if (typeof data.additionalNisa !== "number") {
+    throw new Error("additionalNisa が数値ではありません");
+  }
+
+  if (typeof data.totalAssets !== "number") {
+    throw new Error("totalAssets が数値ではありません");
+  }
+
+  if (typeof data.totalLiabilities !== "number") {
+    throw new Error("totalLiabilities が数値ではありません");
+  }
+
+  if (typeof data.netAssets !== "number") {
+    throw new Error("netAssets が数値ではありません");
   }
 
   if (typeof data.sideBusinessProfit !== "number") {
@@ -265,20 +195,6 @@ function testGetAnalyticsData() {
   console.log(JSON.stringify(result, null, 2));
 }
 
-function testCreateTransactionFromApp() {
-  const result = createTransactionFromApp_({
-    transactionDate: "2026-07-30",
-    type: "支出",
-    amount: 380,
-    category: "食費",
-    title: "アプリ登録テスト",
-    paymentMethod: "現金",
-    memo: "Flutter接続前のテスト",
-  });
-
-  Logger.log(result.getContent());
-}
-
 function testGetCategoriesData() {
   const data = getCategoriesData();
 
@@ -289,237 +205,6 @@ function testGetMasterData() {
   const data = getMasterData();
 
   Logger.log(JSON.stringify(data, null, 2));
-}
-
-function testCreateCategoryFromApp() {
-  const result = createCategoryFromApp_({
-    type: "支出",
-    majorCategory: "テスト",
-    subCategory: "動作確認",
-  });
-
-  Logger.log(result.getContent());
-}
-
-function testUpdateCategoryFromApp() {
-  const result = updateCategoryFromApp_({
-    subCategoryId: "sub_001",
-    majorCategory: "食費",
-    subCategory: "外食",
-    active: true,
-  });
-
-  Logger.log(result.getContent());
-}
-
-function testClearAnalyticsCache() {
-  clearAnalyticsSummaryCache_();
-}
-
-function debugFinancialSettings() {
-  const settings = getFinancialSettings_();
-
-  console.log(settings);
-}
-
-function testExistingOliveCsvVsGmail() {
-  const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
-
-  const values = sheet.getDataRange().getValues();
-
-  if (values.length < 2) {
-    Logger.log("Transactionsにデータがありません");
-    return;
-  }
-
-  const index = createHeaderIndex(values[0]);
-
-  assertRequiredColumns(
-    index,
-    [
-      "id",
-      "transaction_date",
-      "source_type",
-      "account_name",
-      "merchant",
-      "amount",
-      "source_id",
-      "source_status",
-    ],
-    SHEETS.TRANSACTIONS,
-  );
-
-  const csvRows = [];
-  const gmailRows = [];
-
-  for (let i = 1; i < values.length; i++) {
-    const row = values[i];
-
-    const sourceType = String(row[index["source_type"]] || "").trim();
-
-    const accountName = resolveCanonicalAccountName_(
-      row[index["account_name"]],
-    );
-
-    if (accountName !== "三井住友カードOlive") {
-      continue;
-    }
-
-    if (sourceType === "CSV_クレカ") {
-      csvRows.push({
-        id: String(row[index["id"]] || "").trim(),
-
-        date: normalizeSettlementDate_(row[index["transaction_date"]]),
-
-        amount: Number(row[index["amount"]] || 0),
-
-        merchant: normalizeMerchant(String(row[index["merchant"]] || "")),
-      });
-
-      continue;
-    }
-
-    if (sourceType === "Gmail_Olive") {
-      const sourceStatus = String(row[index["source_status"]] || "").trim();
-
-      if (sourceStatus && sourceStatus !== "preliminary") {
-        continue;
-      }
-
-      gmailRows.push({
-        id: String(row[index["id"]] || "").trim(),
-
-        sourceId: String(row[index["source_id"]] || "").trim(),
-
-        date: normalizeSettlementDate_(row[index["transaction_date"]]),
-
-        amount: Number(row[index["amount"]] || 0),
-
-        merchant: normalizeMerchant(String(row[index["merchant"]] || "")),
-      });
-    }
-  }
-
-  const usedCsvIndexes = new Set();
-
-  const matches = [];
-  const unmatchedGmail = [];
-
-  for (const gmail of gmailRows) {
-    let candidateIndex = -1;
-    let matchType = "";
-
-    // ==========================================================
-    // ① 同日 + 同額
-    // ==========================================================
-
-    for (let i = 0; i < csvRows.length; i++) {
-      if (usedCsvIndexes.has(i)) {
-        continue;
-      }
-
-      const csv = csvRows[i];
-
-      if (csv.date === gmail.date && csv.amount === gmail.amount) {
-        candidateIndex = i;
-        matchType = "same_date_amount";
-        break;
-      }
-    }
-
-    // ==========================================================
-    // ② 同額 + 日付±7日
-    // ==========================================================
-
-    if (candidateIndex === -1) {
-      let bestDiff = Infinity;
-
-      for (let i = 0; i < csvRows.length; i++) {
-        if (usedCsvIndexes.has(i)) {
-          continue;
-        }
-
-        const csv = csvRows[i];
-
-        if (csv.amount !== gmail.amount) {
-          continue;
-        }
-
-        const diffDays = diffDateDays_(gmail.date, csv.date);
-
-        if (diffDays < 0 || diffDays > 7) {
-          continue;
-        }
-
-        if (diffDays < bestDiff) {
-          bestDiff = diffDays;
-          candidateIndex = i;
-          matchType = `amount_date_diff_${diffDays}`;
-        }
-      }
-    }
-
-    if (candidateIndex === -1) {
-      unmatchedGmail.push({
-        gmailTransactionId: gmail.id,
-        gmailSourceId: gmail.sourceId,
-        date: gmail.date,
-        amount: gmail.amount,
-        merchant: gmail.merchant,
-      });
-
-      continue;
-    }
-
-    const csv = csvRows[candidateIndex];
-
-    usedCsvIndexes.add(candidateIndex);
-
-    matches.push({
-      matchType,
-
-      gmailTransactionId: gmail.id,
-
-      gmailSourceId: gmail.sourceId,
-
-      gmailDate: gmail.date,
-
-      csvTransactionId: csv.id,
-
-      csvDate: csv.date,
-
-      amount: gmail.amount,
-
-      gmailMerchant: gmail.merchant,
-
-      csvMerchant: csv.merchant,
-    });
-  }
-
-  const summary = {
-    gmailCount: gmailRows.length,
-
-    csvCount: csvRows.length,
-
-    matchedCount: matches.length,
-
-    unmatchedCount: unmatchedGmail.length,
-
-    matchTypeCounts: {},
-
-    matches,
-
-    unmatchedGmail,
-  };
-
-  for (const match of matches) {
-    summary.matchTypeCounts[match.matchType] =
-      Number(summary.matchTypeCounts[match.matchType] || 0) + 1;
-  }
-
-  Logger.log(JSON.stringify(summary, null, 2));
-
-  return summary;
 }
 
 function testGmailClassificationSummary() {
@@ -594,213 +279,6 @@ function testGmailClassificationSummary() {
   );
 
   return rows;
-}
-
-function reclassifyExistingGmailSmbcPreliminary() {
-  const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
-
-  const values = sheet.getDataRange().getValues();
-
-  if (values.length < 2) {
-    Logger.log("Transactionsにデータがありません");
-    return;
-  }
-
-  const index = createHeaderIndex(values[0]);
-
-  assertRequiredColumns(
-    index,
-    [
-      "id",
-      "transaction_date",
-      "type",
-      "source_type",
-      "payment_method",
-      "account_name",
-      "merchant",
-      "item_name",
-      "raw_text",
-      "amount",
-      "major_category",
-      "sub_category",
-      "purpose_type",
-      "expense_ratio",
-      "expense_amount",
-      "status",
-      "wallet",
-      "intent",
-      "from_account",
-      "to_account",
-      "settlement_status",
-      "settlement_id",
-      "source_id",
-      "source_status",
-      "source_received_at",
-    ],
-    SHEETS.TRANSACTIONS,
-  );
-
-  const rules = getRules();
-
-  let targetCount = 0;
-  let updatedCount = 0;
-
-  const updatedItems = [];
-
-  for (let i = 1; i < values.length; i++) {
-    const row = values[i];
-
-    const sourceType = String(row[index["source_type"]] || "").trim();
-
-    const sourceStatus = String(row[index["source_status"]] || "").trim();
-
-    if (sourceType !== "Gmail_SMBC" || sourceStatus !== "preliminary") {
-      continue;
-    }
-
-    targetCount++;
-
-    const transactionDate = normalizeSettlementDate_(
-      row[index["transaction_date"]],
-    );
-
-    const merchant = String(row[index["merchant"]] || "").trim();
-
-    const rawText = String(row[index["raw_text"]] || "").trim();
-
-    const amount = Number(row[index["amount"]] || 0);
-
-    /*
-     * 既存行から
-     * Gmail解析item相当を再構築する。
-     *
-     * 入金/出金は現状のtypeではなく、
-     * 取引内容から推定する。
-     */
-    let sourceKind = "";
-
-    const normalizedMerchant = merchant.normalize("NFKC").toUpperCase();
-
-    /*
-     * 今回の既存9件では、
-     * 給与/CTは入金、それ以外は出金。
-     */
-    if (
-      normalizedMerchant.includes("ソフトヒユーベリオン") ||
-      normalizedMerchant.includes("ソフトヒューベリオン") ||
-      normalizedMerchant.includes("ワキタ ホクト")
-    ) {
-      sourceKind = "smbc_deposit";
-    } else {
-      sourceKind = "smbc_withdrawal";
-    }
-
-    const item = {
-      sourceKind,
-
-      transactionDate,
-
-      amount,
-
-      content: rawText || merchant,
-
-      messageId: String(row[index["source_id"]] || "").trim(),
-
-      receivedAt: String(row[index["source_received_at"]] || "").trim(),
-    };
-
-    const rebuilt = buildTransactionFromGmailItem_(item, rules);
-
-    if (!rebuilt) {
-      continue;
-    }
-
-    // ==========================================================
-    // 分類・移動メタデータだけ更新
-    //
-    // id / 日付 / 金額 / source_id 等は保持する。
-    // ==========================================================
-
-    row[index["type"]] = rebuilt.type || "";
-
-    row[index["major_category"]] = rebuilt.major_category || "";
-
-    row[index["sub_category"]] = rebuilt.sub_category || "";
-
-    row[index["purpose_type"]] = rebuilt.purpose_type || "";
-
-    row[index["expense_ratio"]] = Number(rebuilt.expense_ratio || 0);
-
-    row[index["expense_amount"]] = amount * Number(rebuilt.expense_ratio || 0);
-
-    row[index["status"]] = rebuilt.status || "";
-
-    row[index["wallet"]] = rebuilt.wallet || "生活";
-
-    row[index["intent"]] = rebuilt.intent || "その他";
-
-    row[index["from_account"]] = rebuilt.from_account || "";
-
-    row[index["to_account"]] = rebuilt.to_account || "";
-
-    row[index["settlement_status"]] = rebuilt.settlement_status || "";
-
-    row[index["settlement_id"]] = rebuilt.settlement_id || "";
-
-    updatedCount++;
-
-    updatedItems.push({
-      id: String(row[index["id"]] || ""),
-
-      merchant,
-
-      amount,
-
-      type: rebuilt.type,
-
-      majorCategory: rebuilt.major_category,
-
-      subCategory: rebuilt.sub_category,
-
-      fromAccount: rebuilt.from_account || "",
-
-      toAccount: rebuilt.to_account || "",
-
-      settlementStatus: rebuilt.settlement_status || "",
-    });
-  }
-
-  if (updatedCount > 0) {
-    sheet
-      .getRange(2, 1, values.length - 1, values[0].length)
-      .setValues(values.slice(1));
-
-    clearTableCache(SHEETS.TRANSACTIONS);
-
-    clearAccountBalanceCache_();
-
-    clearHomeRecentTransactionsCache_();
-
-    markSummaryDirty_("2026-08");
-  }
-
-  Logger.log(
-    JSON.stringify(
-      {
-        targetCount,
-        updatedCount,
-        items: updatedItems,
-      },
-      null,
-      2,
-    ),
-  );
-
-  return {
-    targetCount,
-    updatedCount,
-    items: updatedItems,
-  };
 }
 
 function testGmailFormalReconcileDryRun() {
@@ -1283,634 +761,714 @@ function testBackfillExistingGmailFormalMatches() {
   return result;
 }
 
-function testIgnoredEndToEndTemporary() {
-  const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
-  const values = sheet.getDataRange().getValues();
-
-  if (values.length < 2) {
-    throw new Error("Transactionsにテスト対象がありません");
-  }
-
-  const index = createHeaderIndex(values[0]);
-
-  assertRequiredColumns(
-    index,
-    ["id", "transaction_date", "source_status", "status", "settlement_status"],
-    SHEETS.TRANSACTIONS,
-  );
-
-  // ignoredではない既存取引を1件選ぶ
-  let targetIndex = -1;
-
-  for (let i = 1; i < values.length; i++) {
-    const currentSourceStatus = String(
-      values[i][index["source_status"]] || "",
-    ).trim();
-
-    if (currentSourceStatus !== "ignored") {
-      targetIndex = i;
-      break;
-    }
-  }
-
-  if (targetIndex < 0) {
-    throw new Error("テスト対象にできる取引がありません");
-  }
-
-  const targetRow = values[targetIndex];
-
-  const transactionId = String(targetRow[index["id"]] || "").trim();
-
-  const transactionDate = targetRow[index["transaction_date"]];
-
-  const yearMonth = normalizeYearMonth(transactionDate);
-
-  const originalSourceStatus = targetRow[index["source_status"]];
-
-  const originalStatus = targetRow[index["status"]];
-
-  const originalSettlementStatus = targetRow[index["settlement_status"]];
-
-  const rowNumber = targetIndex + 1;
-
-  try {
-    // ==========================================================
-    // 一時的にignored化
-    // ==========================================================
-
-    sheet.getRange(rowNumber, index["source_status"] + 1).setValue("ignored");
-
-    clearTableCache(SHEETS.TRANSACTIONS);
-    clearAccountBalanceCache_();
-    clearHomeRecentTransactionsCache_();
-
-    if (yearMonth) {
-      rebuildSummariesForMonth_(yearMonth);
-    }
-
-    // ==========================================================
-    // 通常一覧
-    // ==========================================================
-
-    const transactionResult = getTransactionsData({
-      limit: 200,
-      offset: 0,
-    });
-
-    const existsInNormalList = (transactionResult.items || []).some(
-      (item) => String(item.id || "") === transactionId,
-    );
-
-    // ==========================================================
-    // 要確認一覧
-    // ==========================================================
-
-    const reviewResult = getReviewTransactionsData({
-      limit: 200,
-      offset: 0,
-    });
-
-    const existsInReviewList = (reviewResult.items || []).some(
-      (item) => String(item.id || "") === transactionId,
-    );
-
-    // ==========================================================
-    // 全体ignored判定
-    // ==========================================================
-
-    const refreshedTable = loadTransactions();
-
-    const refreshedTarget = refreshedTable.rows.find(
-      (row) => getString(row, refreshedTable.index, "id") === transactionId,
-    );
-
-    const storedAsIgnored = refreshedTarget
-      ? isIgnoredTransactionRow_(refreshedTarget, refreshedTable.index)
-      : false;
-
-    const result = {
-      transactionId,
-      yearMonth,
-
-      original: {
-        sourceStatus: String(originalSourceStatus || ""),
-        status: String(originalStatus || ""),
-        settlementStatus: String(originalSettlementStatus || ""),
-      },
-
-      ignoredStored: storedAsIgnored,
-
-      normalList: {
-        exists: existsInNormalList,
-        ok: !existsInNormalList,
-      },
-
-      reviewList: {
-        exists: existsInReviewList,
-        ok: !existsInReviewList,
-      },
-    };
-
-    Logger.log(JSON.stringify(result, null, 2));
-
-    return result;
-  } finally {
-    // ==========================================================
-    // 必ず元に戻す
-    // ==========================================================
-
-    sheet
-      .getRange(rowNumber, index["source_status"] + 1)
-      .setValue(originalSourceStatus);
-
-    clearTableCache(SHEETS.TRANSACTIONS);
-    clearAccountBalanceCache_();
-    clearHomeRecentTransactionsCache_();
-
-    if (yearMonth) {
-      rebuildSummariesForMonth_(yearMonth);
-    }
-  }
-}
-
-function testIgnoredBalanceTemporary() {
-  const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
-  const values = sheet.getDataRange().getValues();
-
-  if (values.length < 2) {
-    throw new Error("Transactionsにテスト対象がありません");
-  }
-
-  const index = createHeaderIndex(values[0]);
-
-  assertRequiredColumns(
-    index,
-    [
-      "id",
-      "transaction_date",
-      "type",
-      "amount",
-      "account_name",
-      "from_account",
-      "to_account",
-      "source_status",
-    ],
-    SHEETS.TRANSACTIONS,
-  );
-
-  // ============================================================
-  // 現在の残高を取得
-  // ============================================================
-
-  clearAccountBalanceCache_();
-
-  const before = getAccountBalancesData();
-
-  const beforeItems = before.items || [];
-
-  // ============================================================
-  // 残高に確実に影響している取引を探す
-  //
-  // 支出・収入：
-  //   account_name が登録口座に存在
-  //
-  // 移動：
-  //   from_account / to_account のどちらかが登録口座に存在
-  // ============================================================
-
-  const accountNames = new Set(
-    beforeItems
-      .map((item) =>
-        resolveCanonicalAccountName_(String(item.accountName || "").trim()),
-      )
-      .filter(Boolean),
-  );
-
-  let targetIndex = -1;
-  let targetAccountName = "";
-
-  for (let i = 1; i < values.length; i++) {
-    const row = values[i];
-
-    const sourceStatus = String(row[index["source_status"]] || "").trim();
-
-    if (sourceStatus === "ignored") {
-      continue;
-    }
-
-    const type = String(row[index["type"]] || "").trim();
-
-    const amount = Number(row[index["amount"]] || 0);
-
-    if (amount <= 0) {
-      continue;
-    }
-
-    const accountName = resolveCanonicalAccountName_(
-      String(row[index["account_name"]] || "").trim(),
-    );
-
-    const fromAccount = resolveCanonicalAccountName_(
-      String(row[index["from_account"]] || "").trim(),
-    );
-
-    const toAccount = resolveCanonicalAccountName_(
-      String(row[index["to_account"]] || "").trim(),
-    );
-
-    if ((type === "支出" || type === "収入") && accountNames.has(accountName)) {
-      targetIndex = i;
-      targetAccountName = accountName;
-      break;
-    }
-
-    if ((type === "移動" || type === "振替") && accountNames.has(fromAccount)) {
-      targetIndex = i;
-      targetAccountName = fromAccount;
-      break;
-    }
-
-    if ((type === "移動" || type === "振替") && accountNames.has(toAccount)) {
-      targetIndex = i;
-      targetAccountName = toAccount;
-      break;
-    }
-  }
-
-  if (targetIndex < 0) {
-    throw new Error("残高テストに使える取引が見つかりません");
-  }
-
-  const targetRow = values[targetIndex];
-
-  const transactionId = String(targetRow[index["id"]] || "").trim();
-
-  const transactionDate = targetRow[index["transaction_date"]];
-
-  const type = String(targetRow[index["type"]] || "").trim();
-
-  const amount = Number(targetRow[index["amount"]] || 0);
-
-  const originalSourceStatus = targetRow[index["source_status"]];
-
-  const rowNumber = targetIndex + 1;
-
-  const beforeAccount = beforeItems.find(
-    (item) =>
-      resolveCanonicalAccountName_(String(item.accountName || "").trim()) ===
-      targetAccountName,
-  );
-
-  if (!beforeAccount) {
-    throw new Error("テスト対象口座の変更前残高を取得できません");
-  }
-
-  try {
-    // ==========================================================
-    // 一時的に ignored
-    // ==========================================================
-
-    sheet.getRange(rowNumber, index["source_status"] + 1).setValue("ignored");
-
-    clearTableCache(SHEETS.TRANSACTIONS);
-    clearAccountBalanceCache_();
-    clearHomeRecentTransactionsCache_();
-
-    // ==========================================================
-    // ignored後の残高
-    // ==========================================================
-
-    const after = getAccountBalancesData();
-
-    const afterAccount = (after.items || []).find(
-      (item) =>
-        resolveCanonicalAccountName_(String(item.accountName || "").trim()) ===
-        targetAccountName,
-    );
-
-    if (!afterAccount) {
-      throw new Error("テスト対象口座の変更後残高を取得できません");
-    }
-
-    const beforeBalance = Number(beforeAccount.currentBalance || 0);
-
-    const afterBalance = Number(afterAccount.currentBalance || 0);
-
-    const actualDifference = afterBalance - beforeBalance;
-
-    // ==========================================================
-    // 結果
-    //
-    // ignored化によって残高が変化していれば、
-    // 少なくとも残高計算から除外されたことを確認できる。
-    // ==========================================================
-
-    const result = {
-      transactionId,
-
-      transactionDate: formatApiDate_(transactionDate),
-
-      type,
-
-      amount,
-
-      accountName: targetAccountName,
-
-      beforeBalance,
-
-      afterBalance,
-
-      actualDifference,
-
-      expectedAbsoluteDifference: amount,
-
-      ok: Math.abs(actualDifference) === Math.abs(amount),
-    };
-
-    Logger.log(JSON.stringify(result, null, 2));
-
-    return result;
-  } finally {
-    // ==========================================================
-    // 必ず復元
-    // ==========================================================
-
-    sheet
-      .getRange(rowNumber, index["source_status"] + 1)
-      .setValue(originalSourceStatus);
-
-    clearTableCache(SHEETS.TRANSACTIONS);
-    clearAccountBalanceCache_();
-    clearHomeRecentTransactionsCache_();
-  }
-}
-
-function testIgnoredMonthlySummaryTemporary() {
-  const transactionSheet = getRequiredSheet(SHEETS.TRANSACTIONS);
-
-  const transactionValues = transactionSheet.getDataRange().getValues();
-
-  if (transactionValues.length < 2) {
-    throw new Error("Transactionsにテスト対象がありません");
-  }
-
-  const transactionIndex = createHeaderIndex(transactionValues[0]);
-
-  assertRequiredColumns(
-    transactionIndex,
-    ["id", "transaction_date", "type", "amount", "source_status"],
-    SHEETS.TRANSACTIONS,
-  );
-
-  // ============================================================
-  // 支出または収入のテスト対象を探す
-  //
-  // 移動はtotal_transfer側になるので、
-  // 今回はまず支出/収入を明確に確認する。
-  // ============================================================
-
-  let targetIndex = -1;
-
-  for (let i = 1; i < transactionValues.length; i++) {
-    const row = transactionValues[i];
-
-    const sourceStatus = String(
-      row[transactionIndex["source_status"]] || "",
-    ).trim();
-
-    if (sourceStatus === "ignored") {
-      continue;
-    }
-
-    const type = String(row[transactionIndex["type"]] || "").trim();
-
-    if (type !== "支出" && type !== "収入") {
-      continue;
-    }
-
-    const amount = Number(row[transactionIndex["amount"]] || 0);
-
-    if (amount <= 0) {
-      continue;
-    }
-
-    const yearMonth = normalizeYearMonth(
-      row[transactionIndex["transaction_date"]],
-    );
-
-    if (!yearMonth) {
-      continue;
-    }
-
-    targetIndex = i;
-
-    break;
-  }
-
-  if (targetIndex < 0) {
-    throw new Error("月次集計テストに使える取引が見つかりません");
-  }
-
-  const targetRow = transactionValues[targetIndex];
-
-  const transactionId = String(targetRow[transactionIndex["id"]] || "").trim();
-
-  const transactionDate = targetRow[transactionIndex["transaction_date"]];
-
-  const yearMonth = normalizeYearMonth(transactionDate);
-
-  const type = String(targetRow[transactionIndex["type"]] || "").trim();
-
-  const amount = Number(targetRow[transactionIndex["amount"]] || 0);
-
-  const originalSourceStatus = targetRow[transactionIndex["source_status"]];
-
-  const rowNumber = targetIndex + 1;
-
-  // ============================================================
-  // 月次Summaryを取得するhelper
-  // ============================================================
-
-  function getMonthlySummaryRow_() {
-    const summaryTable = loadTable(SHEETS.MONTHLY_SUMMARY);
-
-    if (
-      !summaryTable ||
-      !Array.isArray(summaryTable.rows) ||
-      summaryTable.rows.length === 0
-    ) {
-      return null;
-    }
-
-    assertRequiredColumns(
-      summaryTable.index,
-      [
-        "year_month",
-        "total_expense",
-        "total_income",
-        "total_transfer",
-        "count_transactions",
-      ],
-      SHEETS.MONTHLY_SUMMARY,
-    );
-
-    return (
-      summaryTable.rows.find(
-        (row) =>
-          String(row[summaryTable.index["year_month"]] || "").trim() ===
-          yearMonth,
-      ) || null
-    );
-  }
-
-  // ============================================================
-  // まず現在のSummaryを最新化
-  // ============================================================
-
-  rebuildSummariesForMonth_(yearMonth);
-
-  clearTableCache(SHEETS.MONTHLY_SUMMARY);
-
-  const beforeRow = getMonthlySummaryRow_();
-
-  if (!beforeRow) {
-    throw new Error(`月次集計が見つかりません: ${yearMonth}`);
-  }
-
-  const beforeTable = loadTable(SHEETS.MONTHLY_SUMMARY);
-
-  const before = {
-    totalExpense: getNumber(beforeRow, beforeTable.index, "total_expense"),
-
-    totalIncome: getNumber(beforeRow, beforeTable.index, "total_income"),
-
-    totalTransfer: getNumber(beforeRow, beforeTable.index, "total_transfer"),
-
-    countTransactions: getNumber(
-      beforeRow,
-      beforeTable.index,
-      "count_transactions",
-    ),
-  };
-
-  try {
-    // ==========================================================
-    // 一時的に ignored
-    // ==========================================================
-
-    transactionSheet
-      .getRange(rowNumber, transactionIndex["source_status"] + 1)
-      .setValue("ignored");
-
-    clearTableCache(SHEETS.TRANSACTIONS);
-
-    // ==========================================================
-    // 対象月を再集計
-    // ==========================================================
-
-    rebuildSummariesForMonth_(yearMonth);
-
-    clearTableCache(SHEETS.MONTHLY_SUMMARY);
-
-    const afterTable = loadTable(SHEETS.MONTHLY_SUMMARY);
-
-    const afterRow = afterTable.rows.find(
-      (row) =>
-        String(row[afterTable.index["year_month"]] || "").trim() === yearMonth,
-    );
-
-    if (!afterRow) {
-      throw new Error("ignored後の月次集計が見つかりません");
-    }
-
-    const after = {
-      totalExpense: getNumber(afterRow, afterTable.index, "total_expense"),
-
-      totalIncome: getNumber(afterRow, afterTable.index, "total_income"),
-
-      totalTransfer: getNumber(afterRow, afterTable.index, "total_transfer"),
-
-      countTransactions: getNumber(
-        afterRow,
-        afterTable.index,
-        "count_transactions",
-      ),
-    };
-
-    // ==========================================================
-    // 差分
-    // ==========================================================
-
-    const differences = {
-      totalExpense: after.totalExpense - before.totalExpense,
-
-      totalIncome: after.totalIncome - before.totalIncome,
-
-      totalTransfer: after.totalTransfer - before.totalTransfer,
-
-      countTransactions: after.countTransactions - before.countTransactions,
-    };
-
-    let amountOk = false;
-
-    if (type === "支出") {
-      amountOk = differences.totalExpense === -amount;
-    } else if (type === "収入") {
-      amountOk = differences.totalIncome === -amount;
-    }
-
-    const countOk = differences.countTransactions === -1;
-
-    const result = {
-      transactionId,
-
-      transactionDate: formatApiDate_(transactionDate),
-
-      yearMonth,
-
-      type,
-
-      amount,
-
-      before,
-
-      after,
-
-      differences,
-
-      amountOk,
-
-      countOk,
-
-      ok: amountOk && countOk,
-    };
-
-    Logger.log(JSON.stringify(result, null, 2));
-
-    return result;
-  } finally {
-    // ==========================================================
-    // 必ず元に戻す
-    // ==========================================================
-
-    transactionSheet
-      .getRange(rowNumber, transactionIndex["source_status"] + 1)
-      .setValue(originalSourceStatus);
-
-    clearTableCache(SHEETS.TRANSACTIONS);
-
-    rebuildSummariesForMonth_(yearMonth);
-
-    clearTableCache(SHEETS.MONTHLY_SUMMARY);
-
-    clearAnalyticsSummaryCache_();
-  }
-}
-
 function testGetGmailImportStatus() {
   const result = getGmailImportStatus_();
 
   Logger.log(JSON.stringify(result, null, 2));
 
   return result;
+}
+
+// ============================================================
+// Home / Dashboard Tests (moved from 07_dashboard.gs)
+// ============================================================
+
+// ============================================================
+// Budget Tests (moved from 08_budget.gs)
+// ============================================================
+
+function testGetBudgetSettings() {
+  const result = getBudgetSettings("2026-08");
+
+  if (Object.prototype.hasOwnProperty.call(result, "savingTarget")) {
+    throw new Error("旧 savingTarget が budget_settings に残っています");
+  }
+
+  if (Object.prototype.hasOwnProperty.call(result, "dreamTarget")) {
+    throw new Error("旧 dreamTarget が budget_settings に残っています");
+  }
+
+  if (typeof result.nisaTarget !== "number") {
+    throw new Error("nisaTarget が数値ではありません");
+  }
+}
+
+// ============================================================
+// CSV Tests (moved from 10_csv_import.gs)
+// ============================================================
+
+function testGmailImportDryRun() {
+  const result = getGmailTransactionCandidates_();
+
+  const items = result && Array.isArray(result.items) ? result.items : [];
+
+  const transactions = [];
+
+  // 分類ルールは1回だけ
+  const rules = getRules();
+
+  for (const item of items) {
+    const tx = buildTransactionFromGmailItem_(item, rules);
+
+    if (tx) {
+      transactions.push(tx);
+    }
+  }
+
+  const importCandidates = filterGmailTransactionsForImport_(transactions);
+
+  const candidateSourceIds = new Set(
+    importCandidates.map((tx) => String(tx.source_id || "").trim()),
+  );
+
+  const skippedTransactions = transactions.filter(
+    (tx) => !candidateSourceIds.has(String(tx.source_id || "").trim()),
+  );
+
+  const summary = {
+    gmailFoundCount: items.length,
+
+    convertedCount: transactions.length,
+
+    skippedCount: skippedTransactions.length,
+
+    importCandidateCount: importCandidates.length,
+
+    importCandidates: importCandidates.map((tx) => ({
+      date: tx.transaction_date,
+
+      type: tx.type,
+
+      sourceType: tx.source_type,
+
+      accountName: tx.account_name,
+
+      merchant: tx.merchant,
+
+      amount: tx.amount,
+
+      majorCategory: tx.major_category,
+
+      subCategory: tx.sub_category,
+
+      fromAccount: tx.from_account || "",
+
+      toAccount: tx.to_account || "",
+
+      sourceId: tx.source_id,
+    })),
+
+    skippedTransactions: skippedTransactions.map((tx) => ({
+      date: tx.transaction_date,
+
+      type: tx.type,
+
+      sourceType: tx.source_type,
+
+      accountName: tx.account_name,
+
+      merchant: tx.merchant,
+
+      amount: tx.amount,
+
+      sourceId: tx.source_id,
+    })),
+  };
+
+  Logger.log(JSON.stringify(summary, null, 2));
+
+  return summary;
+}
+
+function testGmailImportDryRunSummary() {
+  const result = getGmailTransactionCandidates_();
+
+  const items = result && Array.isArray(result.items) ? result.items : [];
+
+  const transactions = [];
+
+  // 分類ルールは1回だけ
+  const rules = getRules();
+
+  for (const item of items) {
+    const tx = buildTransactionFromGmailItem_(item, rules);
+
+    if (tx) {
+      transactions.push(tx);
+    }
+  }
+
+  const candidates = filterGmailTransactionsForImport_(transactions);
+
+  const summary = {};
+
+  for (const tx of candidates) {
+    const yearMonth = normalizeYearMonth(tx.transaction_date) || "unknown";
+
+    const sourceType = String(tx.source_type || "unknown");
+
+    const key = yearMonth + " / " + sourceType;
+
+    summary[key] = Number(summary[key] || 0) + 1;
+  }
+
+  Logger.log(
+    JSON.stringify(
+      {
+        gmailFoundCount: items.length,
+
+        convertedCount: transactions.length,
+
+        skippedCount: transactions.length - candidates.length,
+
+        importCandidateCount: candidates.length,
+
+        candidateBreakdown: summary,
+      },
+      null,
+      2,
+    ),
+  );
+
+  return {
+    gmailFoundCount: items.length,
+
+    convertedCount: transactions.length,
+
+    skippedCount: transactions.length - candidates.length,
+
+    importCandidateCount: candidates.length,
+
+    candidateBreakdown: summary,
+  };
+}
+
+function runRegressionTests() {
+  const tests = [
+    // ==========================================================
+    // Core / Sheet / Loader
+    // ==========================================================
+
+    {
+      name: "testLoadTable",
+      fn: testLoadTable,
+    },
+
+    {
+      name: "testObjectLoaders",
+      fn: testObjectLoaders,
+    },
+
+    {
+      name: "testAccess",
+      fn: testAccess,
+    },
+
+    // ==========================================================
+    // Classification / CSV Config
+    // ==========================================================
+
+    {
+      name: "testClassifyMoneyTransaction",
+      fn: testClassifyMoneyTransaction,
+    },
+
+    {
+      name: "testOliveCsvTypeMapping",
+      fn: testOliveCsvTypeMapping,
+    },
+
+    // ==========================================================
+    // Transactions / API Read
+    // ==========================================================
+
+    {
+      name: "testGetTransactionsData",
+      fn: testGetTransactionsData,
+    },
+
+    {
+      name: "testGetCategoriesData",
+      fn: testGetCategoriesData,
+    },
+
+    {
+      name: "testGetMasterData",
+      fn: testGetMasterData,
+    },
+
+    // ==========================================================
+    // Home / Budget / Analytics
+    // ==========================================================
+    {
+      name: "testGetHomeData",
+      fn: testGetHomeData,
+    },
+
+    {
+      name: "testGetBudgetSettings",
+      fn: testGetBudgetSettings,
+    },
+
+    {
+      name: "testGetAnalyticsData",
+      fn: testGetAnalyticsData,
+    },
+
+    // ==========================================================
+    // Gmail
+    // ==========================================================
+
+    {
+      name: "testGmailClassificationSummary",
+      fn: testGmailClassificationSummary,
+    },
+
+    {
+      name: "testGmailFormalReconcileDryRun",
+      fn: testGmailFormalReconcileDryRun,
+    },
+
+    {
+      name: "testPreliminaryEditedPreservation",
+      fn: testPreliminaryEditedPreservation,
+    },
+
+    {
+      name: "testIgnoredTransactionExclusion",
+      fn: testIgnoredTransactionExclusion,
+    },
+
+    {
+      name: "testBackfillExistingGmailFormalMatches",
+      fn: testBackfillExistingGmailFormalMatches,
+    },
+
+    {
+      name: "testGmailImportDryRun",
+      fn: testGmailImportDryRun,
+    },
+
+    {
+      name: "testGmailImportDryRunSummary",
+      fn: testGmailImportDryRunSummary,
+    },
+
+    {
+      name: "testGetGmailImportStatus",
+      fn: testGetGmailImportStatus,
+    },
+
+    // ==========================================================
+    // Accounts / Settlement / CSV
+    // ==========================================================
+
+    {
+      name: "testAccountBalancesSafe",
+      fn: testAccountBalancesSafe,
+    },
+
+    {
+      name: "testSettlementStatusesSafe",
+      fn: testSettlementStatusesSafe,
+    },
+
+    {
+      name: "testCsvCoreSafe",
+      fn: testCsvCoreSafe,
+    },
+  
+
+    // Cleanup 7 - Categories / Rules
+    {
+      name: "testCleanup7CategorySpecification",
+      fn: testCleanup7CategorySpecification,
+    },
+    {
+      name: "testCleanup7GuessMetadata",
+      fn: testCleanup7GuessMetadata,
+    },
+];
+
+  const results = [];
+
+  Logger.log(`========== 回帰テスト開始: ${tests.length}件 ==========`);
+
+  for (const test of tests) {
+    const startedAt = Date.now();
+
+    try {
+      const value = test.fn();
+
+      const durationMs = Date.now() - startedAt;
+
+      results.push({
+        name: test.name,
+        success: true,
+        durationMs,
+        result: value === undefined ? null : value,
+      });
+
+      Logger.log(`✅ ${test.name} (${durationMs}ms)`);
+    } catch (error) {
+      const durationMs = Date.now() - startedAt;
+
+      const message =
+        error && error.message ? String(error.message) : String(error);
+
+      results.push({
+        name: test.name,
+        success: false,
+        durationMs,
+        error: message,
+      });
+
+      Logger.log(`❌ ${test.name} (${durationMs}ms): ${message}`);
+    }
+  }
+
+  const successCount = results.filter((item) => item.success).length;
+
+  const failedResults = results.filter((item) => !item.success);
+
+  const failedCount = failedResults.length;
+
+  const totalDurationMs = results.reduce(
+    (sum, item) => sum + Number(item.durationMs || 0),
+    0,
+  );
+
+  const summary = {
+    totalCount: results.length,
+
+    successCount,
+
+    failedCount,
+
+    success: failedCount === 0,
+
+    totalDurationMs,
+
+    failedTests: failedResults.map((item) => ({
+      name: item.name,
+
+      error: item.error || "",
+    })),
+
+    results,
+  };
+
+  Logger.log("========== 回帰テスト結果 ==========");
+
+  Logger.log(JSON.stringify(summary, null, 2));
+
+  if (failedCount > 0) {
+    throw new Error(
+      `回帰テスト失敗: ${failedCount}/${results.length}件\n` +
+        failedResults.map((item) => `${item.name}: ${item.error}`).join("\n"),
+    );
+  }
+
+  Logger.log(`✅ 全${results.length}件成功 / ` + `${totalDurationMs}ms`);
+
+  return summary;
+}
+
+// ============================================================
+// Accounts / Settlement / CSV Safe Regression Tests
+// ============================================================
+
+function testAccountBalancesSafe() {
+  const result = getAccountBalancesData();
+
+  if (!result || !Array.isArray(result.items)) {
+    throw new Error("口座残高データの形式が不正です");
+  }
+
+  if (typeof result.totalAssets !== "number") {
+    throw new Error("totalAssets が数値ではありません");
+  }
+
+  if (typeof result.totalLiabilities !== "number") {
+    throw new Error("totalLiabilities が数値ではありません");
+  }
+
+  if (typeof result.netAssets !== "number") {
+    throw new Error("netAssets が数値ではありません");
+  }
+
+  Logger.log(
+    JSON.stringify({
+      accountCount: result.items.length,
+      totalAssets: result.totalAssets,
+      totalLiabilities: result.totalLiabilities,
+      netAssets: result.netAssets,
+    }),
+  );
+
+  return {
+    accountCount: result.items.length,
+    totalAssets: result.totalAssets,
+    totalLiabilities: result.totalLiabilities,
+    netAssets: result.netAssets,
+  };
+}
+
+function testSettlementStatusesSafe() {
+  const result = getSettlementStatusesData_();
+
+  if (!result || !Array.isArray(result.items)) {
+    throw new Error("Settlementデータの形式が不正です");
+  }
+
+  if (!result.summary) {
+    throw new Error("Settlement summary がありません");
+  }
+
+  const requiredSummaryFields = [
+    "totalCount",
+    "matchedCount",
+    "manualMatchedCount",
+    "reviewCount",
+    "pendingCount",
+  ];
+
+  for (const field of requiredSummaryFields) {
+    if (typeof result.summary[field] !== "number") {
+      throw new Error(`Settlement summary.${field} が数値ではありません`);
+    }
+  }
+
+  Logger.log(
+    JSON.stringify({
+      itemCount: result.items.length,
+      summary: result.summary,
+      performance: result.performance || {},
+    }),
+  );
+
+  return {
+    itemCount: result.items.length,
+    summary: result.summary,
+  };
+}
+
+function testCsvCoreSafe() {
+  // ----------------------------------------------------------
+  // 1. SMBC銀行
+  // ----------------------------------------------------------
+
+  const smbcResult = detectCsvTypeFromRows([
+    ["年月日", "お引出し", "お預入れ", "お取り扱い内容"],
+  ]);
+
+  if (!smbcResult || smbcResult.csvType !== "smbc_bank_v1") {
+    throw new Error("SMBC銀行CSVの判定に失敗しました");
+  }
+
+  // ----------------------------------------------------------
+  // 2. PayPay
+  // ----------------------------------------------------------
+
+  const payPayResult = detectCsvTypeFromRows([
+    ["取引日", "出金金額（円）", "入金金額（円）", "取引内容"],
+  ]);
+
+  if (!payPayResult || payPayResult.csvType !== "paypay_v1") {
+    throw new Error("PayPay CSVの判定に失敗しました");
+  }
+
+  // ----------------------------------------------------------
+  // 3. Olive
+  // ----------------------------------------------------------
+
+  const oliveResult = detectCsvTypeFromRows([
+    ["利用日", "加盟店", "金額", "請求額"],
+  ]);
+
+  if (!oliveResult || oliveResult.csvType !== "olive_credit_v1") {
+    throw new Error("Olive CSVの判定に失敗しました");
+  }
+
+  // ----------------------------------------------------------
+  // 4. セゾン
+  // ----------------------------------------------------------
+
+  const saisonResult = detectCsvTypeFromRows([
+    ["利用日", "ご利用店名及び商品名", "利用金額", "支払区分名称"],
+  ]);
+
+  if (!saisonResult || saisonResult.csvType !== "saison_credit_v1") {
+    throw new Error("セゾンCSVの判定に失敗しました");
+  }
+
+  // ----------------------------------------------------------
+  // 5. ImportConfig
+  // ----------------------------------------------------------
+
+  const csvTypes = [
+    "smbc_bank_v1",
+    "paypay_v1",
+    "olive_credit_v1",
+    "saison_credit_v1",
+  ];
+
+  const configs = [];
+
+  for (const csvType of csvTypes) {
+    const configName = getConfigNameByCsvType(csvType);
+
+    if (!configName) {
+      throw new Error(`${csvType} のconfig名を取得できません`);
+    }
+
+    const config = getImportConfig(configName);
+
+    if (!config) {
+      throw new Error(`${configName} のImportConfigを取得できません`);
+    }
+
+    configs.push({
+      csvType,
+      configName,
+    });
+  }
+
+  Logger.log(
+    JSON.stringify({
+      smbc: smbcResult,
+      payPay: payPayResult,
+      olive: oliveResult,
+      saison: saisonResult,
+      configs,
+    }),
+  );
+
+  return {
+    detectedCount: 4,
+    configCount: configs.length,
+    configs,
+  };
+}
+
+// ============================================================
+// Cleanup 7 - Category / Rules regression
+// ============================================================
+
+function testCleanup7CategorySpecification() {
+  const data = getCategoriesData();
+  const items = data.items || [];
+
+  const hasExpenseReview = items.some(
+    (item) =>
+      item.type === "支出" &&
+      item.majorCategory === "その他" &&
+      item.subCategory === "要確認",
+  );
+
+  const hasIncomeReview = items.some(
+    (item) =>
+      item.type === "収入" &&
+      item.majorCategory === "収入" &&
+      item.subCategory === "要確認",
+  );
+
+  const essentialCount = items.filter(
+    (item) => item.type === "支出" && item.essential === true,
+  ).length;
+
+  if (!hasExpenseReview) {
+    throw new Error("支出/その他/要確認 がありません");
+  }
+
+  if (!hasIncomeReview) {
+    throw new Error("収入/収入/要確認 がありません");
+  }
+
+  if (essentialCount === 0) {
+    throw new Error("essentialカテゴリが設定されていません");
+  }
+
+  return {
+    essentialCount,
+    hasExpenseReview,
+    hasIncomeReview,
+  };
+}
+
+function testCleanup7GuessMetadata() {
+  const cases = [
+    {
+      type: "支出",
+      major: "配信",
+      sub: "イラスト依頼",
+      purpose: "経費",
+      ratio: 1,
+      intent: "事業活動",
+    },
+    {
+      type: "支出",
+      major: "住居",
+      sub: "ネット回線",
+      purpose: "共用",
+      ratio: 0.4,
+      intent: "生活維持",
+    },
+    {
+      type: "支出",
+      major: "通信",
+      sub: "スマホ",
+      purpose: "共用",
+      ratio: 0.4,
+      intent: "生活維持",
+    },
+    {
+      type: "収入",
+      major: "収入",
+      sub: "要確認",
+      purpose: "私用",
+      ratio: 0,
+      intent: "収入",
+    },
+  ];
+
+  for (const testCase of cases) {
+    const purpose =
+      testCase.type === "収入"
+        ? "私用"
+        : guessPurposeType(testCase.major, testCase.sub);
+    const ratio =
+      testCase.type === "支出"
+        ? guessExpenseRatio(testCase.major, testCase.sub)
+        : 0;
+    const intent = guessIntent(
+      testCase.type,
+      testCase.major,
+      testCase.sub,
+    );
+
+    if (
+      purpose !== testCase.purpose ||
+      ratio !== testCase.ratio ||
+      intent !== testCase.intent
+    ) {
+      throw new Error(
+        `guess metadata不一致: ${JSON.stringify({
+          testCase,
+          actual: { purpose, ratio, intent },
+        })}`,
+      );
+    }
+  }
+
+  const incomeDefault = createDefaultClassification("収入");
+  if (
+    incomeDefault.type !== "収入" ||
+    incomeDefault.major_category !== "収入" ||
+    incomeDefault.sub_category !== "要確認"
+  ) {
+    throw new Error("収入のdefault classificationが不正です");
+  }
+
+  return { caseCount: cases.length };
 }

@@ -81,7 +81,22 @@ function buildClassification(rule) {
   };
 }
 
-function createDefaultClassification() {
+function createDefaultClassification(typeHint) {
+  const normalizedType = String(typeHint || "").trim();
+
+  if (normalizedType === "収入") {
+    return {
+      type: "収入",
+      major_category: "収入",
+      sub_category: "要確認",
+      purpose_type: "私用",
+      expense_ratio: 0,
+      status: "要確認",
+      wallet: "生活",
+      intent: "収入",
+    };
+  }
+
   return {
     type: "支出",
     major_category: "その他",
@@ -94,11 +109,14 @@ function createDefaultClassification() {
   };
 }
 
-function classifyTransaction(transaction, rules) {
+function classifyTransaction(transaction, rules, typeHint) {
   const matchedRule = matchRule(transaction, rules);
 
   if (!matchedRule) {
-    return createDefaultClassification();
+    const defaultType =
+      String(typeHint || "").trim() || String(transaction.type || "").trim();
+
+    return createDefaultClassification(defaultType);
   }
 
   return buildClassification(matchedRule);
@@ -156,7 +174,11 @@ function classifyMoneyTransaction(row, txBase, rules, configName) {
   // 通常ルール分類
   // ============================================================
 
-  const classified = classifyTransaction(txBase, rules);
+  const classified = classifyTransaction(
+    txBase,
+    rules,
+    inAmount > 0 ? "収入" : "支出",
+  );
 
   const isRuleConfirmed = classified.status === "確定";
 
@@ -488,7 +510,11 @@ function classifyPayPayTransaction_(row, txBase, rules) {
     note: "",
   };
 
-  const classified = classifyTransaction(classificationTarget, rules);
+  const classified = classifyTransaction(
+    classificationTarget,
+    rules,
+    inAmount > 0 ? "収入" : "支出",
+  );
   const isRuleConfirmed = classified.status === "確定";
 
   // ------------------------------------------------------------
@@ -549,110 +575,64 @@ function classifyPayPayTransaction_(row, txBase, rules) {
   };
 }
 
-function guessPurposeType(subCategory) {
-  const businessCategories = [
-    "配信機材",
-    "イラスト依頼",
-    "配信ソフト",
-    "素材",
-    "外注費",
-    "広告宣伝",
-    "配信サブスク",
-  ];
+function guessPurposeType(majorCategory, subCategory) {
+  const major = String(majorCategory || "").trim();
+  const sub = String(subCategory || "").trim();
 
-  if (businessCategories.includes(subCategory)) return "経費";
-  if (subCategory === "通信費" || subCategory === "サブスク") return "共用";
+  // 配信カテゴリは原則100%事業用途。
+  if (major === "配信") {
+    return "経費";
+  }
+
+  // 私用と事業で共用しやすい通信インフラ。
+  if (
+    (major === "住居" && sub === "ネット回線") ||
+    (major === "通信" && sub === "スマホ")
+  ) {
+    return "共用";
+  }
+
   return "私用";
 }
 
-function guessExpenseRatio(subCategory) {
-  const fullBusiness = [
-    "配信機材",
-    "イラスト依頼",
-    "配信ソフト",
-    "素材",
-    "外注費",
-    "広告宣伝",
-    "配信サブスク",
-  ];
+function guessExpenseRatio(majorCategory, subCategory) {
+  const major = String(majorCategory || "").trim();
+  const sub = String(subCategory || "").trim();
 
-  if (fullBusiness.includes(subCategory)) return 1;
-  if (subCategory === "通信費") return 0.4;
-  if (subCategory === "サブスク") return 0.3;
+  if (major === "配信") {
+    return 1;
+  }
+
+  // 既存運用の通信按分率を維持。
+  if (
+    (major === "住居" && sub === "ネット回線") ||
+    (major === "通信" && sub === "スマホ")
+  ) {
+    return 0.4;
+  }
+
   return 0;
 }
 
-function mapMajorCategory(subCategory) {
-  const map = {
-    スーパー: "食費",
-    コンビニ: "食費",
-    外食: "食費",
-    カフェ: "食費",
 
-    日用品: "生活費",
-    消耗品: "生活費",
-    雑貨: "生活費",
 
-    家賃: "固定費",
-    通信費: "固定費",
-    サブスク: "固定費",
-    保険: "固定費",
-    水道光熱費: "固定費",
-    税金: "固定費",
+function guessIntent(type, majorCategory, subCategory) {
+  const normalizedType = String(type || "").trim();
+  const major = String(majorCategory || "").trim();
 
-    電車: "交通",
-    バス: "交通",
-    タクシー: "交通",
-    ガソリン: "交通",
-    駐車場: "交通",
+  if (normalizedType === "収入") {
+    return "収入";
+  }
 
-    ゲーム: "趣味娯楽",
-    グッズ: "趣味娯楽",
-    イベント: "趣味娯楽",
-    娯楽その他: "趣味娯楽",
+  if (normalizedType === "移動" || normalizedType === "振替") {
+    return "移動";
+  }
 
-    衣服: "美容衣服",
-    美容: "美容衣服",
-    理容: "美容衣服",
+  if (normalizedType === "調整") {
+    return "その他";
+  }
 
-    病院: "医療健康",
-    薬: "医療健康",
-    健康用品: "医療健康",
-
-    書籍: "仕事・学業",
-    ソフト: "仕事・学業",
-    研究用品: "仕事・学業",
-    講座: "仕事・学業",
-    事務用品: "仕事・学業",
-
-    配信機材: "配信活動",
-    イラスト依頼: "配信活動",
-    配信ソフト: "配信活動",
-    素材: "配信活動",
-    外注費: "配信活動",
-    広告宣伝: "配信活動",
-    配信サブスク: "配信活動",
-
-    給与: "収入",
-    配信収益: "収入",
-    アフィリエイト: "収入",
-    その他収入: "収入",
-
-    クレカ引落: "振替",
-    電子マネー補充: "振替",
-    口座移動: "振替",
-    証券口座入金: "振替",
-
-    要確認: "その他",
-  };
-
-  return map[subCategory] || "その他";
-}
-
-function guessIntent(subCategory) {
-  const major = mapMajorCategory(subCategory);
-
-  if (["食費", "住居", "通信", "交通", "生活用品"].includes(major)) {
+  if (["食費", "生活", "住居", "交通", "通信", "ペット"].includes(major)) {
     return "生活維持";
   }
 
@@ -668,8 +648,13 @@ function guessIntent(subCategory) {
     return "贈与・交際";
   }
 
-  if (major === "配信" || guessPurposeType(subCategory) === "経費") {
+  if (major === "配信") {
     return "事業活動";
+  }
+
+  // 会社員としての仕事・学習支出は、配信事業とは分離する。
+  if (major === "仕事") {
+    return "その他";
   }
 
   return "その他";

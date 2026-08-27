@@ -209,27 +209,25 @@ class _TransactionsPageState extends State<TransactionsPage> {
 
     final created = result.transaction;
 
-    if (created != null) {
-      final shouldShow = _matchesCurrentFilters(created);
+    final shouldShow = _matchesCurrentFilters(created);
 
-      if (shouldShow) {
-        _transactions.insert(0, created);
+    if (shouldShow) {
+      _transactions.insert(0, created);
 
-        _transactions.sort(
-          (a, b) => b.transactionDate.compareTo(a.transactionDate),
-        );
-      }
-
-      setState(() {
-        _transactionsFuture = Future.value(
-          List<TransactionModel>.from(_transactions),
-        );
-
-        if (created.status == '要確認' || created.settlementStatus == 'review') {
-          _reviewCountFuture = _reviewService.fetchReviewCount();
-        }
-      });
+      _transactions.sort(
+        (a, b) => b.transactionDate.compareTo(a.transactionDate),
+      );
     }
+
+    setState(() {
+      _transactionsFuture = Future.value(
+        List<TransactionModel>.from(_transactions),
+      );
+
+      if (created.status == '要確認' || created.settlementStatus == 'review') {
+        _reviewCountFuture = _reviewService.fetchReviewCount();
+      }
+    });
 
     if (!mounted) {
       return;
@@ -416,7 +414,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
                             (yearMonth) => DropdownMenuItem<String>(
                               value: yearMonth,
                               child: Text(
-                                yearMonth.replaceFirst('-', '年') + '月',
+                                '${yearMonth.replaceFirst('-', '年')}月',
                               ),
                             ),
                           ),
@@ -1034,9 +1032,9 @@ class _TransactionTile extends StatelessWidget {
                         ),
                       );
 
-                  if (result?.transaction != null) {
+                  if (result != null) {
                     await onResult(
-                      TransactionDetailResult.updated(result!.transaction!),
+                      TransactionDetailResult.updated(result.transaction),
                     );
                   }
                 },

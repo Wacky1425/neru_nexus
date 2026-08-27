@@ -16,10 +16,6 @@ function getCategoriesData() {
   if (values.length <= 1) {
     return {
       items: [],
-      mapsByType: {},
-      mapsByTypeId: {},
-      expenseMap: {},
-      incomeMap: {},
     };
   }
 
@@ -50,35 +46,6 @@ function getCategoriesData() {
   }
 
   const items = [];
-
-  /*
-   * 旧Flutter互換:
-   * {
-   *   支出: {
-   *     食費: ["外食", "コンビニ"]
-   *   }
-   * }
-   */
-  const mapsByType = {};
-
-  /*
-   * ID対応:
-   * {
-   *   支出: {
-   *     major_001: {
-   *       majorCategoryId: "major_001",
-   *       majorCategory: "食費",
-   *       subCategories: [
-   *         {
-   *           subCategoryId: "sub_001",
-   *           subCategory: "外食"
-   *         }
-   *       ]
-   *     }
-   *   }
-   * }
-   */
-  const mapsByTypeId = {};
 
   for (const row of values.slice(1)) {
     const type = String(row[index["type"]] || "").trim();
@@ -144,54 +111,6 @@ function getCategoriesData() {
       sortOrder,
       note,
     });
-
-    /*
-     * 旧形式Map
-     */
-    if (!mapsByType[type]) {
-      mapsByType[type] = {};
-    }
-
-    if (!mapsByType[type][majorCategory]) {
-      mapsByType[type][majorCategory] = [];
-    }
-
-    if (!mapsByType[type][majorCategory].includes(subCategory)) {
-      mapsByType[type][majorCategory].push(subCategory);
-    }
-
-    /*
-     * ID形式Map
-     */
-    if (!mapsByTypeId[type]) {
-      mapsByTypeId[type] = {};
-    }
-
-    if (!mapsByTypeId[type][majorCategoryId]) {
-      mapsByTypeId[type][majorCategoryId] = {
-        majorCategoryId,
-        majorCategory,
-        sortOrder,
-        subCategories: [],
-      };
-    }
-
-    const subCategories = mapsByTypeId[type][majorCategoryId].subCategories;
-
-    const alreadyExists = subCategories.some(
-      (item) => item.subCategoryId === subCategoryId,
-    );
-
-    if (!alreadyExists) {
-      subCategories.push({
-        subCategoryId,
-        subCategory,
-        sortOrder,
-        isExpenseTarget,
-        essential,
-        note,
-      });
-    }
   }
 
   items.sort((a, b) => {
@@ -202,21 +121,8 @@ function getCategoriesData() {
     return a.sortOrder - b.sortOrder;
   });
 
-  Object.values(mapsByTypeId).forEach((typeMap) => {
-    Object.values(typeMap).forEach((major) => {
-      major.subCategories.sort((a, b) => a.sortOrder - b.sortOrder);
-    });
-  });
-
   return {
     items,
-    mapsByType,
-    mapsByTypeId,
-
-    // 移行中のFlutter互換用
-    expenseMap: mapsByType["支出"] || {},
-
-    incomeMap: mapsByType["収入"] || {},
   };
 }
 
@@ -732,148 +638,4 @@ function createNextCategoryId_(rows, columnIndex, prefix) {
   }
 
   return `${prefix}_${String(maximum + 1).padStart(3, "0")}`;
-}
-
-function initializeCategoryIds() {
-  const sheet = SS.getSheetByName(SHEETS.CATEGORIES);
-
-  if (!sheet) {
-    throw new Error("categoriesシートがありません");
-  }
-
-  const values = sheet.getDataRange().getValues();
-
-  if (values.length <= 1) {
-    return;
-  }
-
-  const headers = values[0].map((value) => String(value || "").trim());
-
-  const requiredHeaders = [
-    "type",
-    "major_category_id",
-    "major_category",
-    "sub_category_id",
-    "sub_category",
-    "is_expense_target",
-    "active",
-    "sort_order",
-    "note",
-  ];
-
-  for (const header of requiredHeaders) {
-    if (!headers.includes(header)) {
-      throw new Error(`categoriesシートに${header}列がありません`);
-    }
-  }
-
-  const index = {};
-
-  headers.forEach((header, columnIndex) => {
-    index[header] = columnIndex;
-  });
-
-  const majorIdMap = new Map();
-  const usedMajorIds = new Set();
-  const usedSubIds = new Set();
-
-  let nextMajorNumber = 1;
-  let nextSubNumber = 1;
-
-  // 既に入っているIDを先に記憶
-  for (const row of values.slice(1)) {
-    const type = String(row[index["type"]] || "").trim();
-
-    const majorCategory = String(row[index["major_category"]] || "").trim();
-
-    const majorCategoryId = String(
-      row[index["major_category_id"]] || "",
-    ).trim();
-
-    const subCategoryId = String(row[index["sub_category_id"]] || "").trim();
-
-    if (type && majorCategory && majorCategoryId) {
-      majorIdMap.set(`${type}|${majorCategory}`, majorCategoryId);
-
-      usedMajorIds.add(majorCategoryId);
-    }
-
-    if (subCategoryId) {
-      usedSubIds.add(subCategoryId);
-    }
-  }
-
-  function createMajorId() {
-    let id;
-
-    do {
-      id = `major_${String(nextMajorNumber++).padStart(3, "0")}`;
-    } while (usedMajorIds.has(id));
-
-    usedMajorIds.add(id);
-
-    return id;
-  }
-
-  function createSubId() {
-    let id;
-
-    do {
-      id = `sub_${String(nextSubNumber++).padStart(3, "0")}`;
-    } while (usedSubIds.has(id));
-
-    usedSubIds.add(id);
-
-    return id;
-  }
-
-  for (let rowIndex = 1; rowIndex < values.length; rowIndex++) {
-    const row = values[rowIndex];
-
-    const type = String(row[index["type"]] || "").trim();
-
-    const majorCategory = String(row[index["major_category"]] || "").trim();
-
-    const subCategory = String(row[index["sub_category"]] || "").trim();
-
-    if (!type || !majorCategory || !subCategory) {
-      continue;
-    }
-
-    const majorKey = `${type}|${majorCategory}`;
-
-    let majorCategoryId = String(row[index["major_category_id"]] || "").trim();
-
-    if (!majorCategoryId) {
-      majorCategoryId = majorIdMap.get(majorKey) || createMajorId();
-
-      majorIdMap.set(majorKey, majorCategoryId);
-
-      row[index["major_category_id"]] = majorCategoryId;
-    }
-
-    let subCategoryId = String(row[index["sub_category_id"]] || "").trim();
-
-    if (!subCategoryId) {
-      subCategoryId = createSubId();
-
-      row[index["sub_category_id"]] = subCategoryId;
-    }
-
-    const activeValue = row[index["active"]];
-
-    if (activeValue === "" || activeValue === null) {
-      row[index["active"]] = 1;
-    }
-
-    const sortOrderValue = row[index["sort_order"]];
-
-    if (sortOrderValue === "" || sortOrderValue === null) {
-      row[index["sort_order"]] = rowIndex;
-    }
-  }
-
-  sheet.getRange(1, 1, values.length, headers.length).setValues(values);
-
-  clearTableCache(SHEETS.CATEGORIES);
 }

@@ -1,393 +1,3 @@
-const REVIEW_MANUAL_COLUMNS = [
-  "type_manual",
-  "major_manual",
-  "sub_manual",
-  "purpose_manual",
-  "expense_ratio_manual",
-  "rule_keyword",
-  "rule_target",
-  "learn",
-];
-
-const REVIEW_QUEUE_HEADERS = [
-  "id",
-  "transaction_date",
-  "type",
-  "source_type",
-  "account_name",
-  "payment_method",
-  "merchant",
-  "merchant_count",
-  "item_name",
-  "note",
-  "raw_text_preview",
-  "amount",
-  "major_category",
-  "sub_category",
-  "status",
-  "duplicate_key",
-  ...REVIEW_MANUAL_COLUMNS,
-];
-
-function loadReviewManualMap_() {
-  const table = loadTable(SHEETS.REVIEW_QUEUE);
-  const manualMap = new Map();
-
-  if (table.rows.length === 0) {
-    return manualMap;
-  }
-
-  if (table.index["merchant"] === undefined) {
-    return manualMap;
-  }
-
-  for (const row of table.rows) {
-    const merchant = getString(row, table.index, "merchant");
-
-    if (!merchant) {
-      continue;
-    }
-
-    const manualValues = {};
-
-    for (const columnName of REVIEW_MANUAL_COLUMNS) {
-      manualValues[columnName] =
-        table.index[columnName] === undefined
-          ? ""
-          : row[table.index[columnName]];
-    }
-
-    manualMap.set(merchant, manualValues);
-  }
-
-  return manualMap;
-}
-
-function buildMerchantCountMap_(rows, index) {
-  const countMap = new Map();
-
-  for (const row of rows) {
-    const merchant = getString(row, index, "merchant");
-
-    if (!merchant) {
-      continue;
-    }
-
-    countMap.set(merchant, (countMap.get(merchant) || 0) + 1);
-  }
-
-  return countMap;
-}
-
-function buildReviewQueueRow_(row, index, merchantCountMap, manualMap) {
-  const merchant = getString(row, index, "merchant");
-
-  const itemName = getString(row, index, "item_name");
-
-  const note = getString(row, index, "note");
-
-  const paymentMethod =
-    index["payment_method"] === undefined ? "" : row[index["payment_method"]];
-
-  const rawTextPreview = [merchant, itemName, note, paymentMethod]
-    .filter((value) => String(value || "").trim() !== "")
-    .join(" / ");
-
-  const manual = manualMap.get(merchant) || {};
-
-  return [
-    row[index["id"]],
-    row[index["transaction_date"]],
-    row[index["type"]],
-    row[index["source_type"]],
-    row[index["account_name"]],
-    paymentMethod,
-    merchant,
-    merchantCountMap.get(merchant) || 1,
-    row[index["item_name"]],
-    row[index["note"]],
-    rawTextPreview,
-    row[index["amount"]],
-    row[index["major_category"]],
-    row[index["sub_category"]],
-    row[index["status"]],
-    row[index["duplicate_key"]],
-    manual.type_manual || "",
-    manual.major_manual || "",
-    manual.sub_manual || "",
-    manual.purpose_manual || "私用",
-    manual.expense_ratio_manual !== "" &&
-    manual.expense_ratio_manual !== undefined
-      ? manual.expense_ratio_manual
-      : 0,
-    manual.rule_keyword || merchant,
-    manual.rule_target || "merchant",
-    manual.learn || "",
-  ];
-}
-
-function rebuildReviewQueue() {
-  const transactionTable = loadTable(SHEETS.TRANSACTIONS);
-
-  // 元の挙動を維持：
-  // transactionsに明細がなければreview_queueを変更しない
-  if (transactionTable.rows.length === 0) {
-    return;
-  }
-
-  assertRequiredColumns(
-    transactionTable.index,
-    [
-      "id",
-      "transaction_date",
-      "type",
-      "source_type",
-      "account_name",
-      "merchant",
-      "item_name",
-      "note",
-      "amount",
-      "major_category",
-      "sub_category",
-      "status",
-      "settlement_status",
-      "duplicate_key",
-    ],
-    SHEETS.TRANSACTIONS,
-  );
-
-  const manualMap = loadReviewManualMap_();
-
-  const merchantCountMap = buildMerchantCountMap_(
-    transactionTable.rows,
-    transactionTable.index,
-  );
-
-  const targetRows = transactionTable.rows.filter((row) => {
-    const status = getString(row, transactionTable.index, "status");
-
-    const settlementStatus = getString(
-      row,
-      transactionTable.index,
-      "settlement_status",
-    );
-
-    return status === "要確認" || settlementStatus === "review";
-  });
-
-  const outputRows = targetRows.map((row) =>
-    buildReviewQueueRow_(
-      row,
-      transactionTable.index,
-      merchantCountMap,
-      manualMap,
-    ),
-  );
-
-  writeTable(
-    getRequiredSheet(SHEETS.REVIEW_QUEUE),
-    1,
-    1,
-    REVIEW_QUEUE_HEADERS,
-    outputRows,
-  );
-}
-
-function rebuildReviewSummary() {
-  const table = loadTable(SHEETS.REVIEW_QUEUE);
-  const summarySheet = getRequiredSheet(SHEETS.REVIEW_SUMMARY);
-
-  if (table.rows.length === 0) {
-    writeTable(
-      summarySheet,
-      1,
-      1,
-      ["merchant", "count", "total_amount", "sample_category"],
-      [],
-    );
-
-    return;
-  }
-
-  assertRequiredColumns(
-    table.index,
-    ["merchant", "amount", "major_category", "sub_category"],
-    SHEETS.REVIEW_QUEUE,
-  );
-
-  const summaryMap = new Map();
-
-  for (const row of table.rows) {
-    const merchant = getString(row, table.index, "merchant");
-
-    if (!merchant) {
-      continue;
-    }
-
-    const amount = getNumber(row, table.index, "amount");
-
-    const major = getString(row, table.index, "major_category");
-
-    const sub = getString(row, table.index, "sub_category");
-
-    if (!summaryMap.has(merchant)) {
-      summaryMap.set(merchant, {
-        merchant,
-        count: 0,
-        totalAmount: 0,
-        sampleCategory: `${major} / ${sub}`,
-      });
-    }
-
-    const summary = summaryMap.get(merchant);
-
-    summary.count += 1;
-    summary.totalAmount += amount;
-  }
-
-  const rows = Array.from(summaryMap.values())
-    .sort((a, b) => b.count - a.count)
-    .map((summary) => [
-      summary.merchant,
-      summary.count,
-      summary.totalAmount,
-      summary.sampleCategory,
-    ]);
-
-  writeTable(
-    summarySheet,
-    1,
-    1,
-    ["merchant", "count", "total_amount", "sample_category"],
-    rows,
-  );
-}
-
-function rebuildReviewViews() {
-  const transactionTable = loadTable(SHEETS.TRANSACTIONS);
-
-  if (transactionTable.rows.length === 0) {
-    return;
-  }
-
-  assertRequiredColumns(
-    transactionTable.index,
-    [
-      "id",
-      "transaction_date",
-      "type",
-      "source_type",
-      "account_name",
-      "merchant",
-      "item_name",
-      "note",
-      "amount",
-      "major_category",
-      "sub_category",
-      "status",
-      "settlement_status",
-      "duplicate_key",
-    ],
-    SHEETS.TRANSACTIONS,
-  );
-
-  const manualMap = loadReviewManualMap_();
-
-  const merchantCountMap = buildMerchantCountMap_(
-    transactionTable.rows,
-    transactionTable.index,
-  );
-
-  const targetRows = transactionTable.rows.filter((row) => {
-    const status = getString(row, transactionTable.index, "status");
-
-    const settlementStatus = getString(
-      row,
-      transactionTable.index,
-      "settlement_status",
-    );
-
-    return status === "要確認" || settlementStatus === "review";
-  });
-
-  const reviewRows = targetRows.map((row) =>
-    buildReviewQueueRow_(
-      row,
-      transactionTable.index,
-      merchantCountMap,
-      manualMap,
-    ),
-  );
-
-  // Review Queueを書き込む
-  writeTable(
-    getRequiredSheet(SHEETS.REVIEW_QUEUE),
-    1,
-    1,
-    REVIEW_QUEUE_HEADERS,
-    reviewRows,
-  );
-
-  // 同じreviewRowsをそのまま使って
-  // Summaryも作る
-  rebuildReviewSummaryFromRows_(reviewRows);
-}
-
-function rebuildBulkReview() {
-  const table = loadTable(SHEETS.REVIEW_SUMMARY);
-  const bulkSheet = getRequiredSheet(SHEETS.BULK_REVIEW);
-
-  const headers = [
-    "merchant",
-    "count",
-    "total_amount",
-    "current_category",
-    "bulk_safe",
-    "type_manual",
-    "major_manual",
-    "sub_manual",
-    "purpose_manual",
-    "expense_ratio_manual",
-    "rule_keyword",
-    "rule_target",
-    "note",
-  ];
-
-  if (table.rows.length === 0) {
-    writeTable(bulkSheet, 1, 1, headers, []);
-
-    return;
-  }
-
-  assertRequiredColumns(
-    table.index,
-    ["merchant", "count", "total_amount", "sample_category"],
-    SHEETS.REVIEW_SUMMARY,
-  );
-
-  const rows = table.rows.map((row) => {
-    const merchant = getString(row, table.index, "merchant");
-
-    return [
-      merchant,
-      getNumber(row, table.index, "count"),
-      getNumber(row, table.index, "total_amount"),
-      getString(row, table.index, "sample_category"),
-      "",
-      "",
-      "",
-      "",
-      "私用",
-      0,
-      merchant,
-      "merchant",
-      "",
-    ];
-  });
-
-  writeTable(bulkSheet, 1, 1, headers, rows);
-}
-
 /**
  * rulesに登録されている最大priorityの次の値を取得する。
  *
@@ -464,343 +74,6 @@ function appendRules_(rules) {
   return rows.length;
 }
 
-function learnRulesFromReviewQueue() {
-  const reviewTable = loadTable(SHEETS.REVIEW_QUEUE);
-  const ruleTable = loadTable(SHEETS.RULES);
-
-  if (reviewTable.rows.length === 0) {
-    Logger.log("rules追加: 0件");
-    return;
-  }
-
-  assertRequiredColumns(
-    reviewTable.index,
-    [
-      "merchant",
-      "type_manual",
-      "major_manual",
-      "sub_manual",
-      "purpose_manual",
-      "expense_ratio_manual",
-      "rule_keyword",
-      "rule_target",
-      "learn",
-    ],
-    SHEETS.REVIEW_QUEUE,
-  );
-
-  assertRequiredColumns(ruleTable.index, ["priority"], SHEETS.RULES);
-
-  let nextPriority = getNextRulePriority_(ruleTable.rows, ruleTable.index);
-
-  const newRules = [];
-
-  for (const row of reviewTable.rows) {
-    const learnValue = getString(row, reviewTable.index, "learn").toUpperCase();
-
-    if (!["TRUE", "1", "YES"].includes(learnValue)) {
-      continue;
-    }
-
-    const merchant = getString(row, reviewTable.index, "merchant");
-
-    const keyword =
-      getString(row, reviewTable.index, "rule_keyword") || merchant;
-
-    const matchTarget =
-      getString(row, reviewTable.index, "rule_target") || "merchant";
-
-    const type = getString(row, reviewTable.index, "type_manual");
-
-    const major = getString(row, reviewTable.index, "major_manual");
-
-    const sub = getString(row, reviewTable.index, "sub_manual");
-
-    if (!keyword || !type || !major || !sub) {
-      continue;
-    }
-
-    const purpose =
-      getString(row, reviewTable.index, "purpose_manual") || "私用";
-
-    newRules.push({
-      priority: nextPriority,
-      match_target: matchTarget,
-      keyword,
-      rule_type: "contains",
-      type_result: type,
-      major_category: major,
-      sub_category: sub,
-      purpose_type: purpose,
-      expense_ratio: getNumber(row, reviewTable.index, "expense_ratio_manual"),
-      status_result: "確定",
-      wallet_result: purpose === "経費" ? "事業" : "生活",
-      intent_result: guessIntent(sub),
-      note: "review_queueから追加",
-    });
-
-    nextPriority += 10;
-  }
-
-  const addedCount = appendRules_(newRules);
-
-  Logger.log(`rules追加: ${addedCount}件`);
-}
-
-function learnRulesFromBulkReview() {
-  const bulkTable = loadTable(SHEETS.BULK_REVIEW);
-  const ruleTable = loadTable(SHEETS.RULES);
-
-  if (bulkTable.rows.length === 0) {
-    Logger.log("bulk rules追加: 0件");
-    return;
-  }
-
-  assertRequiredColumns(
-    bulkTable.index,
-    [
-      "merchant",
-      "bulk_safe",
-      "type_manual",
-      "major_manual",
-      "sub_manual",
-      "purpose_manual",
-      "expense_ratio_manual",
-      "rule_keyword",
-      "rule_target",
-      "note",
-    ],
-    SHEETS.BULK_REVIEW,
-  );
-
-  assertRequiredColumns(ruleTable.index, ["priority"], SHEETS.RULES);
-
-  let nextPriority = getNextRulePriority_(ruleTable.rows, ruleTable.index);
-
-  const newRules = [];
-
-  for (const row of bulkTable.rows) {
-    const bulkSafe = getString(row, bulkTable.index, "bulk_safe").toUpperCase();
-
-    if (!["TRUE", "1", "YES"].includes(bulkSafe)) {
-      continue;
-    }
-
-    const merchant = getString(row, bulkTable.index, "merchant");
-
-    const keyword = getString(row, bulkTable.index, "rule_keyword") || merchant;
-
-    const matchTarget =
-      getString(row, bulkTable.index, "rule_target") || "merchant";
-
-    const type = getString(row, bulkTable.index, "type_manual");
-
-    const major = getString(row, bulkTable.index, "major_manual");
-
-    const sub = getString(row, bulkTable.index, "sub_manual");
-
-    if (!keyword || !type || !major || !sub) {
-      continue;
-    }
-
-    const purpose = getString(row, bulkTable.index, "purpose_manual") || "私用";
-
-    const note =
-      getString(row, bulkTable.index, "note") || "bulk_reviewから追加";
-
-    newRules.push({
-      priority: nextPriority,
-      match_target: matchTarget,
-      keyword,
-      rule_type: "equals",
-      type_result: type,
-      major_category: major,
-      sub_category: sub,
-      purpose_type: purpose,
-      expense_ratio: getNumber(row, bulkTable.index, "expense_ratio_manual"),
-      status_result: "確定",
-      wallet_result: purpose === "経費" ? "事業" : "生活",
-      intent_result: guessIntent(sub),
-      note,
-    });
-
-    nextPriority += 10;
-  }
-
-  const addedCount = appendRules_(newRules);
-
-  Logger.log(`bulk rules追加: ${addedCount}件`);
-}
-
-function buildRecurringCandidateMap_(transactionTable) {
-  const candidateMap = new Map();
-
-  assertRequiredColumns(
-    transactionTable.index,
-    [
-      "transaction_date",
-      "type",
-      "merchant",
-      "amount",
-      "major_category",
-      "sub_category",
-    ],
-    "transactions",
-  );
-
-  for (const row of transactionTable.rows) {
-    const type = getString(row, transactionTable.index, "type");
-
-    if (type !== "支出") {
-      continue;
-    }
-
-    const merchant = getString(row, transactionTable.index, "merchant");
-
-    const amount = getNumber(row, transactionTable.index, "amount");
-
-    const yearMonth = normalizeYearMonth(
-      row[transactionTable.index["transaction_date"]],
-    );
-
-    if (!merchant || !amount || !yearMonth) {
-      continue;
-    }
-
-    const major = getString(row, transactionTable.index, "major_category");
-
-    const sub = getString(row, transactionTable.index, "sub_category");
-
-    const amountBucket = Math.round(amount / 100) * 100;
-
-    const key = `${merchant}|${amountBucket}`;
-
-    if (!candidateMap.has(key)) {
-      candidateMap.set(key, {
-        merchant,
-        amountBucket,
-        months: new Set(),
-        amounts: [],
-        category: `${major} / ${sub}`,
-      });
-    }
-
-    const candidate = candidateMap.get(key);
-
-    candidate.months.add(yearMonth);
-    candidate.amounts.push(amount);
-  }
-
-  return candidateMap;
-}
-
-function buildRecurringCandidateRows_(candidateMap) {
-  return Array.from(candidateMap.values())
-    .filter((candidate) => candidate.months.size >= 2)
-    .map((candidate) => {
-      const months = Array.from(candidate.months).sort();
-
-      const totalAmount = candidate.amounts.reduce(
-        (total, amount) => total + amount,
-        0,
-      );
-
-      const averageAmount = Math.round(totalAmount / candidate.amounts.length);
-
-      return [
-        candidate.merchant,
-        candidate.amountBucket,
-        months.length,
-        months[0],
-        months[months.length - 1],
-        averageAmount,
-        candidate.category,
-        "候補",
-        "",
-      ];
-    })
-    .sort((a, b) => {
-      if (b[2] !== a[2]) {
-        return b[2] - a[2];
-      }
-
-      return b[5] - a[5];
-    });
-}
-
-function rebuildRecurringCandidates() {
-  const transactionTable = loadTransactions();
-
-  if (
-    !transactionTable ||
-    !Array.isArray(transactionTable.rows) ||
-    transactionTable.rows.length === 0
-  ) {
-    writeTable(
-      getRequiredSheet(SHEETS.RECURRING_CANDIDATES),
-      1,
-      1,
-      [
-        "merchant",
-        "amount",
-        "month_count",
-        "first_month",
-        "last_month",
-        "avg_amount",
-        "category",
-        "status",
-        "note",
-      ],
-      [],
-    );
-
-    Logger.log("定期支払い候補: 0件");
-
-    return;
-  }
-
-  assertRequiredColumns(
-    transactionTable.index,
-    ["source_status"],
-    SHEETS.TRANSACTIONS,
-  );
-
-  // ============================================================
-  // ignoredは定期支払い候補の判定対象から除外
-  // ============================================================
-
-  const activeTransactionTable = {
-    ...transactionTable,
-
-    rows: transactionTable.rows.filter(
-      (row) => !isIgnoredTransactionRow_(row, transactionTable.index),
-    ),
-  };
-
-  const candidateMap = buildRecurringCandidateMap_(activeTransactionTable);
-
-  const rows = buildRecurringCandidateRows_(candidateMap);
-
-  writeTable(
-    getRequiredSheet(SHEETS.RECURRING_CANDIDATES),
-    1,
-    1,
-    [
-      "merchant",
-      "amount",
-      "month_count",
-      "first_month",
-      "last_month",
-      "avg_amount",
-      "category",
-      "status",
-      "note",
-    ],
-    rows,
-  );
-
-  Logger.log(`定期支払い候補: ${rows.length}件`);
-}
 
 function addRuleFromTransaction_(data) {
   const merchant = String(data.merchant || "").trim();
@@ -875,7 +148,7 @@ function addRuleFromTransaction_(data) {
             : "生活"),
 
         intentResult:
-          String(data.intent || "").trim() || guessIntent(subCategory),
+          String(data.intent || "").trim() || guessIntent(type, majorCategory, subCategory),
       },
     };
   }
@@ -887,7 +160,7 @@ function addRuleFromTransaction_(data) {
   const wallet =
     String(data.wallet || "").trim() || (purpose === "経費" ? "事業" : "生活");
 
-  const intent = String(data.intent || "").trim() || guessIntent(subCategory);
+  const intent = String(data.intent || "").trim() || guessIntent(type, majorCategory, subCategory);
 
   const addedCount = appendRules_([
     {
@@ -1091,3 +364,233 @@ function applyRuleToPendingTransactions_(rule, excludeId = "") {
     updatedCount: updates.length,
   };
 }
+
+// ============================================================
+// Review API Handlers
+// ============================================================
+
+function getReviewTransactionsData(options) {
+  const settings = options || {};
+
+  const requestedLimit = Number(settings.limit || 100);
+  const requestedOffset = Number(settings.offset || 0);
+
+  const limit = Math.min(Math.max(requestedLimit, 1), 200);
+  const offset = Math.max(requestedOffset, 0);
+
+  const table = loadTransactions();
+
+  if (table.rows.length === 0) {
+    return {
+      items: [],
+      total: 0,
+      limit,
+      offset,
+      hasMore: false,
+    };
+  }
+
+  assertRequiredColumns(
+    table.index,
+    [
+      "id",
+      "transaction_date",
+      "merchant",
+      "item_name",
+      "amount",
+      "type",
+      "major_category",
+      "sub_category",
+      "status",
+      "wallet",
+      "intent",
+      "payment_method",
+      "account_name",
+      "raw_text",
+      "note",
+      "from_account",
+      "to_account",
+      "settlement_status",
+      "settlement_id",
+      "import_batch",
+      "source_id",
+      "source_status",
+      "source_received_at",
+    ],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const now = new Date();
+
+  const staleThresholdMs = 7 * 24 * 60 * 60 * 1000;
+
+  const filteredRows = table.rows.filter((row) => {
+    // ignoredは要確認一覧に出さない
+    if (isIgnoredTransactionRow_(row, table.index)) {
+      return false;
+    }
+
+    const status = getString(row, table.index, "status");
+
+    const settlementStatus = getString(row, table.index, "settlement_status");
+
+    const sourceStatus = getString(row, table.index, "source_status");
+
+    let isStalePreliminary = false;
+
+    if (
+      sourceStatus === "preliminary" ||
+      sourceStatus === "preliminary_edited"
+    ) {
+      const sourceReceivedAt = row[table.index["source_received_at"]];
+
+      const receivedDate =
+        sourceReceivedAt instanceof Date
+          ? sourceReceivedAt
+          : new Date(sourceReceivedAt);
+
+      if (!isNaN(receivedDate.getTime())) {
+        isStalePreliminary =
+          now.getTime() - receivedDate.getTime() >= staleThresholdMs;
+      }
+    }
+
+    return (
+      status === "要確認" || settlementStatus === "review" || isStalePreliminary
+    );
+  });
+
+  filteredRows.sort((a, b) => {
+    const dateA = new Date(a[table.index["transaction_date"]]);
+
+    const dateB = new Date(b[table.index["transaction_date"]]);
+
+    return dateB.getTime() - dateA.getTime();
+  });
+
+  const total = filteredRows.length;
+
+  const items = filteredRows.slice(offset, offset + limit).map((row) => ({
+    id: getString(row, table.index, "id"),
+
+    transactionDate: formatApiDate_(row[table.index["transaction_date"]]),
+
+    merchant: getString(row, table.index, "merchant"),
+
+    itemName: getString(row, table.index, "item_name"),
+
+    amount: getNumber(row, table.index, "amount"),
+
+    type: getString(row, table.index, "type"),
+
+    majorCategory: getString(row, table.index, "major_category"),
+
+    subCategory: getString(row, table.index, "sub_category"),
+
+    status: getString(row, table.index, "status"),
+
+    wallet: getString(row, table.index, "wallet"),
+
+    intent: getString(row, table.index, "intent"),
+
+    paymentMethod: getString(row, table.index, "payment_method"),
+
+    accountName: getString(row, table.index, "account_name"),
+
+    rawText: getString(row, table.index, "raw_text"),
+
+    note: getString(row, table.index, "note"),
+
+    fromAccount: getString(row, table.index, "from_account"),
+
+    toAccount: getString(row, table.index, "to_account"),
+
+    settlementStatus: getString(row, table.index, "settlement_status"),
+
+    settlementId: getString(row, table.index, "settlement_id"),
+
+    importBatch: getString(row, table.index, "import_batch"),
+
+    sourceId: getString(row, table.index, "source_id"),
+
+    sourceStatus: getString(row, table.index, "source_status"),
+
+    sourceReceivedAt: formatApiDateTime_(
+      row[table.index["source_received_at"]],
+    ),
+  }));
+
+  return {
+    items,
+    total,
+    limit,
+    offset,
+    hasMore: offset + items.length < total,
+  };
+}
+
+function getReviewTransactionCount() {
+  const table = loadTransactions();
+
+  if (table.rows.length === 0) {
+    return {
+      count: 0,
+    };
+  }
+
+  assertRequiredColumns(
+    table.index,
+    ["status", "settlement_status", "source_status", "source_received_at"],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const now = new Date();
+
+  const staleThresholdMs = 7 * 24 * 60 * 60 * 1000;
+
+  let count = 0;
+
+  for (const row of table.rows) {
+    if (isIgnoredTransactionRow_(row, table.index)) {
+      continue;
+    }
+
+    const status = getString(row, table.index, "status");
+
+    const settlementStatus = getString(row, table.index, "settlement_status");
+
+    const sourceStatus = getString(row, table.index, "source_status");
+
+    let isStalePreliminary = false;
+
+    if (
+      sourceStatus === "preliminary" ||
+      sourceStatus === "preliminary_edited"
+    ) {
+      const sourceReceivedAt = row[table.index["source_received_at"]];
+
+      const receivedDate =
+        sourceReceivedAt instanceof Date
+          ? sourceReceivedAt
+          : new Date(sourceReceivedAt);
+
+      if (!isNaN(receivedDate.getTime())) {
+        isStalePreliminary =
+          now.getTime() - receivedDate.getTime() >= staleThresholdMs;
+      }
+    }
+
+    if (
+      status === "要確認" ||
+      settlementStatus === "review" ||
+      isStalePreliminary
+    ) {
+      count++;
+    }
+  }
+
+  return {
+    count,
+  };
+}
+

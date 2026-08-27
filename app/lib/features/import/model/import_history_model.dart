@@ -13,7 +13,6 @@ class ImportHistoryModel {
     required this.addedCount,
     required this.skippedCount,
     required this.ignoredCount,
-    required this.billingYearMonth,
     required this.billingYearMonths,
     required this.status,
   });
@@ -35,7 +34,6 @@ class ImportHistoryModel {
   final int skippedCount;
   final int ignoredCount;
 
-  final String billingYearMonth;
   final List<String> billingYearMonths;
 
   final String status;
@@ -55,7 +53,6 @@ class ImportHistoryModel {
       addedCount: _toInt(json['addedCount']),
       skippedCount: _toInt(json['skippedCount']),
       ignoredCount: _toInt(json['ignoredCount']),
-      billingYearMonth: json['billingYearMonth']?.toString() ?? '',
       billingYearMonths: (json['billingYearMonths'] as List? ?? [])
           .map((value) => value.toString())
           .where((value) => value.isNotEmpty)

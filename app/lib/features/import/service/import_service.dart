@@ -158,12 +158,6 @@ class ImportService {
       body: {'csvText': csvText, 'fileName': fileName, 'dryRun': false},
     );
 
-    final analysis = data['analysis'] as Map<String, dynamic>?;
-
-    final early = analysis?['earlyRepayment'] as Map<String, dynamic>?;
-
-    final normal = analysis?['normalBilling'] as Map<String, dynamic>?;
-
     final settlementValue = data['settlementResult'];
 
     SettlementResult? settlementResult;

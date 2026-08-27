@@ -37,8 +37,6 @@ class HomeModel {
 
     required this.moneyHealth,
 
-    required this.featuredDream,
-
     required this.recentTransactions,
 
     required this.generatedAt,
@@ -117,8 +115,6 @@ class HomeModel {
 
   final Map<String, dynamic> moneyHealth;
 
-  final Map<String, dynamic>? featuredDream;
-
   final List<Map<String, dynamic>> recentTransactions;
 
   final String generatedAt;
@@ -175,10 +171,6 @@ class HomeModel {
       sideBusinessProfit: _toInt(json['sideBusinessProfit']),
 
       moneyHealth: Map<String, dynamic>.from(json['moneyHealth'] as Map? ?? {}),
-
-      featuredDream: json['featuredDream'] == null
-          ? null
-          : Map<String, dynamic>.from(json['featuredDream'] as Map),
 
       recentTransactions: (json['recentTransactions'] as List? ?? [])
           .whereType<Map>()

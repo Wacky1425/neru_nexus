@@ -1412,55 +1412,6 @@ function calculateBillingYearMonth_(transactionDate, rawAccountName) {
   return `${billingYear}-` + String(billingMonth).padStart(2, "0");
 }
 
-function getImportBillingYearMonth_(rows, config) {
-  if (!Array.isArray(rows) || rows.length === 0) {
-    return "";
-  }
-
-  // クレカCSV以外は請求月を持たない
-  if (String(config.source_type || "").trim() !== "CSV_クレカ") {
-    return "";
-  }
-
-  const accountName = String(config.account_name || "").trim();
-
-  if (!accountName) {
-    return "";
-  }
-
-  const billingMonths = new Set();
-
-  for (const row of rows) {
-    const keys = Object.keys(row);
-
-    const dateKey = keys[Number(config.date_col) - 1];
-
-    if (!dateKey) {
-      continue;
-    }
-
-    const transactionDate = row[dateKey];
-
-    const billingYearMonth = calculateBillingYearMonth_(
-      transactionDate,
-      accountName,
-    );
-
-    if (billingYearMonth) {
-      billingMonths.add(billingYearMonth);
-    }
-  }
-
-  // CSV全体が1つの請求月に収まる場合だけ確定
-  if (billingMonths.size === 1) {
-    return Array.from(billingMonths)[0];
-  }
-
-  // 複数請求月が含まれるCSVは
-  // 無理に代表月を設定しない
-  return "";
-}
-
 function getImportBillingYearMonths_(rows, config) {
   if (!Array.isArray(rows) || rows.length === 0) {
     return [];
@@ -1499,3 +1450,28 @@ function getImportBillingYearMonths_(rows, config) {
 
   return Array.from(billingMonths).sort();
 }
+
+// ============================================================
+// Account Balance Cache / Public Access
+// ============================================================
+
+function getAccountBalancesData() {
+  const cache = CacheService.getScriptCache();
+
+  const cached = cache.get(ACCOUNT_BALANCE_CACHE_KEY);
+
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  const result = getAccountBalancesData_();
+
+  cache.put(ACCOUNT_BALANCE_CACHE_KEY, JSON.stringify(result), 21600);
+
+  return result;
+}
+
+function clearAccountBalanceCache_() {
+  CacheService.getScriptCache().remove(ACCOUNT_BALANCE_CACHE_KEY);
+}
+

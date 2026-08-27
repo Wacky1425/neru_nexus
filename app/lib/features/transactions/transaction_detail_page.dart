@@ -473,10 +473,6 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
 
     final updatedTransaction = result.transaction;
 
-    if (updatedTransaction == null) {
-      return;
-    }
-
     if (!context.mounted) {
       return;
     }

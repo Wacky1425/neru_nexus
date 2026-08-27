@@ -24,9 +24,7 @@ class _BudgetSettingsPageState extends State<BudgetSettingsPage> {
   final _fixedExpenseController = TextEditingController();
   final _variableExpenseController = TextEditingController();
 
-  final _savingController = TextEditingController();
   final _nisaController = TextEditingController();
-  final _dreamController = TextEditingController();
 
   late DateTime _selectedMonth;
   late Future<BudgetModel> _future;
@@ -69,11 +67,7 @@ class _BudgetSettingsPageState extends State<BudgetSettingsPage> {
 
     _variableExpenseController.text = budget.variableExpenseBudget.toString();
 
-    _savingController.text = budget.savingTarget.toString();
-
     _nisaController.text = budget.nisaTarget.toString();
-
-    _dreamController.text = budget.dreamTarget.toString();
   }
 
   Future<void> _reload() async {
@@ -137,11 +131,7 @@ class _BudgetSettingsPageState extends State<BudgetSettingsPage> {
 
     final variableExpenseBudget = _parseAmount(_variableExpenseController.text);
 
-    final savingTarget = _parseAmount(_savingController.text);
-
     final nisaTarget = _parseAmount(_nisaController.text);
-
-    final dreamTarget = _parseAmount(_dreamController.text);
 
     setState(() {
       _isSaving = true;
@@ -152,11 +142,9 @@ class _BudgetSettingsPageState extends State<BudgetSettingsPage> {
         yearMonth: _toYearMonth(_selectedMonth),
         salaryPlanned: salaryPlanned,
         sideIncomePlanned: sideIncomePlanned,
-        savingTarget: savingTarget,
         nisaTarget: nisaTarget,
         fixedExpenseBudget: fixedExpenseBudget,
         variableExpenseBudget: variableExpenseBudget,
-        dreamTarget: dreamTarget,
       );
 
       if (!mounted) {
@@ -202,9 +190,7 @@ class _BudgetSettingsPageState extends State<BudgetSettingsPage> {
     _fixedExpenseController.dispose();
     _variableExpenseController.dispose();
 
-    _savingController.dispose();
     _nisaController.dispose();
-    _dreamController.dispose();
 
     super.dispose();
   }
@@ -330,60 +316,7 @@ class _BudgetSettingsPageState extends State<BudgetSettingsPage> {
 
                     const SizedBox(height: 12),
 
-                    _AmountField(
-                      controller: _savingController,
-                      label: '現金貯蓄目標',
-                    ),
-
-                    const SizedBox(height: 12),
-
                     _AmountField(controller: _nisaController, label: 'NISA積立'),
-
-                    const SizedBox(height: 12),
-
-                    _AmountField(controller: _dreamController, label: '夢積立'),
-
-                    const SizedBox(height: 16),
-
-                    ValueListenableBuilder<TextEditingValue>(
-                      valueListenable: _savingController,
-                      builder: (context, savingValue, _) {
-                        return ValueListenableBuilder<TextEditingValue>(
-                          valueListenable: _nisaController,
-                          builder: (context, nisaValue, _) {
-                            return ValueListenableBuilder<TextEditingValue>(
-                              valueListenable: _dreamController,
-                              builder: (context, dreamValue, _) {
-                                final total =
-                                    _parseAmount(savingValue.text) +
-                                    _parseAmount(nisaValue.text) +
-                                    _parseAmount(dreamValue.text);
-
-                                return Card(
-                                  child: ListTile(
-                                    title: const Text(
-                                      '資産形成目標 合計',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    trailing: Text(
-                                      _formatYen(total),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            );
-                          },
-                        );
-                      },
-                    ),
                   ],
                 ),
               ),
@@ -466,15 +399,6 @@ class _BudgetSettingsPageState extends State<BudgetSettingsPage> {
 
     return '${parts[0]}年'
         '${int.tryParse(parts[1]) ?? 0}月';
-  }
-
-  static String _formatYen(int amount) {
-    final formatted = amount.toString().replaceAllMapped(
-      RegExp(r'\B(?=(\d{3})+(?!\d))'),
-      (_) => ',',
-    );
-
-    return '￥$formatted';
   }
 }
 
