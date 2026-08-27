@@ -1711,10 +1711,9 @@ function applyTransferMetadata_(tx) {
   //   相手 → CSV対象口座
   // ==========================================================
 
-  if (
-    sourceType === "CSV_銀行" &&
-    (moneyDirection === "in" || moneyDirection === "out")
-  ) {
+  const isBankSource = sourceType === "CSV_銀行" || sourceType === "Gmail_SMBC";
+
+  if (isBankSource && (moneyDirection === "in" || moneyDirection === "out")) {
     const otherAccount = resolveTransferDestinationAccount_(tx);
 
     // --------------------------------------------------------
@@ -2694,6 +2693,10 @@ function readCsvRowsFromText_(csvText) {
 function importParsedCsvRows_(parsed) {
   const startedAt = Date.now();
 
+  // ============================================================
+  // 設定取得
+  // ============================================================
+
   const configName = getConfigNameByCsvType(parsed.csvType);
 
   const configNameFinishedAt = Date.now();
@@ -2706,13 +2709,22 @@ function importParsedCsvRows_(parsed) {
 
   const rulesFinishedAt = Date.now();
 
+  // ============================================================
+  // Import Batch
+  // ============================================================
+
   const importBatch = Utilities.formatDate(
     new Date(),
     "Asia/Tokyo",
     "yyyyMMdd_HHmmss",
   );
 
+  // ============================================================
+  // CSV → Transaction変換
+  // ============================================================
+
   const transactions = [];
+
   let ignoredCount = 0;
 
   for (const row of parsed.rows) {
@@ -2732,6 +2744,7 @@ function importParsedCsvRows_(parsed) {
 
     if (shouldIgnoreCsvRow_(row, txBase, config)) {
       ignoredCount++;
+
       continue;
     }
 
@@ -2764,9 +2777,50 @@ function importParsedCsvRows_(parsed) {
 
   const normalizeFinishedAt = Date.now();
 
+  // ============================================================
+  // Transactionsへ正式CSVを追加
+  // ============================================================
+
   const result = addTransactions(transactions);
 
   const addFinishedAt = Date.now();
+
+  // ============================================================
+  // Gmail速報 → 正式CSV確定
+  //
+  // 今回「新規追加されたCSV行」だけを対象にする。
+  //
+  // CSV_クレカ
+  //   ↔ Gmail_Olive
+  //
+  // CSV_銀行
+  //   ↔ Gmail_SMBC
+  // ============================================================
+
+  let gmailReconcileResult = null;
+
+  if (
+    result.addedIds &&
+    result.addedIds.length > 0 &&
+    (config.source_type === "CSV_クレカ" || config.source_type === "CSV_銀行")
+  ) {
+    gmailReconcileResult = reconcileGmailPreliminaryWithFormalCsv_(
+      result.addedIds,
+      config.source_type,
+
+      // false = 本番
+      // 一致したGmail速報を ignored にして正式CSVへ確定
+      false,
+    );
+  }
+
+  const gmailReconcileFinishedAt = Date.now();
+
+  // ============================================================
+  // クレカSettlement
+  //
+  // Gmail速報を整理した後に実行。
+  // ============================================================
 
   let settlementResult = null;
 
@@ -2779,10 +2833,19 @@ function importParsedCsvRows_(parsed) {
 
   const settlementFinishedAt = Date.now();
 
+  // ============================================================
+  // 結果
+  // ============================================================
+
   return {
     ...result,
+
     importBatch,
+
     ignoredCount,
+
+    gmailReconcileResult,
+
     settlementResult,
 
     debugTiming: {
@@ -2796,7 +2859,9 @@ function importParsedCsvRows_(parsed) {
 
       addTransactionsMs: addFinishedAt - normalizeFinishedAt,
 
-      settlementMs: settlementFinishedAt - addFinishedAt,
+      gmailReconcileMs: gmailReconcileFinishedAt - addFinishedAt,
+
+      settlementMs: settlementFinishedAt - gmailReconcileFinishedAt,
 
       totalMs: settlementFinishedAt - startedAt,
     },
@@ -3725,4 +3790,277 @@ function analyzeOliveEarlyRepaymentCsv_(parsed) {
       items: normalItems,
     },
   };
+}
+
+/**
+ * Olive CSV正式明細と
+ * Gmail_Olive速報を照合する。
+ *
+ * 現段階では削除・更新しない。
+ * 一致候補を検出して返すだけ。
+ */
+function reconcileOliveGmailPreliminary_(addedCsvIds) {
+  if (!Array.isArray(addedCsvIds) || addedCsvIds.length === 0) {
+    return {
+      matchedCount: 0,
+      matches: [],
+    };
+  }
+
+  const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
+
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) {
+    return {
+      matchedCount: 0,
+      matches: [],
+    };
+  }
+
+  const index = createHeaderIndex(values[0]);
+
+  assertRequiredColumns(
+    index,
+    [
+      "id",
+      "transaction_date",
+      "source_type",
+      "account_name",
+      "merchant",
+      "amount",
+      "source_id",
+      "source_status",
+    ],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const addedIdSet = new Set(
+    addedCsvIds.map((id) => String(id || "").trim()).filter(Boolean),
+  );
+
+  const csvRows = [];
+  const gmailRows = [];
+
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+
+    const id = String(row[index["id"]] || "").trim();
+
+    const sourceType = String(row[index["source_type"]] || "").trim();
+
+    // ==========================================================
+    // 今回追加されたOlive CSV正式明細
+    // ==========================================================
+
+    if (sourceType === "CSV_クレカ" && addedIdSet.has(id)) {
+      const accountName = resolveCanonicalAccountName_(
+        row[index["account_name"]],
+      );
+
+      if (accountName === "三井住友カードOlive") {
+        csvRows.push({
+          sheetIndex: i,
+
+          id,
+
+          date: normalizeSettlementDate_(row[index["transaction_date"]]),
+
+          amount: Number(row[index["amount"]] || 0),
+
+          merchant: normalizeMerchant(String(row[index["merchant"]] || "")),
+        });
+      }
+
+      continue;
+    }
+
+    // ==========================================================
+    // Gmail速報
+    // ==========================================================
+
+    if (sourceType === "Gmail_Olive") {
+      const accountName = resolveCanonicalAccountName_(
+        row[index["account_name"]],
+      );
+
+      if (accountName !== "三井住友カードOlive") {
+        continue;
+      }
+
+      const sourceStatus = String(row[index["source_status"]] || "").trim();
+
+      if (sourceStatus && sourceStatus !== "preliminary") {
+        continue;
+      }
+
+      gmailRows.push({
+        sheetIndex: i,
+
+        id,
+
+        sourceId: String(row[index["source_id"]] || "").trim(),
+
+        date: normalizeSettlementDate_(row[index["transaction_date"]]),
+
+        amount: Number(row[index["amount"]] || 0),
+
+        merchant: normalizeMerchant(String(row[index["merchant"]] || "")),
+      });
+    }
+  }
+
+  const matches = [];
+
+  const usedGmailIndexes = new Set();
+
+  for (const csv of csvRows) {
+    const candidates = [];
+
+    for (let i = 0; i < gmailRows.length; i++) {
+      if (usedGmailIndexes.has(i)) {
+        continue;
+      }
+
+      const gmail = gmailRows[i];
+
+      if (gmail.amount !== csv.amount) {
+        continue;
+      }
+
+      const diffDays = diffDateDays_(gmail.date, csv.date);
+
+      if (diffDays < 0 || diffDays > 7) {
+        continue;
+      }
+
+      const merchantScore = merchantSimilarityScore_(
+        gmail.merchant,
+        csv.merchant,
+      );
+
+      let score = 0;
+      let matchType = "";
+
+      if (diffDays === 0 && merchantScore === 100) {
+        score = 1000;
+        matchType = "same_date_amount_merchant_exact";
+      } else if (diffDays === 0 && merchantScore >= 80) {
+        score = 900;
+        matchType = "same_date_amount_merchant_similar";
+      } else if (diffDays === 0) {
+        score = 700;
+        matchType = "same_date_amount";
+      } else if (merchantScore === 100) {
+        score = 600 - diffDays;
+        matchType = `amount_merchant_exact_date_diff_${diffDays}`;
+      } else if (merchantScore >= 80) {
+        score = 500 - diffDays;
+        matchType = `amount_merchant_similar_date_diff_${diffDays}`;
+      } else {
+        /*
+         * 日付もmerchantも違う状態で、
+         * 金額だけ同じなら自動確定しない。
+         */
+        continue;
+      }
+
+      candidates.push({
+        gmailIndex: i,
+        score,
+        matchType,
+        diffDays,
+        merchantScore,
+      });
+    }
+
+    if (candidates.length === 0) {
+      continue;
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+
+    const best = candidates[0];
+
+    /*
+     * 最高スコアが複数ある場合は曖昧なので
+     * 自動マッチしない。
+     */
+    const sameBestCount = candidates.filter(
+      (candidate) => candidate.score === best.score,
+    ).length;
+
+    if (sameBestCount > 1) {
+      continue;
+    }
+
+    const gmail = gmailRows[best.gmailIndex];
+
+    usedGmailIndexes.add(best.gmailIndex);
+
+    matches.push({
+      matchType: best.matchType,
+
+      score: best.score,
+
+      merchantScore: best.merchantScore,
+
+      dateDiff: best.diffDays,
+
+      csvTransactionId: csv.id,
+
+      gmailTransactionId: gmail.id,
+
+      gmailSourceId: gmail.sourceId,
+
+      csvDate: csv.date,
+
+      gmailDate: gmail.date,
+
+      amount: csv.amount,
+
+      csvMerchant: csv.merchant,
+
+      gmailMerchant: gmail.merchant,
+    });
+  }
+
+  Logger.log(
+    "Olive Gmail突合: " +
+      JSON.stringify({
+        csvCount: csvRows.length,
+
+        gmailCount: gmailRows.length,
+
+        matchedCount: matches.length,
+
+        matches,
+      }),
+  );
+
+  return {
+    csvCount: csvRows.length,
+
+    gmailCount: gmailRows.length,
+
+    matchedCount: matches.length,
+
+    matches,
+  };
+}
+
+function diffDateDays_(date1, date2) {
+  if (!date1 || !date2) {
+    return -1;
+  }
+
+  const d1 = new Date(`${date1}T00:00:00+09:00`);
+
+  const d2 = new Date(`${date2}T00:00:00+09:00`);
+
+  if (isNaN(d1.getTime()) || isNaN(d2.getTime())) {
+    return -1;
+  }
+
+  return Math.abs(Math.round((d2.getTime() - d1.getTime()) / 86400000));
 }

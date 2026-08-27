@@ -4,7 +4,7 @@ import 'model/transaction_model.dart';
 import 'service/transaction_service.dart';
 import 'transaction_form_page.dart';
 
-enum TransactionDetailAction { edit, delete }
+enum TransactionDetailAction { edit, manualConfirm, ignore, delete }
 
 enum TransactionDetailResultType { updated, deleted }
 
@@ -60,6 +60,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
         settlementId: transaction.settlementId,
       );
     }
+
     if (transaction.settlementStatus == 'review' &&
         transaction.type == '移動' &&
         transaction.subCategory == 'クレカ引落') {
@@ -84,13 +85,21 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                   await _editTransaction(context);
                   break;
 
+                case TransactionDetailAction.manualConfirm:
+                  await _manualConfirmTransaction(context);
+                  break;
+
+                case TransactionDetailAction.ignore:
+                  await _ignoreTransaction(context);
+                  break;
+
                 case TransactionDetailAction.delete:
                   await _deleteTransaction(context);
                   break;
               }
             },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
+            itemBuilder: (context) => [
+              const PopupMenuItem(
                 value: TransactionDetailAction.edit,
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -98,7 +107,28 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                   title: Text('編集'),
                 ),
               ),
-              PopupMenuItem(
+
+              if (transaction.isPreliminary)
+                const PopupMenuItem(
+                  value: TransactionDetailAction.manualConfirm,
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.verified_outlined),
+                    title: Text('正式として確定'),
+                  ),
+                ),
+
+              if (transaction.isPreliminary)
+                const PopupMenuItem(
+                  value: TransactionDetailAction.ignore,
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.visibility_off_outlined),
+                    title: Text('除外する'),
+                  ),
+                ),
+
+              const PopupMenuItem(
                 value: TransactionDetailAction.delete,
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -146,19 +176,74 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
 
           const SizedBox(height: 20),
 
+          if (transaction.isPreliminary) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.bolt_outlined,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Gmail速報',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'カード・銀行から届いた通知をもとに登録した速報です。'
+                            '正式なCSV明細ではまだ確定していません。',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
           _Item(title: '日付', value: transaction.transactionDate),
+
           _Item(title: '内容', value: _displayName(transaction)),
+
           _Item(title: '大カテゴリ', value: transaction.majorCategory),
+
           _Item(title: '小カテゴリ', value: transaction.subCategory),
+
           _Item(title: '支払方法', value: transaction.paymentMethod),
+
           _Item(title: 'Wallet', value: transaction.wallet),
+
           _Item(title: 'Intent', value: transaction.intent),
-          _Item(title: '状態', value: transaction.status),
+
+          _Item(title: '分類状態', value: transaction.status),
+
+          if (transaction.isPreliminary)
+            const _Item(title: 'データ状態', value: '速報（CSV未確定）'),
+
+          if (transaction.isConfirmedSource)
+            const _Item(title: 'データ状態', value: '正式'),
+
+          if (transaction.isManualConfirmed)
+            const _Item(title: 'データ状態', value: '手動確定'),
+
           if (transaction.type == '移動' && transaction.fromAccount.isNotEmpty)
             _Item(title: '移動元', value: transaction.fromAccount),
 
           if (transaction.type == '移動' && transaction.toAccount.isNotEmpty)
             _Item(title: '移動先', value: transaction.toAccount),
+
           if (transaction.settlementStatus.isNotEmpty)
             _Item(
               title: '照合状態',
@@ -169,6 +254,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                 _ => transaction.settlementStatus,
               },
             ),
+
           if (transaction.note.trim().isNotEmpty)
             _Item(title: 'メモ', value: transaction.note),
 
@@ -184,116 +270,6 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
 
             const SizedBox(height: 12),
 
-            if (_settlementCandidatesFuture != null) ...[
-              const SizedBox(height: 24),
-
-              Text(
-                '照合候補',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 12),
-
-              FutureBuilder<List<SettlementCandidate>>(
-                future: _settlementCandidatesFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: CircularProgressIndicator(),
-                      ),
-                    );
-                  }
-
-                  if (snapshot.hasError) {
-                    return const Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text('照合候補を取得できませんでした'),
-                      ),
-                    );
-                  }
-
-                  final candidates = snapshot.data ?? [];
-
-                  if (candidates.isEmpty) {
-                    return const Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text('照合候補がありません'),
-                      ),
-                    );
-                  }
-
-                  return Column(
-                    children: candidates.map((candidate) {
-                      return Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                candidate.cardAccount,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-
-                              const SizedBox(height: 8),
-
-                              Text(
-                                '${candidate.firstDate}'
-                                ' ～ '
-                                '${candidate.lastDate}',
-                              ),
-
-                              Text(
-                                '明細：'
-                                '${candidate.detailCount}件',
-                              ),
-
-                              Text(
-                                '明細合計：'
-                                '${_formatYen(candidate.totalAmount)}',
-                              ),
-
-                              Text(
-                                '引落額：'
-                                '${_formatYen(candidate.settlementAmount)}',
-                              ),
-
-                              Text(
-                                '差額：'
-                                '${_formatSignedYen(candidate.difference)}',
-                              ),
-
-                              const SizedBox(height: 12),
-
-                              SizedBox(
-                                width: double.infinity,
-                                child: FilledButton(
-                                  onPressed: _isConfirmingSettlement
-                                      ? null
-                                      : () {
-                                          _confirmSettlement(candidate);
-                                        },
-                                  child: const Text('この明細と紐付ける'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  );
-                },
-              ),
-            ],
-
             FutureBuilder<List<TransactionModel>>(
               future: _settlementDetailsFuture,
               builder: (context, snapshot) {
@@ -307,9 +283,9 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                 }
 
                 if (snapshot.hasError) {
-                  return Card(
+                  return const Card(
                     child: Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: EdgeInsets.all(16),
                       child: Text('明細を取得できませんでした'),
                     ),
                   );
@@ -366,6 +342,116 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
               },
             ),
           ],
+
+          if (_settlementCandidatesFuture != null) ...[
+            const SizedBox(height: 24),
+
+            Text(
+              '照合候補',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 12),
+
+            FutureBuilder<List<SettlementCandidate>>(
+              future: _settlementCandidatesFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(20),
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('照合候補を取得できませんでした'),
+                    ),
+                  );
+                }
+
+                final candidates = snapshot.data ?? [];
+
+                if (candidates.isEmpty) {
+                  return const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('照合候補がありません'),
+                    ),
+                  );
+                }
+
+                return Column(
+                  children: candidates.map((candidate) {
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              candidate.cardAccount,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            Text(
+                              '${candidate.firstDate}'
+                              ' ～ '
+                              '${candidate.lastDate}',
+                            ),
+
+                            Text(
+                              '明細：'
+                              '${candidate.detailCount}件',
+                            ),
+
+                            Text(
+                              '明細合計：'
+                              '${_formatYen(candidate.totalAmount)}',
+                            ),
+
+                            Text(
+                              '引落額：'
+                              '${_formatYen(candidate.settlementAmount)}',
+                            ),
+
+                            Text(
+                              '差額：'
+                              '${_formatSignedYen(candidate.difference)}',
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: _isConfirmingSettlement
+                                    ? null
+                                    : () {
+                                        _confirmSettlement(candidate);
+                                      },
+                                child: const Text('この明細と紐付ける'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+          ],
         ],
       ),
     );
@@ -385,7 +471,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
       return;
     }
 
-    final updatedTransaction = result?.transaction;
+    final updatedTransaction = result.transaction;
 
     if (updatedTransaction == null) {
       return;
@@ -398,6 +484,122 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
     Navigator.of(
       context,
     ).pop(TransactionDetailResult.updated(updatedTransaction));
+  }
+
+  Future<void> _manualConfirmTransaction(BuildContext context) async {
+    if (!transaction.isPreliminary) {
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('この速報を正式として確定しますか？'),
+          content: Text(
+            '${_displayName(transaction)}を'
+            '正式な取引として扱います。\n\n'
+            '今後CSVとの自動突合対象からは外れます。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false);
+              },
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(true);
+              },
+              child: const Text('確定する'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    try {
+      await _transactionService.manualConfirmTransaction(id: transaction.id);
+
+      if (!context.mounted) {
+        return;
+      }
+
+      Navigator.of(context).pop(const TransactionDetailResult.deleted());
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+
+      final message = error.toString().replaceFirst('Exception: ', '');
+
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  Future<void> _ignoreTransaction(BuildContext context) async {
+    if (!transaction.isPreliminary) {
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('この速報を除外しますか？'),
+          content: Text(
+            '${_displayName(transaction)}を'
+            '通常の取引一覧・集計・残高から除外します。\n\n'
+            'データ自体は削除されません。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false);
+              },
+              child: const Text('キャンセル'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(true);
+              },
+              child: const Text('除外する'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    try {
+      await _transactionService.ignoreTransaction(id: transaction.id);
+
+      if (!context.mounted) {
+        return;
+      }
+
+      Navigator.of(context).pop(const TransactionDetailResult.deleted());
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+
+      final message = error.toString().replaceFirst('Exception: ', '');
+
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+    }
   }
 
   Future<void> _deleteTransaction(BuildContext context) async {
@@ -438,8 +640,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
         return;
       }
 
-      // 詳細画面を閉じる
-      Navigator.of(context).pop(TransactionDetailResult.deleted());
+      Navigator.of(context).pop(const TransactionDetailResult.deleted());
     } catch (error) {
       if (!context.mounted) {
         return;

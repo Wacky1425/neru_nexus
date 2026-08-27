@@ -933,21 +933,51 @@ class _TransactionTile extends StatelessWidget {
       },
 
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+
       leading: CircleAvatar(
         backgroundColor: transactionColor.withValues(alpha: 0.12),
         child: Icon(_categoryIcon(category), color: transactionColor),
       ),
-      title: Text(
-        displayName,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontWeight: FontWeight.bold),
+
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+
+          if (transaction.isPreliminary) ...[
+            const SizedBox(width: 8),
+
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '速報',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.onSecondaryContainer,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
+
       subtitle: Text(
         subtitleParts.join(' ・ '),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
+
       trailing: Text(
         '${isIncome ? '+' : '-'}'
         '${_formatYen(transaction.amount)}',

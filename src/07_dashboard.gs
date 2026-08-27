@@ -1193,7 +1193,14 @@ function calculateBaselineEssentialLivingCost_() {
 
   assertRequiredColumns(
     transactionTable.index,
-    ["transaction_date", "type", "amount", "major_category", "sub_category"],
+    [
+      "transaction_date",
+      "type",
+      "amount",
+      "major_category",
+      "sub_category",
+      "source_status",
+    ],
     SHEETS.TRANSACTIONS,
   );
 
@@ -1223,6 +1230,10 @@ function calculateBaselineEssentialLivingCost_() {
   const monthlyTotals = new Map();
 
   for (const row of transactionTable.rows) {
+    if (isIgnoredTransactionRow_(row, transactionTable.index)) {
+      continue;
+    }
+
     const type = getString(row, transactionTable.index, "type");
 
     if (type !== "支出") {

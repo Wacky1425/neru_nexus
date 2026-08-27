@@ -76,6 +76,7 @@ class _ReviewPageState extends State<ReviewPage> {
             }
 
             final items = result.items;
+
             final total = result.total;
 
             if (items.isEmpty) {
@@ -127,9 +128,13 @@ class _ReviewPageState extends State<ReviewPage> {
                       ),
                     );
                   }
+
                   final transaction = items[index - 1];
+
                   final isSettlementReview =
                       transaction.settlementStatus == 'review';
+
+                  final isStalePreliminary = transaction.isStalePreliminary;
 
                   final displayName = transaction.itemName.trim().isNotEmpty
                       ? transaction.itemName.trim()
@@ -137,23 +142,71 @@ class _ReviewPageState extends State<ReviewPage> {
                       ? transaction.merchant.trim()
                       : '名称なし';
 
+                  String reviewMessage;
+
+                  if (isStalePreliminary) {
+                    reviewMessage = 'CSV未確定のまま7日以上経過';
+                  } else if (isSettlementReview) {
+                    reviewMessage = '移動先またはクレカ照合を確認';
+                  } else {
+                    reviewMessage = 'カテゴリを確認';
+                  }
+
                   return ListTile(
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 8,
                       vertical: 6,
                     ),
+
                     leading: CircleAvatar(
                       child: Icon(
-                        isSettlementReview
+                        isStalePreliminary
+                            ? Icons.schedule_outlined
+                            : isSettlementReview
                             ? Icons.swap_horiz_rounded
                             : Icons.warning_amber_rounded,
                       ),
                     ),
-                    title: Text(
-                      displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+
+                    title: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+
+                        if (isStalePreliminary) ...[
+                          const SizedBox(width: 8),
+
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.secondaryContainer,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              '速報',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSecondaryContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
+
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -164,11 +217,12 @@ class _ReviewPageState extends State<ReviewPage> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          isSettlementReview ? '移動先またはクレカ照合を確認' : 'カテゴリを確認',
+                          reviewMessage,
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
+
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -180,6 +234,7 @@ class _ReviewPageState extends State<ReviewPage> {
                         const Icon(Icons.chevron_right),
                       ],
                     ),
+
                     onTap: () async {
                       final result = await Navigator.of(context)
                           .push<TransactionDetailResult>(

@@ -190,8 +190,27 @@ function rebuildSummaries() {
     return;
   }
 
-  const { monthlyMap, categoryMap } =
-    aggregateTransactionSummaries_(transactionTable);
+  assertRequiredColumns(
+    transactionTable.index,
+    ["source_status"],
+    SHEETS.TRANSACTIONS,
+  );
+
+  // ============================================================
+  // ignoredを集計対象から除外
+  // ============================================================
+
+  const activeTransactionTable = {
+    ...transactionTable,
+
+    rows: transactionTable.rows.filter(
+      (row) => !isIgnoredTransactionRow_(row, transactionTable.index),
+    ),
+  };
+
+  const { monthlyMap, categoryMap } = aggregateTransactionSummaries_(
+    activeTransactionTable,
+  );
 
   const monthlyRows = buildMonthlySummaryRows_(monthlyMap);
 
@@ -260,11 +279,26 @@ function rebuildSummariesForMonth_(yearMonth) {
 
   assertRequiredColumns(
     transactionTable.index,
-    ["transaction_date", "type", "major_category", "amount", "expense_amount"],
+    [
+      "transaction_date",
+      "type",
+      "major_category",
+      "amount",
+      "expense_amount",
+      "source_status",
+    ],
     SHEETS.TRANSACTIONS,
   );
 
   const targetRows = transactionTable.rows.filter((row) => {
+    // ======================================================
+    // ignoredは集計対象外
+    // ======================================================
+
+    if (isIgnoredTransactionRow_(row, transactionTable.index)) {
+      return false;
+    }
+
     const rowMonth = normalizeYearMonth(
       row[transactionTable.index["transaction_date"]],
     );
@@ -274,6 +308,7 @@ function rebuildSummariesForMonth_(yearMonth) {
 
   const targetTable = {
     ...transactionTable,
+
     rows: targetRows,
   };
 

@@ -20,51 +20,141 @@ class TransactionModel {
     required this.toAccount,
     required this.importBatch,
     required this.note,
+    required this.sourceId,
+    required this.sourceStatus,
+    required this.sourceReceivedAt,
   });
 
   final String id;
+
   final String transactionDate;
+
   final String merchant;
+
   final String itemName;
+
   final int amount;
+
   final String type;
+
   final String majorCategory;
+
   final String subCategory;
+
   final String status;
+
   final String wallet;
+
   final String intent;
+
   final String paymentMethod;
+
   final String rawText;
+
   final String settlementStatus;
+
   final String settlementId;
+
   final String fromAccount;
+
   final String toAccount;
+
   final String importBatch;
+
   final String accountName;
+
   final String note;
+
+  final String sourceId;
+
+  final String sourceStatus;
+
+  final String sourceReceivedAt;
+
+  bool get isPreliminary {
+    final value = sourceStatus.trim().toLowerCase();
+
+    return value == 'preliminary' || value == 'preliminary_edited';
+  }
+
+  bool get isPreliminaryEdited =>
+      sourceStatus.trim().toLowerCase() == 'preliminary_edited';
+
+  bool get isConfirmedSource =>
+      sourceStatus.trim().toLowerCase() == 'confirmed';
+
+  bool get isManualConfirmed =>
+      sourceStatus.trim().toLowerCase() == 'manual_confirmed';
+
+  bool get isStalePreliminary {
+    if (!isPreliminary) {
+      return false;
+    }
+
+    final value = sourceReceivedAt.trim();
+
+    if (value.isEmpty) {
+      return false;
+    }
+
+    final receivedAt = DateTime.tryParse(value.replaceFirst(' ', 'T'));
+
+    if (receivedAt == null) {
+      return false;
+    }
+
+    final difference = DateTime.now().difference(receivedAt);
+
+    return difference.inDays >= 7;
+  }
 
   factory TransactionModel.fromJson(Map<String, dynamic> json) {
     return TransactionModel(
-      id: json['id'] ?? '',
-      transactionDate: json['transactionDate'] ?? '',
-      merchant: json['merchant'] ?? '',
-      itemName: json['itemName'] ?? '',
+      id: json['id']?.toString() ?? '',
+
+      transactionDate: json['transactionDate']?.toString() ?? '',
+
+      merchant: json['merchant']?.toString() ?? '',
+
+      itemName: json['itemName']?.toString() ?? '',
+
       amount: (json['amount'] as num?)?.toInt() ?? 0,
-      type: json['type'] ?? '',
-      majorCategory: json['majorCategory'] ?? '',
-      subCategory: json['subCategory'] ?? '',
-      status: json['status'] ?? '',
-      wallet: json['wallet'] ?? '',
-      intent: json['intent'] ?? '',
-      paymentMethod: json['paymentMethod'] ?? '',
-      rawText: json['rawText'] ?? '',
-      settlementStatus: json['settlementStatus'] ?? '',
-      settlementId: json['settlementId'] ?? '',
-      fromAccount: json['fromAccount'] ?? '',
-      toAccount: json['toAccount'] ?? '',
-      importBatch: json['importBatch'] ?? '',
-      accountName: json['accountName'] ?? '',
-      note: json['note'] ?? '',
+
+      type: json['type']?.toString() ?? '',
+
+      majorCategory: json['majorCategory']?.toString() ?? '',
+
+      subCategory: json['subCategory']?.toString() ?? '',
+
+      status: json['status']?.toString() ?? '',
+
+      wallet: json['wallet']?.toString() ?? '',
+
+      intent: json['intent']?.toString() ?? '',
+
+      paymentMethod: json['paymentMethod']?.toString() ?? '',
+
+      rawText: json['rawText']?.toString() ?? '',
+
+      settlementStatus: json['settlementStatus']?.toString() ?? '',
+
+      settlementId: json['settlementId']?.toString() ?? '',
+
+      fromAccount: json['fromAccount']?.toString() ?? '',
+
+      toAccount: json['toAccount']?.toString() ?? '',
+
+      importBatch: json['importBatch']?.toString() ?? '',
+
+      accountName: json['accountName']?.toString() ?? '',
+
+      note: json['note']?.toString() ?? '',
+
+      sourceId: json['sourceId']?.toString() ?? '',
+
+      sourceStatus: json['sourceStatus']?.toString() ?? '',
+
+      sourceReceivedAt: json['sourceReceivedAt']?.toString() ?? '',
     );
   }
 }

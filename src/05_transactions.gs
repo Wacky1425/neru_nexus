@@ -34,6 +34,7 @@ function summarizeTransactionsByField(
     "type",
     "wallet",
     "amount",
+    "source_status",
     groupColumn,
   ];
 
@@ -50,6 +51,14 @@ function summarizeTransactionsByField(
   const amountMap = new Map();
 
   for (const row of table.rows) {
+    // ==========================================================
+    // 論理除外済み取引は集計しない
+    // ==========================================================
+
+    if (isIgnoredTransactionRow_(row, table.index)) {
+      continue;
+    }
+
     const transactionMonth = normalizeYearMonth(
       row[table.index["transaction_date"]],
     );
@@ -142,6 +151,7 @@ function filterTransactions(options) {
  */
 function filterTransactionRows(options, transactionTable) {
   const table = transactionTable || loadTransactions();
+
   const settings = options || {};
 
   if (table.rows.length === 0) {
@@ -153,7 +163,7 @@ function filterTransactionRows(options, transactionTable) {
 
   assertRequiredColumns(
     table.index,
-    ["transaction_date", "type", "wallet"],
+    ["transaction_date", "type", "wallet", "source_status"],
     SHEETS.TRANSACTIONS,
   );
 
@@ -172,6 +182,14 @@ function filterTransactionRows(options, transactionTable) {
   }
 
   const rows = table.rows.filter((row) => {
+    // ========================================================
+    // 論理除外済み取引は通常フィルタから除外
+    // ========================================================
+
+    if (isIgnoredTransactionRow_(row, table.index)) {
+      return false;
+    }
+
     if (targetMonth) {
       const rowMonth = normalizeYearMonth(row[table.index["transaction_date"]]);
 
@@ -1035,4 +1053,3 @@ function addTransactions(transactions, options = {}) {
     addedIds,
   };
 }
-

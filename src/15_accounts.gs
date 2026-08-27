@@ -878,6 +878,9 @@ function getAccountBalancesData_() {
       "note",
       "settlement_status",
       "settlement_id",
+
+      // Gmail速報の論理除外判定で使用
+      "source_status",
     ],
     SHEETS.TRANSACTIONS,
   );
@@ -912,6 +915,14 @@ function getAccountBalancesData_() {
   const cardBillingMonthTotals = new Map();
 
   for (const row of transactionTable.rows) {
+    // ==========================================================
+    // ignoredはカード請求予定に含めない
+    // ==========================================================
+
+    if (isIgnoredTransactionRow_(row, transactionTable.index)) {
+      continue;
+    }
+
     const sourceType = getString(row, transactionTable.index, "source_type");
 
     // クレジットカードCSV明細のみ
@@ -1082,6 +1093,14 @@ function getAccountBalancesData_() {
     // ----------------------------------------------------------
 
     for (const row of transactionTable.rows) {
+      // ========================================================
+      // ignoredは口座残高に反映しない
+      // ========================================================
+
+      if (isIgnoredTransactionRow_(row, transactionTable.index)) {
+        continue;
+      }
+
       const transactionDate = formatApiDate_(
         row[transactionTable.index["transaction_date"]],
       );

@@ -14,9 +14,7 @@ function getRequiredSheet(sheetName) {
     throw new Error("シート名が指定されていません");
   }
 
-  const sheet = SpreadsheetApp
-    .getActiveSpreadsheet()
-    .getSheetByName(name);
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
 
   if (!sheet) {
     throw new Error(`${name} シートがありません`);
@@ -32,9 +30,7 @@ function getRequiredSheet(sheetName) {
  * @return {Array<Array<*>>}
  */
 function getValues(sheetName) {
-  return getRequiredSheet(sheetName)
-    .getDataRange()
-    .getValues();
+  return getRequiredSheet(sheetName).getDataRange().getValues();
 }
 
 /**
@@ -69,15 +65,10 @@ function createHeaderIndex(headers) {
  * @param {string[]} requiredColumns
  * @param {string} sheetName
  */
-function assertRequiredColumns(
-  index,
-  requiredColumns,
-  sheetName) {
+function assertRequiredColumns(index, requiredColumns, sheetName) {
   for (const columnName of requiredColumns) {
     if (index[columnName] === undefined) {
-      throw new Error(
-        `${sheetName} に ${columnName} 列がありません`
-      );
+      throw new Error(`${sheetName} に ${columnName} 列がありません`);
     }
   }
 }
@@ -102,25 +93,38 @@ function loadTable(sheetName) {
   const sheet = getRequiredSheet(sheetName);
   const values = sheet.getDataRange().getValues();
 
-  const table = values.length === 0
-    ? {
-        sheet,
-        values: [],
-        headers: [],
-        rows: [],
-        index: {}
-      }
-    : {
-        sheet,
-        values,
-        headers: values[0],
-        rows: values.slice(1),
-        index: createHeaderIndex(values[0])
-      };
+  const table =
+    values.length === 0
+      ? {
+          sheet,
+          values: [],
+          headers: [],
+          rows: [],
+          index: {},
+        }
+      : {
+          sheet,
+          values,
+          headers: values[0],
+          rows: values.slice(1),
+          index: createHeaderIndex(values[0]),
+        };
 
   TABLE_CACHE[sheetName] = table;
 
   return table;
+}
+
+function isIgnoredTransactionRow_(row, index) {
+  if (!index || index["source_status"] === undefined) {
+    return false;
+  }
+
+  return (
+    String(row[index["source_status"]] || "")
+      .trim()
+      .toLowerCase() === "ignored"
+  );
 }
 
 /**
@@ -158,9 +162,7 @@ function tableValuesToObjects(values) {
 
   const headers = values[0];
 
-  return values
-    .slice(1)
-    .map(row => rowToObject(headers, row));
+  return values.slice(1).map((row) => rowToObject(headers, row));
 }
 
 /**
@@ -170,9 +172,7 @@ function tableValuesToObjects(values) {
  * @return {Array<Object<string, *>>}
  */
 function loadObjects(sheetName) {
-  return tableValuesToObjects(
-    getValues(sheetName)
-  );
+  return tableValuesToObjects(getValues(sheetName));
 }
 
 /**
@@ -191,8 +191,8 @@ function writeTable(
   startColumn,
   headers,
   rows,
-  clearRowCount
-    ) {
+  clearRowCount,
+) {
   const dataRows = Array.isArray(rows) ? rows : [];
   const columnCount = headers.length;
   const rowsToClear = clearRowCount || 1000;
@@ -202,51 +202,33 @@ function writeTable(
   }
 
   sheet
-    .getRange(
-      startRow,
-      startColumn,
-      rowsToClear,
-      columnCount
-    )
+    .getRange(startRow, startColumn, rowsToClear, columnCount)
     .clearContent();
 
-  sheet
-    .getRange(
-      startRow,
-      startColumn,
-      1,
-      columnCount
-    )
-    .setValues([headers]);
+  sheet.getRange(startRow, startColumn, 1, columnCount).setValues([headers]);
 
-    clearTableCache(sheet.getName());
+  clearTableCache(sheet.getName());
 
   if (dataRows.length === 0) {
     return;
   }
 
   const invalidRow = dataRows.find(
-    row => !Array.isArray(row) ||
-      row.length !== columnCount
+    (row) => !Array.isArray(row) || row.length !== columnCount,
   );
 
   if (invalidRow) {
     throw new Error(
       `書込みデータの列数がヘッダーと一致しません。` +
-      ` expected=${columnCount}`
+        ` expected=${columnCount}`,
     );
   }
 
   sheet
-    .getRange(
-      startRow + 1,
-      startColumn,
-      dataRows.length,
-      columnCount
-    )
+    .getRange(startRow + 1, startColumn, dataRows.length, columnCount)
     .setValues(dataRows);
 
-    clearTableCache();
+  clearTableCache();
 }
 
 function clearTableCache(sheetName) {
@@ -255,7 +237,7 @@ function clearTableCache(sheetName) {
     return;
   }
 
-  Object.keys(TABLE_CACHE).forEach(name => {
+  Object.keys(TABLE_CACHE).forEach((name) => {
     delete TABLE_CACHE[name];
   });
 }
@@ -273,16 +255,12 @@ function resolveCanonicalAccountName_(rawName) {
   const rows = getAccountAliases_();
 
   for (const row of rows) {
-    const raw = String(
-      row.raw_account_name || ""
-    )
+    const raw = String(row.raw_account_name || "")
       .normalize("NFKC")
       .trim();
 
     if (raw === target) {
-      return String(
-        row.canonical_account_name || ""
-      ).trim();
+      return String(row.canonical_account_name || "").trim();
     }
   }
 

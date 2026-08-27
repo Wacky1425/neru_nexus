@@ -4,6 +4,7 @@ import '../../../core/constants/api_constants.dart';
 import '../transaction_form_page.dart';
 import '../model/transaction_model.dart';
 import '../../../core/refresh/app_refresh_controller.dart';
+import '../model/gmail_import_status_model.dart';
 
 class TransactionService {
   const TransactionService();
@@ -374,6 +375,79 @@ class TransactionService {
     }
   }
 
+  Future<void> ignoreTransaction({required String id}) async {
+    if (id.trim().isEmpty) {
+      throw Exception('除外対象の取引IDがありません');
+    }
+
+    final uri = Uri.parse(ApiConstants.baseUrl);
+
+    final client = http.Client();
+
+    try {
+      final request = http.Request('POST', uri);
+
+      request.followRedirects = false;
+
+      request.headers.addAll({'Content-Type': 'application/json'});
+
+      request.body = jsonEncode({
+        'action': 'transaction_ignore',
+        'key': ApiConstants.apiKey,
+        'id': id.trim(),
+      });
+
+      final streamedResponse = await client.send(request);
+
+      final response = await _resolveResponse(client, streamedResponse);
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          '取引の除外に失敗しました: '
+          '${response.statusCode}',
+        );
+      }
+
+      final dynamic decodedValue;
+
+      try {
+        decodedValue = jsonDecode(response.body);
+      } on FormatException {
+        throw Exception('取引除外APIから不正なレスポンスが返されました');
+      }
+
+      if (decodedValue is! Map) {
+        throw Exception('取引除外APIの形式が正しくありません');
+      }
+
+      final decoded = Map<String, dynamic>.from(decodedValue);
+
+      if (decoded['success'] != true) {
+        final error = decoded['error'];
+
+        if (error is Map) {
+          throw Exception(error['message']?.toString() ?? '取引の除外に失敗しました');
+        }
+
+        throw Exception(error?.toString() ?? '取引の除外に失敗しました');
+      }
+
+      final data = decoded['data'];
+
+      if (data is! Map) {
+        throw Exception('取引除外APIのデータ形式が正しくありません');
+      }
+
+      if (data['ignored'] != true) {
+        throw Exception('取引が除外されませんでした');
+      }
+
+      AppRefreshController.refreshAccountBalances();
+    } finally {
+      client.close();
+    }
+  }
+
   Future<http.Response> _resolveResponse(
     http.Client client,
     http.StreamedResponse initialResponse,
@@ -569,5 +643,305 @@ class TransactionService {
               SettlementCandidate.fromJson(Map<String, dynamic>.from(item)),
         )
         .toList();
+  }
+
+  Future<List<TransactionModel>> fetchIgnoredTransactions({
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final uri = Uri.parse(
+      '${ApiConstants.baseUrl}'
+      '?action=ignored_transactions'
+      '&key=${Uri.encodeQueryComponent(ApiConstants.apiKey)}'
+      '&limit=$limit'
+      '&offset=$offset',
+    );
+
+    final client = http.Client();
+
+    try {
+      final request = http.Request('GET', uri);
+
+      request.followRedirects = false;
+
+      final streamedResponse = await client.send(request);
+
+      final response = await _resolveResponse(client, streamedResponse);
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          '除外済み取引の取得に失敗しました: '
+          '${response.statusCode}',
+        );
+      }
+
+      final dynamic decodedValue;
+
+      try {
+        decodedValue = jsonDecode(response.body);
+      } on FormatException {
+        throw Exception('除外済み取引APIから不正なレスポンスが返されました');
+      }
+
+      if (decodedValue is! Map) {
+        throw Exception('除外済み取引APIの形式が正しくありません');
+      }
+
+      final decoded = Map<String, dynamic>.from(decodedValue);
+
+      if (decoded['success'] != true) {
+        final error = decoded['error'];
+
+        if (error is Map) {
+          throw Exception(error['message']?.toString() ?? '除外済み取引の取得に失敗しました');
+        }
+
+        throw Exception(error?.toString() ?? '除外済み取引の取得に失敗しました');
+      }
+
+      final dataValue = decoded['data'];
+
+      if (dataValue is! Map) {
+        throw Exception('除外済み取引APIのデータ形式が正しくありません');
+      }
+
+      final data = Map<String, dynamic>.from(dataValue);
+
+      final itemsValue = data['items'];
+
+      if (itemsValue is! List) {
+        return [];
+      }
+
+      return itemsValue
+          .whereType<Map>()
+          .map(
+            (item) =>
+                TransactionModel.fromJson(Map<String, dynamic>.from(item)),
+          )
+          .toList();
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<void> manualConfirmTransaction({required String id}) async {
+    if (id.trim().isEmpty) {
+      throw Exception('確定対象の取引IDがありません');
+    }
+
+    final uri = Uri.parse(ApiConstants.baseUrl);
+
+    final client = http.Client();
+
+    try {
+      final request = http.Request('POST', uri);
+
+      request.followRedirects = false;
+
+      request.headers.addAll({'Content-Type': 'application/json'});
+
+      request.body = jsonEncode({
+        'action': 'transaction_manual_confirm',
+        'key': ApiConstants.apiKey,
+        'id': id.trim(),
+      });
+
+      final streamedResponse = await client.send(request);
+
+      final response = await _resolveResponse(client, streamedResponse);
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          '取引の手動確定に失敗しました: '
+          '${response.statusCode}',
+        );
+      }
+
+      final dynamic decodedValue;
+
+      try {
+        decodedValue = jsonDecode(response.body);
+      } on FormatException {
+        throw Exception('手動確定APIから不正なレスポンスが返されました');
+      }
+
+      if (decodedValue is! Map) {
+        throw Exception('手動確定APIの形式が正しくありません');
+      }
+
+      final decoded = Map<String, dynamic>.from(decodedValue);
+
+      if (decoded['success'] != true) {
+        final error = decoded['error'];
+
+        if (error is Map) {
+          throw Exception(error['message']?.toString() ?? '取引の手動確定に失敗しました');
+        }
+
+        throw Exception(error?.toString() ?? '取引の手動確定に失敗しました');
+      }
+
+      final data = decoded['data'];
+
+      if (data is! Map) {
+        throw Exception('手動確定APIのデータ形式が正しくありません');
+      }
+
+      if (data['confirmed'] != true) {
+        throw Exception('取引が手動確定されませんでした');
+      }
+
+      AppRefreshController.refreshAccountBalances();
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<void> restoreIgnoredTransaction({required String id}) async {
+    if (id.trim().isEmpty) {
+      throw Exception('復元対象の取引IDがありません');
+    }
+
+    final uri = Uri.parse(ApiConstants.baseUrl);
+
+    final client = http.Client();
+
+    try {
+      final request = http.Request('POST', uri);
+
+      request.followRedirects = false;
+
+      request.headers.addAll({'Content-Type': 'application/json'});
+
+      request.body = jsonEncode({
+        'action': 'transaction_restore_ignored',
+        'key': ApiConstants.apiKey,
+        'id': id.trim(),
+      });
+
+      final streamedResponse = await client.send(request);
+
+      final response = await _resolveResponse(client, streamedResponse);
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          '取引の復元に失敗しました: '
+          '${response.statusCode}',
+        );
+      }
+
+      final dynamic decodedValue;
+
+      try {
+        decodedValue = jsonDecode(response.body);
+      } on FormatException {
+        throw Exception('取引復元APIから不正なレスポンスが返されました');
+      }
+
+      if (decodedValue is! Map) {
+        throw Exception('取引復元APIの形式が正しくありません');
+      }
+
+      final decoded = Map<String, dynamic>.from(decodedValue);
+
+      if (decoded['success'] != true) {
+        final error = decoded['error'];
+
+        if (error is Map) {
+          throw Exception(error['message']?.toString() ?? '取引の復元に失敗しました');
+        }
+
+        throw Exception(error?.toString() ?? '取引の復元に失敗しました');
+      }
+
+      final data = decoded['data'];
+
+      if (data is! Map) {
+        throw Exception('取引復元APIのデータ形式が正しくありません');
+      }
+
+      if (data['restored'] != true) {
+        throw Exception('取引が復元されませんでした');
+      }
+
+      AppRefreshController.refreshAccountBalances();
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<GmailImportStatusModel> fetchGmailImportStatus() async {
+    final uri = Uri.parse(
+      '${ApiConstants.baseUrl}'
+      '?action=gmail_import_status'
+      '&key=${Uri.encodeQueryComponent(ApiConstants.apiKey)}',
+    );
+
+    final client = http.Client();
+
+    try {
+      final request = http.Request('GET', uri);
+
+      request.followRedirects = false;
+
+      final streamedResponse = await client.send(request);
+
+      final response = await _resolveResponse(client, streamedResponse);
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          'Gmail取込状況の取得に失敗しました: '
+          '${response.statusCode}',
+        );
+      }
+
+      final dynamic decodedValue;
+
+      try {
+        decodedValue = jsonDecode(response.body);
+      } on FormatException {
+        throw Exception(
+          'Gmail取込状況APIから'
+          '不正なレスポンスが返されました',
+        );
+      }
+
+      if (decodedValue is! Map) {
+        throw Exception(
+          'Gmail取込状況APIの'
+          '形式が正しくありません',
+        );
+      }
+
+      final decoded = Map<String, dynamic>.from(decodedValue);
+
+      if (decoded['success'] != true) {
+        final error = decoded['error'];
+
+        if (error is Map) {
+          throw Exception(
+            error['message']?.toString() ?? 'Gmail取込状況の取得に失敗しました',
+          );
+        }
+
+        throw Exception(error?.toString() ?? 'Gmail取込状況の取得に失敗しました');
+      }
+
+      final dataValue = decoded['data'];
+
+      if (dataValue is! Map) {
+        throw Exception(
+          'Gmail取込状況APIの'
+          'データ形式が正しくありません',
+        );
+      }
+
+      return GmailImportStatusModel.fromJson(
+        Map<String, dynamic>.from(dataValue),
+      );
+    } finally {
+      client.close();
+    }
   }
 }

@@ -285,6 +285,12 @@ function doGet(e) {
           "ok",
         );
 
+      case "ignored_transactions":
+        return createJsonResponse_(
+          getIgnoredTransactionsData(e.parameter),
+          "ok",
+        );
+
       case "categories":
         return createJsonResponse_(getCategoriesData(), "ok");
 
@@ -333,6 +339,10 @@ function doGet(e) {
 
       case "goals":
         return createJsonResponse_(getGoalsData(), "ok");
+
+      case "gmail_import_status":
+        return createJsonResponse_(getGmailImportStatus_(), "ok");
+
       default:
         return createJsonErrorResponse_(`未対応のactionです: ${action}`);
     }
@@ -368,6 +378,12 @@ function doPost(e) {
 
       case "transaction_delete":
         return deleteTransactionFromApp_(data);
+
+      case "transaction_manual_confirm":
+        return confirmPreliminaryTransactionFromApp_(data);
+
+      case "transaction_restore_ignored":
+        return restoreIgnoredTransactionFromApp_(data);
 
       case "csv_import":
         return importCsvFromApp_(data);
@@ -416,6 +432,9 @@ function doPost(e) {
 
       case "goal_deactivate":
         return deactivateGoalFromApp_(data);
+
+      case "transaction_ignore":
+        return ignoreTransactionFromApp_(data);
 
       default:
         return createJsonErrorResponse_(`未対応のactionです: ${action}`);
@@ -718,6 +737,9 @@ function updateTransactionFromApp_(data) {
       "to_account",
       "settlement_status",
       "settlement_id",
+      "source_id",
+      "source_status",
+      "source_received_at",
     ],
     SHEETS.TRANSACTIONS,
   );
@@ -748,6 +770,36 @@ function updateTransactionFromApp_(data) {
     tableIndex,
     "settlement_id",
   );
+
+  const existingSourceId = getString(existingRow, tableIndex, "source_id");
+
+  const existingSourceStatus = getString(
+    existingRow,
+    tableIndex,
+    "source_status",
+  );
+
+  const existingSourceReceivedAt =
+    existingRow[tableIndex["source_received_at"]] || "";
+
+  // ============================================================
+  // Gmail速報をユーザーが編集したことを記録
+  //
+  // preliminary
+  //   → preliminary_edited
+  //
+  // すでにpreliminary_editedならそのまま。
+  // CSV等の通常取引には影響しない。
+  // ============================================================
+
+  let nextSourceStatus = existingSourceStatus;
+
+  if (
+    existingSourceStatus === "preliminary" ||
+    existingSourceStatus === "preliminary_edited"
+  ) {
+    nextSourceStatus = "preliminary_edited";
+  }
 
   const isCreditCardSettlement = subCategory === "クレカ引落";
 
@@ -800,7 +852,7 @@ function updateTransactionFromApp_(data) {
 
     import_batch: getString(existingRow, tableIndex, "import_batch"),
 
-    status: status,
+    status,
 
     wallet,
 
@@ -830,6 +882,12 @@ function updateTransactionFromApp_(data) {
             : "review",
 
     settlement_id: type === "移動" ? existingSettlementId : "",
+
+    source_id: existingSourceId,
+
+    source_status: nextSourceStatus,
+
+    source_received_at: existingSourceReceivedAt,
   };
 
   const needsReviewRefresh =
@@ -862,7 +920,9 @@ function updateTransactionFromApp_(data) {
     .setValues([updatedRow]);
 
   clearTableCache(SHEETS.TRANSACTIONS);
+
   clearAccountBalanceCache_();
+
   clearHomeRecentTransactionsCache_();
 
   let ruleResult = null;
@@ -915,7 +975,9 @@ function updateTransactionFromApp_(data) {
   return createJsonResponse_(
     {
       updated: true,
+
       id,
+
       transaction: {
         id,
 
@@ -956,6 +1018,12 @@ function updateTransactionFromApp_(data) {
         importBatch: updatedTransaction.import_batch || "",
 
         note: updatedTransaction.note || "",
+
+        sourceId: updatedTransaction.source_id || "",
+
+        sourceStatus: updatedTransaction.source_status || "",
+
+        sourceReceivedAt: updatedTransaction.source_received_at || "",
       },
     },
     "ok",
@@ -1063,11 +1131,9 @@ function getTransactionsData(options) {
   const settings = options || {};
 
   const requestedLimit = Number(settings.limit || 50);
-
   const requestedOffset = Number(settings.offset || 0);
 
   const limit = Math.min(Math.max(requestedLimit, 1), 200);
-
   const offset = Math.max(requestedOffset, 0);
 
   const targetMonth = settings.yearMonth
@@ -1119,15 +1185,22 @@ function getTransactionsData(options) {
       "to_account",
       "import_batch",
       "note",
+      "source_id",
+      "source_status",
+      "source_received_at",
     ],
     SHEETS.TRANSACTIONS,
   );
 
   const settlementId = String(settings.settlementId || "").trim();
-
   const importBatch = String(settings.importBatch || "").trim();
 
   const filteredRows = table.rows.filter((row) => {
+    // ignoredは通常一覧に表示しない
+    if (isIgnoredTransactionRow_(row, table.index)) {
+      return false;
+    }
+
     if (targetMonth) {
       const rowMonth = normalizeYearMonth(row[table.index["transaction_date"]]);
 
@@ -1191,7 +1264,6 @@ function getTransactionsData(options) {
 
   filteredRows.sort((a, b) => {
     const dateA = new Date(a[table.index["transaction_date"]]);
-
     const dateB = new Date(b[table.index["transaction_date"]]);
 
     const dateDifference = dateB.getTime() - dateA.getTime();
@@ -1201,7 +1273,6 @@ function getTransactionsData(options) {
     }
 
     const recordedAtA = new Date(a[table.index["recorded_at"]]);
-
     const recordedAtB = new Date(b[table.index["recorded_at"]]);
 
     return recordedAtB.getTime() - recordedAtA.getTime();
@@ -1215,40 +1286,29 @@ function getTransactionsData(options) {
     transactionDate: formatApiDate_(row[table.index["transaction_date"]]),
 
     merchant: getString(row, table.index, "merchant"),
-
     itemName: getString(row, table.index, "item_name"),
-
     amount: getNumber(row, table.index, "amount"),
-
     type: getString(row, table.index, "type"),
-
     majorCategory: getString(row, table.index, "major_category"),
-
     subCategory: getString(row, table.index, "sub_category"),
-
     status: getString(row, table.index, "status"),
-
     wallet: getString(row, table.index, "wallet"),
-
     intent: getString(row, table.index, "intent"),
-
     rawText: getString(row, table.index, "raw_text"),
-
     paymentMethod: getString(row, table.index, "payment_method"),
-
     accountName: getString(row, table.index, "account_name"),
-
     settlementStatus: getString(row, table.index, "settlement_status"),
-
     settlementId: getString(row, table.index, "settlement_id"),
-
     fromAccount: getString(row, table.index, "from_account"),
-
     toAccount: getString(row, table.index, "to_account"),
-
     importBatch: getString(row, table.index, "import_batch"),
-
     note: getString(row, table.index, "note"),
+    sourceId: getString(row, table.index, "source_id"),
+    sourceStatus: getString(row, table.index, "source_status"),
+
+    sourceReceivedAt: formatApiDateTime_(
+      row[table.index["source_received_at"]],
+    ),
   }));
 
   return {
@@ -1264,11 +1324,9 @@ function getReviewTransactionsData(options) {
   const settings = options || {};
 
   const requestedLimit = Number(settings.limit || 100);
-
   const requestedOffset = Number(settings.offset || 0);
 
   const limit = Math.min(Math.max(requestedLimit, 1), 200);
-
   const offset = Math.max(requestedOffset, 0);
 
   const table = loadTransactions();
@@ -1306,16 +1364,51 @@ function getReviewTransactionsData(options) {
       "settlement_status",
       "settlement_id",
       "import_batch",
+      "source_id",
+      "source_status",
+      "source_received_at",
     ],
     SHEETS.TRANSACTIONS,
   );
 
+  const now = new Date();
+
+  const staleThresholdMs = 7 * 24 * 60 * 60 * 1000;
+
   const filteredRows = table.rows.filter((row) => {
+    // ignoredは要確認一覧に出さない
+    if (isIgnoredTransactionRow_(row, table.index)) {
+      return false;
+    }
+
     const status = getString(row, table.index, "status");
 
     const settlementStatus = getString(row, table.index, "settlement_status");
 
-    return status === "要確認" || settlementStatus === "review";
+    const sourceStatus = getString(row, table.index, "source_status");
+
+    let isStalePreliminary = false;
+
+    if (
+      sourceStatus === "preliminary" ||
+      sourceStatus === "preliminary_edited"
+    ) {
+      const sourceReceivedAt = row[table.index["source_received_at"]];
+
+      const receivedDate =
+        sourceReceivedAt instanceof Date
+          ? sourceReceivedAt
+          : new Date(sourceReceivedAt);
+
+      if (!isNaN(receivedDate.getTime())) {
+        isStalePreliminary =
+          now.getTime() - receivedDate.getTime() >= staleThresholdMs;
+      }
+    }
+
+    return (
+      status === "要確認" || settlementStatus === "review" || isStalePreliminary
+    );
   });
 
   filteredRows.sort((a, b) => {
@@ -1368,6 +1461,14 @@ function getReviewTransactionsData(options) {
     settlementId: getString(row, table.index, "settlement_id"),
 
     importBatch: getString(row, table.index, "import_batch"),
+
+    sourceId: getString(row, table.index, "source_id"),
+
+    sourceStatus: getString(row, table.index, "source_status"),
+
+    sourceReceivedAt: formatApiDateTime_(
+      row[table.index["source_received_at"]],
+    ),
   }));
 
   return {
@@ -1390,18 +1491,51 @@ function getReviewTransactionCount() {
 
   assertRequiredColumns(
     table.index,
-    ["status", "settlement_status"],
+    ["status", "settlement_status", "source_status", "source_received_at"],
     SHEETS.TRANSACTIONS,
   );
+
+  const now = new Date();
+
+  const staleThresholdMs = 7 * 24 * 60 * 60 * 1000;
 
   let count = 0;
 
   for (const row of table.rows) {
+    if (isIgnoredTransactionRow_(row, table.index)) {
+      continue;
+    }
+
     const status = getString(row, table.index, "status");
 
     const settlementStatus = getString(row, table.index, "settlement_status");
 
-    if (status === "要確認" || settlementStatus === "review") {
+    const sourceStatus = getString(row, table.index, "source_status");
+
+    let isStalePreliminary = false;
+
+    if (
+      sourceStatus === "preliminary" ||
+      sourceStatus === "preliminary_edited"
+    ) {
+      const sourceReceivedAt = row[table.index["source_received_at"]];
+
+      const receivedDate =
+        sourceReceivedAt instanceof Date
+          ? sourceReceivedAt
+          : new Date(sourceReceivedAt);
+
+      if (!isNaN(receivedDate.getTime())) {
+        isStalePreliminary =
+          now.getTime() - receivedDate.getTime() >= staleThresholdMs;
+      }
+    }
+
+    if (
+      status === "要確認" ||
+      settlementStatus === "review" ||
+      isStalePreliminary
+    ) {
       count++;
     }
   }
@@ -1440,11 +1574,16 @@ function getSettlementCandidatesData(options) {
       "to_account",
       "settlement_status",
       "settlement_id",
+      "source_status",
     ],
     SHEETS.TRANSACTIONS,
   );
 
   const targetRow = table.rows.find((row) => {
+    if (isIgnoredTransactionRow_(row, table.index)) {
+      return false;
+    }
+
     return String(row[table.index["id"]] || "").trim() === transactionId;
   });
 
@@ -1473,6 +1612,11 @@ function getSettlementCandidatesData(options) {
   const groups = {};
 
   for (const row of table.rows) {
+    // ignoredはクレカ照合候補の金額にも含めない
+    if (isIgnoredTransactionRow_(row, table.index)) {
+      continue;
+    }
+
     const type = getString(row, table.index, "type");
 
     // 銀行引落などの移動行は除外
@@ -1708,4 +1852,66 @@ function normalizeGoalDate_(value) {
   const day = String(Number(match[3] || 1)).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
+}
+
+function ignoreTransactionFromApp_(data) {
+  const id = String(data.id || "").trim();
+
+  if (!id) {
+    throw new Error("idは必須です");
+  }
+
+  const found = findTransactionById_(id);
+
+  if (!found) {
+    throw new Error("対象の取引が見つかりません");
+  }
+
+  assertRequiredColumns(
+    found.index,
+    ["id", "transaction_date", "source_type", "source_status"],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const row = found.row;
+  const index = found.index;
+
+  const sourceType = getString(row, index, "source_type");
+
+  const sourceStatus = getString(row, index, "source_status");
+
+  if (sourceType !== "Gmail_Olive" && sourceType !== "Gmail_SMBC") {
+    throw new Error("Gmail速報以外の取引は除外できません");
+  }
+
+  if (sourceStatus !== "preliminary" && sourceStatus !== "preliminary_edited") {
+    throw new Error("この取引は速報状態ではありません");
+  }
+
+  row[index["source_status"]] = "ignored";
+
+  found.sheet.getRange(found.rowNumber, 1, 1, row.length).setValues([row]);
+
+  clearTableCache(SHEETS.TRANSACTIONS);
+
+  clearAccountBalanceCache_();
+
+  clearHomeRecentTransactionsCache_();
+
+  const yearMonth = normalizeYearMonth(row[index["transaction_date"]]);
+
+  if (yearMonth) {
+    rebuildSummariesForMonth_(yearMonth);
+
+    markSummaryDirty_(yearMonth);
+  }
+
+  return createJsonResponse_(
+    {
+      ignored: true,
+      id,
+      sourceStatus: "ignored",
+    },
+    "ok",
+  );
 }

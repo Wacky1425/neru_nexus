@@ -731,7 +731,53 @@ function buildRecurringCandidateRows_(candidateMap) {
 function rebuildRecurringCandidates() {
   const transactionTable = loadTransactions();
 
-  const candidateMap = buildRecurringCandidateMap_(transactionTable);
+  if (
+    !transactionTable ||
+    !Array.isArray(transactionTable.rows) ||
+    transactionTable.rows.length === 0
+  ) {
+    writeTable(
+      getRequiredSheet(SHEETS.RECURRING_CANDIDATES),
+      1,
+      1,
+      [
+        "merchant",
+        "amount",
+        "month_count",
+        "first_month",
+        "last_month",
+        "avg_amount",
+        "category",
+        "status",
+        "note",
+      ],
+      [],
+    );
+
+    Logger.log("定期支払い候補: 0件");
+
+    return;
+  }
+
+  assertRequiredColumns(
+    transactionTable.index,
+    ["source_status"],
+    SHEETS.TRANSACTIONS,
+  );
+
+  // ============================================================
+  // ignoredは定期支払い候補の判定対象から除外
+  // ============================================================
+
+  const activeTransactionTable = {
+    ...transactionTable,
+
+    rows: transactionTable.rows.filter(
+      (row) => !isIgnoredTransactionRow_(row, transactionTable.index),
+    ),
+  };
+
+  const candidateMap = buildRecurringCandidateMap_(activeTransactionTable);
 
   const rows = buildRecurringCandidateRows_(candidateMap);
 
@@ -934,6 +980,7 @@ function applyRuleToPendingTransactions_(rule, excludeId = "") {
       "status",
       "wallet",
       "intent",
+      "source_status",
     ],
     SHEETS.TRANSACTIONS,
   );
@@ -950,6 +997,14 @@ function applyRuleToPendingTransactions_(rule, excludeId = "") {
 
   for (let i = 0; i < table.rows.length; i++) {
     const row = table.rows[i];
+
+    // ==========================================================
+    // ignoredはルール自動適用の対象外
+    // ==========================================================
+
+    if (isIgnoredTransactionRow_(row, table.index)) {
+      continue;
+    }
 
     const transactionId = getString(row, table.index, "id");
 
@@ -1008,7 +1063,10 @@ function applyRuleToPendingTransactions_(rule, excludeId = "") {
     });
   }
 
+  // ============================================================
   // 一致した行だけ書き込む
+  // ============================================================
+
   for (const update of updates) {
     sheet
       .getRange(update.rowNumber, 1, 1, update.values.length)
@@ -1029,6 +1087,7 @@ function applyRuleToPendingTransactions_(rule, excludeId = "") {
 
   return {
     matchedCount: updates.length,
+
     updatedCount: updates.length,
   };
 }

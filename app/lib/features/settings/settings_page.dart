@@ -5,6 +5,8 @@ import '../budget/budget_settings_page.dart';
 import '../categories/category_management_page.dart';
 import '../goals/goal_management_page.dart';
 import '../settlement/settlement_status_page.dart';
+import '../transactions/gmail_import_status_page.dart';
+import '../transactions/ignored_transactions_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -13,8 +15,10 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('設定')),
+
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 12),
+
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -94,6 +98,44 @@ class SettingsPage extends StatelessWidget {
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SettlementStatusPage()),
+              );
+            },
+          ),
+
+          const Divider(),
+
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Text(
+              'データ管理',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.visibility_off_outlined),
+            title: const Text('除外済み取引'),
+            subtitle: const Text('除外したGmail速報の確認・復元'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const IgnoredTransactionsPage(),
+                ),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.mail_outline),
+            title: const Text('Gmail取込状況'),
+            subtitle: const Text('Gmail速報の最終実行・取得状況を確認'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const GmailImportStatusPage(),
+                ),
               );
             },
           ),
