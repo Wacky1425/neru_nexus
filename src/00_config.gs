@@ -11,12 +11,15 @@ const SHEETS = Object.freeze({
   GOALS: "M_Goals",
   FINANCIAL_SETTINGS: "M_FinancialSettings",
   INVESTMENT_HOLDINGS: "M_InvestmentHoldings",
+  ASSET_SNAPSHOTS: "R_AssetSnapshots",
 
   // ===== Transaction =====
   TRANSACTIONS: "T_Transactions",
   RECURRING_CANDIDATES: "T_RecurringCandidates",
   IMPORT_HISTORY: "T_ImportHistory",
   ERROR_LOG: "T_ErrorLog",
+  GMAIL_EVIDENCE_CANDIDATES: "T_GmailEvidenceCandidates",
+  SBI_INVESTMENT_EVENTS: "T_SbiInvestmentEvents",
 
   // ===== Report =====
   MONTHLY_SUMMARY: "R_MonthlySummary",

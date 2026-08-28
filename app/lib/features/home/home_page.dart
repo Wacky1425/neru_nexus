@@ -94,7 +94,7 @@ class _HomePageState extends State<HomePage> {
 
     future.then<void>(
       (_) => clearReloadFuture(),
-      onError: (Object _, StackTrace __) {
+      onError: (Object error, StackTrace stackTrace) {
         clearReloadFuture();
       },
     );

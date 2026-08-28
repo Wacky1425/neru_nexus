@@ -12,6 +12,8 @@ class RecurringCandidateModel {
     required this.status,
     required this.recurringType,
     required this.suggestedType,
+    required this.expectedDay,
+    required this.yearlyEstimate,
     required this.note,
   });
 
@@ -27,6 +29,8 @@ class RecurringCandidateModel {
   final String status;
   final String recurringType;
   final String suggestedType;
+  final int expectedDay;
+  final int yearlyEstimate;
   final String note;
 
   bool get isCandidate => status == '候補';
@@ -52,6 +56,8 @@ class RecurringCandidateModel {
       status: json['status']?.toString() ?? '候補',
       recurringType: json['recurringType']?.toString() ?? '',
       suggestedType: json['suggestedType']?.toString() ?? '',
+      expectedDay: toInt(json['expectedDay']),
+      yearlyEstimate: toInt(json['yearlyEstimate']),
       note: json['note']?.toString() ?? '',
     );
   }
@@ -63,12 +69,22 @@ class RecurringCandidatesResult {
     required this.candidateCount,
     required this.approvedCount,
     required this.ignoredCount,
+    required this.monthlyTotal,
+    required this.yearlyEstimate,
+    required this.currentMonthRemaining,
+    required this.currentMonthRemainingCount,
+    required this.currentMonthOverdueCount,
   });
 
   final List<RecurringCandidateModel> items;
   final int candidateCount;
   final int approvedCount;
   final int ignoredCount;
+  final int monthlyTotal;
+  final int yearlyEstimate;
+  final int currentMonthRemaining;
+  final int currentMonthRemainingCount;
+  final int currentMonthOverdueCount;
 
   factory RecurringCandidatesResult.fromJson(Map<String, dynamic> json) {
     int toInt(dynamic value) {
@@ -86,6 +102,11 @@ class RecurringCandidatesResult {
       candidateCount: toInt(json['candidateCount']),
       approvedCount: toInt(json['approvedCount']),
       ignoredCount: toInt(json['ignoredCount']),
+      monthlyTotal: toInt(json['monthlyTotal']),
+      yearlyEstimate: toInt(json['yearlyEstimate']),
+      currentMonthRemaining: toInt(json['currentMonthRemaining']),
+      currentMonthRemainingCount: toInt(json['currentMonthRemainingCount']),
+      currentMonthOverdueCount: toInt(json['currentMonthOverdueCount']),
     );
   }
 }

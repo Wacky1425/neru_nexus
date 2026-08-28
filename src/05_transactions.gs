@@ -457,6 +457,9 @@ function createTransactionFromApp_(data) {
   const explicitExpenseRatio = Number(data.expenseRatio);
   const evidenceUrl = String(data.evidenceUrl || "").trim();
 
+  const fromAccount = String(data.fromAccount || "").trim();
+  const toAccount = String(data.toAccount || "").trim();
+
   if (!transactionDate) {
     throw new Error("transactionDateは必須です");
   }
@@ -467,8 +470,8 @@ function createTransactionFromApp_(data) {
     throw new Error("transactionDateの形式が不正です");
   }
 
-  if (type !== "支出" && type !== "収入") {
-    throw new Error("typeは支出または収入を指定してください");
+  if (type !== "支出" && type !== "収入" && type !== "移動") {
+    throw new Error("typeは支出、収入、移動を指定してください");
   }
 
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -495,12 +498,33 @@ function createTransactionFromApp_(data) {
     throw new Error("statusは確定または要確認を指定してください");
   }
 
+  if (type === "移動") {
+    if (!fromAccount) {
+      throw new Error("移動元口座は必須です");
+    }
+
+    if (!toAccount) {
+      throw new Error("移動先口座は必須です");
+    }
+
+    if (
+      resolveCanonicalAccountName_(fromAccount) ===
+      resolveCanonicalAccountName_(toAccount)
+    ) {
+      throw new Error("移動元口座と移動先口座は別の口座を指定してください");
+    }
+  }
+
   const purposeType =
-    type === "収入"
-      ? explicitPurposeType === "事業収入" || majorCategory === "副業" ? "事業収入" : "私用"
-      : explicitPurposeType === "経費" || explicitPurposeType === "私用"
-        ? explicitPurposeType
-        : guessPurposeType(majorCategory, subCategory);
+    type === "移動"
+      ? "私用"
+      : type === "収入"
+        ? explicitPurposeType === "事業収入" || majorCategory === "副業"
+          ? "事業収入"
+          : "私用"
+        : explicitPurposeType === "経費" || explicitPurposeType === "私用"
+          ? explicitPurposeType
+          : guessPurposeType(majorCategory, subCategory);
 
   const expenseRatio =
     type === "支出" && Number.isFinite(explicitExpenseRatio)
@@ -549,11 +573,25 @@ function createTransactionFromApp_(data) {
 
     status: status,
 
-    account_name: accountName,
+    account_name:
+      type === "移動"
+        ? resolveCanonicalAccountName_(fromAccount)
+        : accountName,
 
     wallet,
 
-    intent: type === "収入" ? "収入" : guessIntent(type, majorCategory, subCategory),
+    intent:
+      type === "収入" ? "収入" : guessIntent(type, majorCategory, subCategory),
+
+    from_account:
+      type === "移動" ? resolveCanonicalAccountName_(fromAccount) : "",
+
+    to_account:
+      type === "移動" ? resolveCanonicalAccountName_(toAccount) : "",
+
+    settlement_status: type === "移動" ? "none" : "",
+
+    settlement_id: "",
   };
 
   const result = addTransactions([tx], {
@@ -623,13 +661,13 @@ function createTransactionFromApp_(data) {
 
         rawText: tx.raw_text || "",
 
-        settlementStatus: "",
+        settlementStatus: tx.settlement_status || "",
 
-        settlementId: "",
+        settlementId: tx.settlement_id || "",
 
-        fromAccount: "",
+        fromAccount: tx.from_account || "",
 
-        toAccount: "",
+        toAccount: tx.to_account || "",
 
         importBatch: tx.import_batch || "",
 

@@ -287,11 +287,17 @@ function runReleaseChecks() {
     throw new Error(`データ整合性checkに失敗しました: ${integrity.errors.join(" / ")}`);
   }
   const backupTrigger = setupDailyNeruNexusBackupTrigger_();
+  const assetSnapshotTrigger = installDailyAssetSnapshotTrigger_();
+  const gmailEvidenceTrigger = installDailyGmailEvidenceTrigger_();
+  const sbiInvestmentTrigger = installDailySbiInvestmentTrigger_();
   const result = {
     apiVersion: NERU_API_VERSION,
     regression,
     integrity,
     backupTrigger,
+    assetSnapshotTrigger,
+    gmailEvidenceTrigger,
+    sbiInvestmentTrigger,
     checkedAt: new Date().toISOString(),
   };
   Logger.log(JSON.stringify(result, null, 2));

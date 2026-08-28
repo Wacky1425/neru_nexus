@@ -1,0 +1,14 @@
+Neru Nexus V1.1-1 Asset Snapshot / Trend
+
+- R_AssetSnapshots is auto-created on first use.
+- Daily 23:00 Apps Script trigger is installed by runReleaseChecks().
+- Snapshot stores assets, liabilities, net assets, cash, investment and other assets.
+- Asset page > 資産推移 shows 6 months / 1 year / all period.
+- Current snapshot can be captured manually from the app.
+- Daily capture attempts investment price refresh first.
+- No manual spreadsheet migration is required.
+
+After GAS deployment:
+1. Run runReleaseChecks() once.
+2. Confirm regression and integrity checks pass.
+3. Open Asset > 資産推移 and tap the top-right snapshot button once to create the first point.

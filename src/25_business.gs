@@ -40,11 +40,18 @@ function getBusinessReportData_(options) {
       expenseGross: 0,
       deductibleExpense: 0,
       profit: 0,
+      effectiveExpenseRatio: 0,
+      profitMargin: 0,
+      evidenceCoverageRate: 1,
       evidenceAttachedCount: 0,
       evidenceMissingCount: 0,
       transactionCount: 0,
+      expenseTransactionCount: 0,
+      bestMonth: null,
+      worstMonth: null,
       monthly: [],
       categories: [],
+      evidenceMissingItems: [],
       items: [],
     };
   }
@@ -92,6 +99,8 @@ function getBusinessReportData_(options) {
       expenseGross: 0,
       deductibleExpense: 0,
       profit: 0,
+      evidenceAttachedCount: 0,
+      evidenceMissingCount: 0,
     };
 
     if (type === "収入") {
@@ -116,8 +125,13 @@ function getBusinessReportData_(options) {
       category.count += 1;
       categoryMap.set(key, category);
 
-      if (tx.evidenceUrl) evidenceAttachedCount += 1;
-      else evidenceMissingCount += 1;
+      if (tx.evidenceUrl) {
+        evidenceAttachedCount += 1;
+        month.evidenceAttachedCount += 1;
+      } else {
+        evidenceMissingCount += 1;
+        month.evidenceMissingCount += 1;
+      }
     }
 
     month.profit = month.income - month.deductibleExpense;
@@ -133,18 +147,41 @@ function getBusinessReportData_(options) {
     (a, b) => b.deductibleAmount - a.deductibleAmount,
   );
 
+  const profit = income - deductibleExpense;
+  const effectiveExpenseRatio =
+    expenseGross > 0 ? deductibleExpense / expenseGross : 0;
+  const profitMargin = income > 0 ? profit / income : 0;
+  const expenseItems = items.filter((item) => item.type === "支出");
+  const evidenceMissingItems = expenseItems.filter((item) => !item.evidenceUrl);
+  const evidenceCoverageRate =
+    expenseItems.length > 0 ? evidenceAttachedCount / expenseItems.length : 1;
+
+  let bestMonth = null;
+  let worstMonth = null;
+  for (const month of monthly) {
+    if (!bestMonth || month.profit > bestMonth.profit) bestMonth = month;
+    if (!worstMonth || month.profit < worstMonth.profit) worstMonth = month;
+  }
+
   return {
     year,
     yearMonth,
     income,
     expenseGross,
     deductibleExpense,
-    profit: income - deductibleExpense,
+    profit,
+    effectiveExpenseRatio,
+    profitMargin,
+    evidenceCoverageRate,
     evidenceAttachedCount,
     evidenceMissingCount,
     transactionCount: items.length,
+    expenseTransactionCount: expenseItems.length,
+    bestMonth,
+    worstMonth,
     monthly,
     categories,
+    evidenceMissingItems,
     items,
   };
 }
@@ -223,6 +260,15 @@ function testGetBusinessReportData() {
   }
   if (report.evidenceAttachedCount + report.evidenceMissingCount < 0) {
     throw new Error("証憑件数が不正です");
+  }
+  if (report.effectiveExpenseRatio < 0 || report.effectiveExpenseRatio > 1) {
+    throw new Error("実効経費率が不正です");
+  }
+  if (report.evidenceCoverageRate < 0 || report.evidenceCoverageRate > 1) {
+    throw new Error("証憑カバー率が不正です");
+  }
+  if (report.evidenceMissingItems.length !== report.evidenceMissingCount) {
+    throw new Error("証憑不足一覧と件数が一致しません");
   }
   Logger.log(JSON.stringify({
     assertions: "PASS",

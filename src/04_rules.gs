@@ -168,6 +168,10 @@ function classifyMoneyTransaction(row, txBase, rules, configName) {
     inAmount = parseAmount(row["お預入れ"]);
 
     outAmount = parseAmount(row["お引出し"]);
+  } else if (configName === "sbi_netbank_v1") {
+    inAmount = parseAmount(row["入金金額(円)"]);
+
+    outAmount = parseAmount(row["出金金額(円)"]);
   }
 
   // ============================================================
@@ -260,6 +264,26 @@ function classifyMoneyTransaction(row, txBase, rules, configName) {
 
       wallet: "生活",
 
+      intent: "移動",
+    };
+  }
+
+  // ============================================================
+  // 自分名義への銀行出金
+  // ============================================================
+
+  const selfTransfer = outAmount > 0 ? detectBankDepositType_(txBase) : null;
+
+  if (selfTransfer && selfTransfer.kind === "transfer") {
+    return {
+      ...classified,
+      type: "移動",
+      major_category: "移動",
+      sub_category: "口座移動",
+      purpose_type: "私用",
+      expense_ratio: 0,
+      status: "要確認",
+      wallet: "生活",
       intent: "移動",
     };
   }

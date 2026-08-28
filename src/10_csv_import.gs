@@ -23,6 +23,14 @@ function detectCsvTypeFromRows(values) {
       joined.includes("お預入れ") &&
       joined.includes("お取り扱い内容");
 
+    const isSbiNetBank =
+      row.includes("日付") &&
+      row.includes("内容") &&
+      row.includes("出金金額(円)") &&
+      row.includes("入金金額(円)") &&
+      row.includes("残高(円)") &&
+      row.includes("メモ");
+
     const isPayPay =
       row.includes("取引日") &&
       row.includes("出金金額（円）") &&
@@ -49,6 +57,13 @@ function detectCsvTypeFromRows(values) {
     const isOliveCreditNoHeader =
       normalizedJoined.includes("Olive") &&
       normalizedJoined.includes("クレジット");
+
+    if (isSbiNetBank) {
+      return {
+        csvType: "sbi_netbank_v1",
+        headerRowIndex: i,
+      };
+    }
 
     if (isSmbcBank) {
       return {
@@ -217,6 +232,39 @@ function convertOliveRowsWithoutHeader(rows) {
 // Import Config
 // ============================================================
 
+function resolveSbiNetBankAccountName_() {
+  const accounts = loadObjects(SHEETS.ACCOUNTS);
+  const candidates = accounts
+    .map((row) => String(row.account_name || row.name || "").trim())
+    .filter(Boolean);
+
+  const exact = candidates.find((name) =>
+    ["住信SBIネット銀行", "住信SBI", "SBIネット銀行"].includes(name),
+  );
+  if (exact) return exact;
+
+  const partial = candidates.find((name) => {
+    const normalized = name.normalize("NFKC").toUpperCase();
+    return normalized.includes("住信") && normalized.includes("SBI");
+  });
+  return partial || "住信SBIネット銀行";
+}
+
+function getBuiltInImportConfig_(configName) {
+  const target = String(configName || "").trim();
+  if (target !== "sbi_netbank_v1") return null;
+
+  return {
+    config_name: "sbi_netbank_v1",
+    csv_type: "sbi_netbank_v1",
+    source_type: "CSV_銀行",
+    payment_method: "銀行_生活",
+    account_name: resolveSbiNetBankAccountName_(),
+    amount_sign: 1,
+    active: 1,
+  };
+}
+
 function getImportConfig(configName) {
   const targetName = String(configName || "").trim();
 
@@ -224,19 +272,21 @@ function getImportConfig(configName) {
     (row) => String(row.config_name || "").trim() === targetName,
   );
 
-  if (!config) {
+  const resolvedConfig = config || getBuiltInImportConfig_(targetName);
+
+  if (!resolvedConfig) {
     throw new Error("import_config に該当設定がありません: " + targetName);
   }
 
   const active = String(
-    config.active === undefined ? "1" : config.active,
+    resolvedConfig.active === undefined ? "1" : resolvedConfig.active,
   ).trim();
 
   if (active !== "1" && active.toUpperCase() !== "TRUE") {
     throw new Error("import_config が inactive です: " + targetName);
   }
 
-  return config;
+  return resolvedConfig;
 }
 
 // ============================================================
@@ -321,6 +371,10 @@ function getConfigNameByCsvType(csvType) {
 
     return rowCsvType === targetType && isActive;
   });
+
+  if (!config && targetType === "sbi_netbank_v1") {
+    return "sbi_netbank_v1";
+  }
 
   if (!config) {
     throw new Error(
@@ -507,6 +561,38 @@ function normalizeCsvRowByHeader(row, config, metadata = {}) {
     itemName = merchant;
 
     note = String(row["入出金明細ＩＤ"] || "").trim();
+
+    // ============================================================
+    // 住信SBIネット銀行
+    // ============================================================
+  } else if (config.config_name === "sbi_netbank_v1") {
+    const outAmount = Number(
+      String(row["出金金額(円)"] || "0").replace(/,/g, ""),
+    );
+    const inAmount = Number(
+      String(row["入金金額(円)"] || "0").replace(/,/g, ""),
+    );
+
+    if (outAmount > 0) {
+      amount = outAmount;
+      moneyDirection = "out";
+    } else {
+      amount = inAmount;
+      moneyDirection = "in";
+    }
+
+    transactionDate = String(row["日付"] || "").trim();
+    merchant = String(row["内容"] || "").trim();
+    itemName = merchant;
+
+    const csvMemo = String(row["メモ"] || "").trim();
+    const balance = String(row["残高(円)"] || "").trim();
+    note = [
+      csvMemo && csvMemo !== "-" ? csvMemo : "",
+      balance ? `残高:${balance}円` : "",
+    ]
+      .filter(Boolean)
+      .join(" / ");
 
     // ============================================================
     // 三井住友銀行
@@ -1033,6 +1119,7 @@ function importParsedCsvRows_(parsed) {
 
     if (
       config.config_name === "smbc_bank_v1" ||
+      config.config_name === "sbi_netbank_v1" ||
       config.config_name === "paypay_v1" ||
       config.config_name === "jpbank_v1"
     ) {

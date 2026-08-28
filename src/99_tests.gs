@@ -1009,6 +1009,73 @@ function testGmailImportDryRunSummary() {
   };
 }
 
+
+function testSbiNetBankCsvSupport() {
+  const csvText = [
+    '"日付","内容","出金金額(円)","入金金額(円)","残高(円)","メモ"',
+    '"2026/08/19","ことら送金　ワキタ　ホクト （20260819232447922906）","10,000",,"2","-"',
+    '"2026/08/19","普通　円　配信収益",,"10,000","10,002","-"',
+    '"2026/08/16","利息",,"2","2","-"',
+  ].join("\r\n");
+
+  const parsed = readCsvRowsFromText_(csvText);
+  if (parsed.csvType !== "sbi_netbank_v1") {
+    throw new Error(`住信SBI CSV判定失敗: ${parsed.csvType}`);
+  }
+  if (parsed.rows.length !== 3) {
+    throw new Error(`住信SBI CSV行数不一致: ${parsed.rows.length}`);
+  }
+
+  const config = {
+    config_name: "sbi_netbank_v1",
+    source_type: "CSV_銀行",
+    payment_method: "銀行_生活",
+    account_name: "住信SBIネット銀行",
+    amount_sign: 1,
+  };
+
+  const outgoing = normalizeCsvRowByHeader(parsed.rows[0], config, parsed);
+  const income = normalizeCsvRowByHeader(parsed.rows[1], config, parsed);
+  const interest = normalizeCsvRowByHeader(parsed.rows[2], config, parsed);
+
+  if (
+    outgoing.amount !== 10000 ||
+    outgoing.money_direction !== "out" ||
+    outgoing.transaction_date !== "2026/08/19"
+  ) {
+    throw new Error(`住信SBI 出金変換失敗: ${JSON.stringify(outgoing)}`);
+  }
+
+  if (income.amount !== 10000 || income.money_direction !== "in") {
+    throw new Error(`住信SBI 入金変換失敗: ${JSON.stringify(income)}`);
+  }
+
+  if (interest.amount !== 2 || interest.money_direction !== "in") {
+    throw new Error(`住信SBI 利息変換失敗: ${JSON.stringify(interest)}`);
+  }
+
+  const selfTransfer = classifyMoneyTransaction(
+    parsed.rows[0],
+    outgoing,
+    [],
+    "sbi_netbank_v1",
+  );
+  if (selfTransfer.type !== "移動" || selfTransfer.sub_category !== "口座移動") {
+    throw new Error(
+      `住信SBI 自分名義送金判定失敗: ${JSON.stringify(selfTransfer)}`,
+    );
+  }
+
+  return {
+    assertions: "PASS",
+    csvType: parsed.csvType,
+    rowCount: parsed.rows.length,
+    outgoingAmount: outgoing.amount,
+    incomeAmount: income.amount,
+    interestAmount: interest.amount,
+  };
+}
+
 function runRegressionTests() {
   testBusinessReportHelpers();
   testGetBusinessReportData();
@@ -1016,6 +1083,18 @@ function runRegressionTests() {
   testAccountAssetTypeHelpers();
   testRecurringCandidateHelpers();
   const tests = [
+    {
+      name: "testMerchantSuggestionBuilder_",
+      fn: testMerchantSuggestionBuilder_,
+    },
+    {
+      name: "testGmailEvidenceParsing_",
+      fn: testGmailEvidenceParsing_,
+    },
+    {
+      name: "testSbiInvestmentMailParser_",
+      fn: testSbiInvestmentMailParser_,
+    },
     // ==========================================================
     // Core / Sheet / Loader
     // ==========================================================
@@ -1047,6 +1126,11 @@ function runRegressionTests() {
     {
       name: "testOliveCsvTypeMapping",
       fn: testOliveCsvTypeMapping,
+    },
+
+    {
+      name: "testSbiNetBankCsvSupport",
+      fn: testSbiNetBankCsvSupport,
     },
 
     // ==========================================================
@@ -1142,6 +1226,11 @@ function runRegressionTests() {
     {
       name: "testAccountBalancesSafe",
       fn: testAccountBalancesSafe,
+    },
+
+    {
+      name: "testAssetSnapshotHelpers",
+      fn: testAssetSnapshotHelpers,
     },
 
     {
@@ -1583,6 +1672,9 @@ function testRecurringCandidateHelpers() {
 
   if (!netflix || netflix.suggestedType !== "サブスク") {
     throw new Error("NETFLIXをサブスク候補として検出できませんでした");
+  }
+  if (netflix.expectedDay !== 1 || netflix.yearlyEstimate !== 17880) {
+    throw new Error(`NETFLIX支払日/年間見込の推定失敗: ${JSON.stringify(netflix)}`);
   }
   if (!power || power.suggestedType !== "固定費") {
     throw new Error("変動額の水道光熱費を固定費候補として検出できませんでした");

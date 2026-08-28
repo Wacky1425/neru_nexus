@@ -5,6 +5,8 @@ class BusinessMonthSummary {
     required this.expenseGross,
     required this.deductibleExpense,
     required this.profit,
+    required this.evidenceAttachedCount,
+    required this.evidenceMissingCount,
   });
 
   final String yearMonth;
@@ -12,6 +14,8 @@ class BusinessMonthSummary {
   final int expenseGross;
   final int deductibleExpense;
   final int profit;
+  final int evidenceAttachedCount;
+  final int evidenceMissingCount;
 
   factory BusinessMonthSummary.fromJson(Map<String, dynamic> json) {
     return BusinessMonthSummary(
@@ -20,6 +24,8 @@ class BusinessMonthSummary {
       expenseGross: _toInt(json['expenseGross']),
       deductibleExpense: _toInt(json['deductibleExpense']),
       profit: _toInt(json['profit']),
+      evidenceAttachedCount: _toInt(json['evidenceAttachedCount']),
+      evidenceMissingCount: _toInt(json['evidenceMissingCount']),
     );
   }
 }
@@ -94,7 +100,7 @@ class BusinessTransactionItem {
       majorCategory: json['majorCategory']?.toString() ?? '',
       subCategory: json['subCategory']?.toString() ?? '',
       purposeType: json['purposeType']?.toString() ?? '',
-      expenseRatio: (json['expenseRatio'] as num?)?.toDouble() ?? 0,
+      expenseRatio: _toDouble(json['expenseRatio']),
       expenseAmount: _toInt(json['expenseAmount']),
       note: json['note']?.toString() ?? '',
       evidenceUrl: json['evidenceUrl']?.toString() ?? '',
@@ -111,11 +117,18 @@ class BusinessReportModel {
     required this.expenseGross,
     required this.deductibleExpense,
     required this.profit,
+    required this.effectiveExpenseRatio,
+    required this.profitMargin,
+    required this.evidenceCoverageRate,
     required this.evidenceAttachedCount,
     required this.evidenceMissingCount,
     required this.transactionCount,
+    required this.expenseTransactionCount,
+    required this.bestMonth,
+    required this.worstMonth,
     required this.monthly,
     required this.categories,
+    required this.evidenceMissingItems,
     required this.items,
   });
 
@@ -125,17 +138,35 @@ class BusinessReportModel {
   final int expenseGross;
   final int deductibleExpense;
   final int profit;
+  final double effectiveExpenseRatio;
+  final double profitMargin;
+  final double evidenceCoverageRate;
   final int evidenceAttachedCount;
   final int evidenceMissingCount;
   final int transactionCount;
+  final int expenseTransactionCount;
+  final BusinessMonthSummary? bestMonth;
+  final BusinessMonthSummary? worstMonth;
   final List<BusinessMonthSummary> monthly;
   final List<BusinessCategorySummary> categories;
+  final List<BusinessTransactionItem> evidenceMissingItems;
   final List<BusinessTransactionItem> items;
 
   factory BusinessReportModel.fromJson(Map<String, dynamic> json) {
-    List<T> parseList<T>(dynamic value, T Function(Map<String, dynamic>) fromJson) {
+    List<T> parseList<T>(
+      dynamic value,
+      T Function(Map<String, dynamic>) fromJson,
+    ) {
       if (value is! List) return <T>[];
-      return value.whereType<Map>().map((item) => fromJson(Map<String, dynamic>.from(item))).toList();
+      return value
+          .whereType<Map>()
+          .map((item) => fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+
+    BusinessMonthSummary? parseMonth(dynamic value) {
+      if (value is! Map) return null;
+      return BusinessMonthSummary.fromJson(Map<String, dynamic>.from(value));
     }
 
     return BusinessReportModel(
@@ -145,11 +176,19 @@ class BusinessReportModel {
       expenseGross: _toInt(json['expenseGross']),
       deductibleExpense: _toInt(json['deductibleExpense']),
       profit: _toInt(json['profit']),
+      effectiveExpenseRatio: _toDouble(json['effectiveExpenseRatio']),
+      profitMargin: _toDouble(json['profitMargin']),
+      evidenceCoverageRate: _toDouble(json['evidenceCoverageRate']),
       evidenceAttachedCount: _toInt(json['evidenceAttachedCount']),
       evidenceMissingCount: _toInt(json['evidenceMissingCount']),
       transactionCount: _toInt(json['transactionCount']),
+      expenseTransactionCount: _toInt(json['expenseTransactionCount']),
+      bestMonth: parseMonth(json['bestMonth']),
+      worstMonth: parseMonth(json['worstMonth']),
       monthly: parseList(json['monthly'], BusinessMonthSummary.fromJson),
       categories: parseList(json['categories'], BusinessCategorySummary.fromJson),
+      evidenceMissingItems:
+          parseList(json['evidenceMissingItems'], BusinessTransactionItem.fromJson),
       items: parseList(json['items'], BusinessTransactionItem.fromJson),
     );
   }
@@ -182,4 +221,9 @@ int _toInt(dynamic value) {
   if (value is int) return value;
   if (value is num) return value.toInt();
   return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+double _toDouble(dynamic value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? 0;
 }

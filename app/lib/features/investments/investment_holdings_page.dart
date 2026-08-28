@@ -6,6 +6,7 @@ import '../accounts/service/account_balance_service.dart';
 import 'investment_holding_edit_page.dart';
 import 'model/investment_holding_model.dart';
 import 'service/investment_holding_service.dart';
+import 'sbi_gmail/sbi_investment_event_page.dart';
 
 class InvestmentHoldingsPage extends StatefulWidget {
   const InvestmentHoldingsPage({super.key});
@@ -105,6 +106,21 @@ class _InvestmentHoldingsPageState extends State<InvestmentHoldingsPage> {
       appBar: AppBar(
         title: const Text('投資ポートフォリオ'),
         actions: [
+          IconButton(
+            onPressed: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const SbiInvestmentEventPage(),
+                ),
+              );
+              if (context.mounted) {
+                AccountBalanceService.clearCache();
+                await _load();
+              }
+            },
+            tooltip: 'SBI証券通知',
+            icon: const Icon(Icons.mail_outline),
+          ),
           IconButton(
             onPressed: _refreshingPrices ? null : () => _load(refreshPrices: true),
             tooltip: '現在値を更新',

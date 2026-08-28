@@ -4,10 +4,12 @@ import '../accounts/account_management_page.dart';
 import '../budget/budget_settings_page.dart';
 import '../business/business_report_page.dart';
 import '../categories/category_management_page.dart';
+import '../classification_rules/classification_rule_management_page.dart';
 import '../goals/goal_management_page.dart';
 import '../recurring/recurring_management_page.dart';
 import '../settlement/settlement_status_page.dart';
 import '../transactions/gmail_import_status_page.dart';
+import '../gmail_evidence/gmail_evidence_page.dart';
 import '../transactions/ignored_transactions_page.dart';
 import '../system/system_diagnostics_page.dart';
 
@@ -40,6 +42,20 @@ class SettingsPage extends StatelessWidget {
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => const CategoryManagementPage(),
+                ),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.rule_outlined),
+            title: const Text('分類ルール'),
+            subtitle: const Text('自動分類ルールの確認・編集・候補登録'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const ClassificationRuleManagementPage(),
                 ),
               );
             },
@@ -151,6 +167,18 @@ class SettingsPage extends StatelessWidget {
                 MaterialPageRoute(
                   builder: (_) => const IgnoredTransactionsPage(),
                 ),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.receipt_long_outlined),
+            title: const Text('Gmail領収書・証憑'),
+            subtitle: const Text('領収書メールを取引の証憑に紐付け'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const GmailEvidencePage()),
               );
             },
           ),

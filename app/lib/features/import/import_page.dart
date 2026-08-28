@@ -312,7 +312,7 @@ class _ImportPageState extends State<ImportPage> {
             const SizedBox(height: 8),
 
             Text(
-              'Olive、三井住友銀行、PayPayなどの'
+              'Olive、三井住友銀行、住信SBI、PayPayなどの'
               'CSVを選択すると、形式を自動判定して'
               '取引へ登録します。',
               style: Theme.of(context).textTheme.bodyMedium,

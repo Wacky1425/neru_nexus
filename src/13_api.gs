@@ -160,8 +160,36 @@ function doGet(e) {
       case "recurring_candidates":
         return createJsonResponse_(getRecurringCandidatesData_(), "ok");
 
+      case "classification_rules":
+        return createJsonResponse_(getRuleManagementData_(), "ok");
+
+      case "merchant_classification_suggestions":
+        return createJsonResponse_(buildMerchantClassificationSuggestions_(), "ok");
+
+      case "gmail_evidence_candidates":
+        return createJsonResponse_(
+          getGmailEvidenceCandidatesData_({
+            includeDone: parameters.includeDone,
+          }),
+          "ok",
+        );
+
       case "investment_holdings":
         return createJsonResponse_(getInvestmentHoldingsData_(), "ok");
+
+      case "sbi_investment_events":
+        return createJsonResponse_(
+          getSbiInvestmentEventsData_({
+            includeDone: parameters.includeDone,
+          }),
+          "ok",
+        );
+
+      case "asset_trend":
+        return createJsonResponse_(
+          getAssetTrendData_({ months: parameters.months }),
+          "ok",
+        );
 
       case "business_report":
         return createJsonResponse_(
@@ -277,6 +305,27 @@ function doPost(e) {
       case "recurring_candidate_update":
         return updateRecurringCandidateFromApp_(data);
 
+      case "classification_rule_create":
+        return createClassificationRuleFromApp_(data);
+
+      case "classification_rule_update":
+        return updateClassificationRuleFromApp_(data);
+
+      case "classification_rule_delete":
+        return deleteClassificationRuleFromApp_(data);
+
+      case "merchant_classification_suggestion_promote":
+        return promoteMerchantSuggestionFromApp_(data);
+
+      case "gmail_evidence_scan":
+        return scanGmailEvidenceFromApp_(data);
+
+      case "gmail_evidence_attach":
+        return attachGmailEvidenceCandidateFromApp_(data);
+
+      case "gmail_evidence_ignore":
+        return ignoreGmailEvidenceCandidateFromApp_(data);
+
       case "investment_holding_create":
         return createInvestmentHoldingFromApp_(data);
 
@@ -288,6 +337,18 @@ function doPost(e) {
 
       case "investment_prices_refresh":
         return refreshInvestmentPricesFromApp_();
+
+      case "sbi_investment_scan":
+        return scanSbiInvestmentGmailFromApp_(data);
+
+      case "sbi_investment_event_apply":
+        return applySbiInvestmentEventFromApp_(data);
+
+      case "sbi_investment_event_ignore":
+        return ignoreSbiInvestmentEventFromApp_(data);
+
+      case "asset_snapshot_capture":
+        return captureAssetSnapshotFromApp_();
 
       case "business_tax_export_create":
         return createBusinessTaxExportFromApp_(data);

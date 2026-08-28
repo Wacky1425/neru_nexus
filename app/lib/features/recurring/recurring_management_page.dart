@@ -175,11 +175,20 @@ class _RecurringManagementPageState extends State<RecurringManagementPage>
                 candidateCount: 0,
                 approvedCount: 0,
                 ignoredCount: 0,
+                monthlyTotal: 0,
+                yearlyEstimate: 0,
+                currentMonthRemaining: 0,
+                currentMonthRemainingCount: 0,
+                currentMonthOverdueCount: 0,
               );
 
-          return TabBarView(
-            controller: _tabController,
+          return Column(
             children: [
+              _RecurringSummary(result: result),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
               _CandidateList(
                 items: result.items.where((e) => e.isCandidate).toList(),
                 emptyText: '新しい候補はありません',
@@ -200,10 +209,91 @@ class _RecurringManagementPageState extends State<RecurringManagementPage>
                 onRefresh: _reload,
                 onRestore: _restore,
               ),
+                  ],
+                ),
+              ),
             ],
           );
         },
       ),
+    );
+  }
+}
+
+class _RecurringSummary extends StatelessWidget {
+  const _RecurringSummary({required this.result});
+
+  final RecurringCandidatesResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _SummaryValue(
+                      label: '月額見込',
+                      value: _money(result.monthlyTotal),
+                    ),
+                  ),
+                  Expanded(
+                    child: _SummaryValue(
+                      label: '年間見込',
+                      value: _money(result.yearlyEstimate),
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      result.currentMonthRemainingCount > 0
+                          ? '今月残り ${result.currentMonthRemainingCount}件・${_money(result.currentMonthRemaining)}'
+                          : '今月分はすべて発生済み',
+                    ),
+                  ),
+                  if (result.currentMonthOverdueCount > 0)
+                    Chip(
+                      avatar: const Icon(Icons.warning_amber_rounded, size: 18),
+                      label: Text('目安日超過 ${result.currentMonthOverdueCount}件'),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SummaryValue extends StatelessWidget {
+  const _SummaryValue({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+        ),
+      ],
     );
   }
 }
@@ -247,7 +337,7 @@ class _CandidateList extends StatelessWidget {
       child: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        separatorBuilder: (context, index) => const SizedBox(height: 10),
         itemBuilder: (context, index) {
           final item = items[index];
           return Card(
@@ -277,6 +367,10 @@ class _CandidateList extends StatelessWidget {
                     Text('範囲 ${_money(item.minAmount)}〜${_money(item.maxAmount)}'),
                   if (item.category.trim().isNotEmpty) Text(item.category),
                   Text('${item.firstMonth} 〜 ${item.lastMonth}'),
+                  if (item.expectedDay > 0)
+                    Text('支払目安 毎月${item.expectedDay}日ごろ'),
+                  if (item.yearlyEstimate > 0)
+                    Text('年間見込 ${_money(item.yearlyEstimate)}'),
                   if (item.note.trim().isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text('メモ: ${item.note}'),

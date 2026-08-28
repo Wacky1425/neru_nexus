@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'model/account_balance_model.dart';
 import 'service/account_balance_service.dart';
+import 'asset_trend_page.dart';
 
 import '../investments/investment_holdings_page.dart';
 import '../settlement/settlement_status_page.dart';
@@ -196,6 +197,12 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
     }
   }
 
+  Future<void> _openAssetTrend() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const AssetTrendPage()),
+    );
+  }
+
   Future<void> _openInvestmentHoldings() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(builder: (_) => const InvestmentHoldingsPage()),
@@ -307,6 +314,18 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
                 _SummaryCard(result: result),
 
                 const SizedBox(height: 16),
+
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.timeline),
+                    title: const Text('資産推移'),
+                    subtitle: const Text('純資産・現金・投資の変化を見る'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _openAssetTrend,
+                  ),
+                ),
+
+                const SizedBox(height: 12),
 
                 Card(
                   child: ListTile(

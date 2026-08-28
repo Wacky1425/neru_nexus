@@ -154,7 +154,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
 
     future.then<void>(
       (_) => clearReloadFuture(),
-      onError: (Object _, StackTrace __) {
+      onError: (Object error, StackTrace stackTrace) {
         clearReloadFuture();
       },
     );

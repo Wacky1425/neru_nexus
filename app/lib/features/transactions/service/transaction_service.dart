@@ -95,7 +95,11 @@ class TransactionService {
       action: 'transaction_create',
       body: {
         'transactionDate': _formatDate(transaction.date),
-        'type': transaction.type == TransactionType.expense ? '支出' : '収入',
+        'type': switch (transaction.type) {
+          TransactionType.expense => '支出',
+          TransactionType.income => '収入',
+          TransactionType.transfer => '移動',
+        },
         'amount': transaction.amount,
         'majorCategory': transaction.majorCategory,
         'subCategory': transaction.subCategory,
@@ -107,6 +111,8 @@ class TransactionService {
         'expenseRatio': transaction.expenseRatio,
         'evidenceUrl': transaction.evidenceUrl,
         'accountName': transaction.accountName,
+        'fromAccount': transaction.fromAccount ?? '',
+        'toAccount': transaction.toAccount ?? '',
       },
     );
 

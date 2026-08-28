@@ -57,7 +57,7 @@ class ApiClient {
 
     future.then<void>(
       (_) => clearInFlight(),
-      onError: (Object _, StackTrace __) {
+      onError: (Object error, StackTrace stackTrace) {
         clearInFlight();
       },
     );

@@ -15,6 +15,8 @@ const RECURRING_HEADERS = [
   "status",
   "recurring_type",
   "suggested_type",
+  "expected_day",
+  "yearly_estimate",
   "note",
 ];
 
@@ -100,6 +102,7 @@ function buildRecurringCandidateMap_(transactionTable) {
         merchant,
         months: new Map(),
         amounts: [],
+        days: [],
         majorCategory: major,
         subCategory: sub,
       });
@@ -107,6 +110,10 @@ function buildRecurringCandidateMap_(transactionTable) {
 
     const candidate = candidateMap.get(key);
     candidate.amounts.push(amount);
+    const txDate = new Date(row[transactionTable.index["transaction_date"]]);
+    if (!Number.isNaN(txDate.getTime())) {
+      candidate.days.push(txDate.getDate());
+    }
     candidate.months.set(yearMonth, (candidate.months.get(yearMonth) || 0) + 1);
   }
 
@@ -136,6 +143,11 @@ function buildRecurringCandidateObjects_(candidateMap) {
       const stableTolerance = Math.max(500, averageAmount * 0.15);
       const amountStable = maxAmount - minAmount <= stableTolerance;
 
+      const sortedDays = candidate.days.slice().sort((a, b) => a - b);
+      const expectedDay = sortedDays.length > 0
+        ? sortedDays[Math.floor(sortedDays.length / 2)]
+        : 0;
+
       const knownFixedCategory =
         candidate.majorCategory === "住居" ||
         candidate.majorCategory === "通信" ||
@@ -161,6 +173,8 @@ function buildRecurringCandidateObjects_(candidateMap) {
         amountStable,
         avgTransactionsPerMonth,
         knownFixedCategory,
+        expectedDay,
+        yearlyEstimate: averageAmount * 12,
       };
     })
     .filter((candidate) => {
@@ -253,6 +267,8 @@ function rebuildRecurringCandidates() {
       status,
       recurringType,
       candidate.suggestedType,
+      candidate.expectedDay,
+      candidate.yearlyEstimate,
       previous.note || "",
     ];
   });
@@ -286,14 +302,29 @@ function getRecurringCandidatesData_() {
     status: String(row.status || "候補"),
     recurringType: String(row.recurring_type || ""),
     suggestedType: String(row.suggested_type || ""),
+    expectedDay: Number(row.expected_day || 0),
+    yearlyEstimate: Number(row.yearly_estimate || 0),
     note: String(row.note || ""),
   }));
+
+  const approvedItems = items.filter((item) => item.status === "承認");
+  const monthlyTotal = approvedItems.reduce(
+    (sum, item) => sum + Math.max(0, Number(item.avgAmount || 0)),
+    0,
+  );
+  const currentYearMonth = normalizeYearMonth(new Date());
+  const forecast = getApprovedRecurringForecast_(currentYearMonth);
 
   return {
     items,
     candidateCount: items.filter((item) => item.status === "候補").length,
-    approvedCount: items.filter((item) => item.status === "承認").length,
+    approvedCount: approvedItems.length,
     ignoredCount: items.filter((item) => item.status === "無視").length,
+    monthlyTotal,
+    yearlyEstimate: monthlyTotal * 12,
+    currentMonthRemaining: forecast.remainingTotal,
+    currentMonthRemainingCount: forecast.items.filter((item) => !item.occurred).length,
+    currentMonthOverdueCount: forecast.items.filter((item) => item.overdue).length,
   };
 }
 
@@ -381,12 +412,19 @@ function getApprovedRecurringForecast_(yearMonth) {
     const key = String(row.candidate_key || "") || buildRecurringCandidateKey_(row.merchant);
     const amount = Math.max(0, Number(row.avg_amount || 0));
     const occurred = seenMerchantKeys.has(key);
+    const expectedDay = Math.max(0, Math.min(31, Number(row.expected_day || 0)));
+    const now = new Date();
+    const isCurrentMonth = normalizeYearMonth(now) === yearMonth;
+    const overdue = !occurred && isCurrentMonth && expectedDay > 0 && now.getDate() > expectedDay;
     return {
       candidateKey: key,
       merchant: String(row.merchant || ""),
       recurringType: String(row.recurring_type || "固定費"),
       amount,
+      expectedDay,
+      yearlyEstimate: Math.max(0, Number(row.yearly_estimate || amount * 12)),
       occurred,
+      overdue,
       remainingAmount: occurred ? 0 : amount,
     };
   });
