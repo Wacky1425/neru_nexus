@@ -17,21 +17,25 @@ function isApiAuthorized_(requestKey) {
   return receivedKey === expectedKey;
 }
 
-function createJsonResponse_(data, status) {
+function createJsonResponse_(data, status, requestId) {
   return ContentService.createTextOutput(
     JSON.stringify({
       success: status !== "error",
       status,
+      apiVersion: NERU_API_VERSION,
+      requestId: String(requestId || ""),
       data,
     }),
   ).setMimeType(ContentService.MimeType.JSON);
 }
 
-function createJsonErrorResponse_(message) {
+function createJsonErrorResponse_(message, requestId) {
   return ContentService.createTextOutput(
     JSON.stringify({
       success: false,
       status: "error",
+      apiVersion: NERU_API_VERSION,
+      requestId: String(requestId || ""),
       error: {
         message: String(message || "不明なエラー"),
       },
@@ -39,15 +43,25 @@ function createJsonErrorResponse_(message) {
   ).setMimeType(ContentService.MimeType.JSON);
 }
 
+function assertCompatibleApiVersion_(clientVersion) {
+  const value = String(clientVersion || "").trim();
+  if (value && value !== NERU_API_VERSION) {
+    throw new Error(`APIバージョンが一致しません: client=${value}, server=${NERU_API_VERSION}`);
+  }
+}
+
 function doGet(e) {
+  const requestId = createRequestId_();
+  let action = "";
   try {
     const parameters = e && e.parameter ? e.parameter : {};
+    assertCompatibleApiVersion_(parameters.apiVersion);
 
     if (!isApiAuthorized_(parameters.key)) {
       return createJsonErrorResponse_("認証に失敗しました");
     }
 
-    const action = String(parameters.action || "").trim();
+    action = String(parameters.action || "").trim();
 
     switch (action) {
       case "home":
@@ -65,6 +79,7 @@ function doGet(e) {
             service: "Neru Nexus API",
             running: true,
             generatedAt: new Date().toISOString(),
+            apiVersion: NERU_API_VERSION,
           },
           "ok",
         );
@@ -142,23 +157,47 @@ function doGet(e) {
       case "gmail_import_status":
         return createJsonResponse_(getGmailImportStatus_(), "ok");
 
+      case "recurring_candidates":
+        return createJsonResponse_(getRecurringCandidatesData_(), "ok");
+
+      case "investment_holdings":
+        return createJsonResponse_(getInvestmentHoldingsData_(), "ok");
+
+      case "business_report":
+        return createJsonResponse_(
+          getBusinessReportData_({
+            year: parameters.year,
+            yearMonth: parameters.yearMonth,
+          }),
+          "ok",
+        );
+
+      case "system_diagnostics":
+        return createJsonResponse_(getSystemDiagnostics_(), "ok", requestId);
+
       default:
         return createJsonErrorResponse_(`未対応のactionです: ${action}`);
     }
   } catch (error) {
     console.error(error);
+    logApiError_({ requestId, method: "GET", action, error });
 
     return createJsonErrorResponse_(
       error && error.message ? error.message : error,
+      requestId,
     );
   }
 }
 
 function doPost(e) {
+  const requestId = createRequestId_();
+  let action = "";
   try {
     const data = JSON.parse(
       e && e.postData && e.postData.contents ? e.postData.contents : "{}",
     );
+
+    assertCompatibleApiVersion_(data.apiVersion);
 
     const key = String(data.key || "").trim();
 
@@ -166,7 +205,7 @@ function doPost(e) {
       return createJsonErrorResponse_("認証に失敗しました");
     }
 
-    const action = String(data.action || "").trim();
+    action = String(data.action || "").trim();
 
     switch (action) {
       case "transaction_create":
@@ -235,14 +274,40 @@ function doPost(e) {
       case "transaction_ignore":
         return ignoreTransactionFromApp_(data);
 
+      case "recurring_candidate_update":
+        return updateRecurringCandidateFromApp_(data);
+
+      case "investment_holding_create":
+        return createInvestmentHoldingFromApp_(data);
+
+      case "investment_holding_update":
+        return updateInvestmentHoldingFromApp_(data);
+
+      case "investment_holding_deactivate":
+        return deactivateInvestmentHoldingFromApp_(data);
+
+      case "investment_prices_refresh":
+        return refreshInvestmentPricesFromApp_();
+
+      case "business_tax_export_create":
+        return createBusinessTaxExportFromApp_(data);
+
+      case "system_backup_create":
+        return createNeruNexusBackupFromApp_();
+
+      case "system_integrity_check":
+        return createJsonResponse_(runDataIntegrityCheck_(), "ok", requestId);
+
       default:
         return createJsonErrorResponse_(`未対応のactionです: ${action}`);
     }
   } catch (error) {
     console.error(error);
+    logApiError_({ requestId, method: "POST", action, error });
 
     return createJsonErrorResponse_(
       error && error.message ? error.message : String(error),
+      requestId,
     );
   }
 }

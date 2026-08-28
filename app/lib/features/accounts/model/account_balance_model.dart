@@ -5,6 +5,7 @@ class AccountBalanceModel {
     required this.paymentMethod,
     required this.wallet,
     required this.institution,
+    required this.assetType,
     required this.isAsset,
     required this.isLiability,
     required this.currentBalance,
@@ -23,6 +24,7 @@ class AccountBalanceModel {
   final String paymentMethod;
   final String wallet;
   final String institution;
+  final String assetType;
 
   final bool isAsset;
   final bool isLiability;
@@ -55,6 +57,8 @@ class AccountBalanceModel {
 
       institution: json['institution']?.toString() ?? '',
 
+      assetType: json['assetType']?.toString() ?? '',
+
       isAsset: json['isAsset'] == true,
 
       isLiability: json['isLiability'] == true,
@@ -86,6 +90,7 @@ class AccountBalanceModel {
       'paymentMethod': paymentMethod,
       'wallet': wallet,
       'institution': institution,
+      'assetType': assetType,
       'isAsset': isAsset,
       'isLiability': isLiability,
       'currentBalance': currentBalance,
@@ -115,6 +120,9 @@ class AccountBalancesResult {
     required this.totalAssets,
     required this.totalLiabilities,
     required this.netAssets,
+    required this.liquidAssets,
+    required this.investmentAssets,
+    required this.otherAssets,
   });
 
   final List<AccountBalanceModel> items;
@@ -122,6 +130,9 @@ class AccountBalancesResult {
   final int totalAssets;
   final int totalLiabilities;
   final int netAssets;
+  final int liquidAssets;
+  final int investmentAssets;
+  final int otherAssets;
 
   factory AccountBalancesResult.fromJson(Map<String, dynamic> json) {
     final rawItems = json['items'];
@@ -142,6 +153,9 @@ class AccountBalancesResult {
       totalAssets: _toInt(json['totalAssets']),
       totalLiabilities: _toInt(json['totalLiabilities']),
       netAssets: _toInt(json['netAssets']),
+      liquidAssets: _toInt(json['liquidAssets']),
+      investmentAssets: _toInt(json['investmentAssets']),
+      otherAssets: _toInt(json['otherAssets']),
     );
   }
 
@@ -151,6 +165,9 @@ class AccountBalancesResult {
       'totalAssets': totalAssets,
       'totalLiabilities': totalLiabilities,
       'netAssets': netAssets,
+      'liquidAssets': liquidAssets,
+      'investmentAssets': investmentAssets,
+      'otherAssets': otherAssets,
     };
   }
 

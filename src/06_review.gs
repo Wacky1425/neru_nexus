@@ -414,15 +414,12 @@ function getReviewTransactionsData(options) {
       "settlement_id",
       "import_batch",
       "source_id",
+      "source_type",
       "source_status",
       "source_received_at",
     ],
     SHEETS.TRANSACTIONS,
   );
-
-  const now = new Date();
-
-  const staleThresholdMs = 7 * 24 * 60 * 60 * 1000;
 
   const filteredRows = table.rows.filter((row) => {
     // ignoredは要確認一覧に出さない
@@ -431,33 +428,11 @@ function getReviewTransactionsData(options) {
     }
 
     const status = getString(row, table.index, "status");
-
     const settlementStatus = getString(row, table.index, "settlement_status");
 
-    const sourceStatus = getString(row, table.index, "source_status");
-
-    let isStalePreliminary = false;
-
-    if (
-      sourceStatus === "preliminary" ||
-      sourceStatus === "preliminary_edited"
-    ) {
-      const sourceReceivedAt = row[table.index["source_received_at"]];
-
-      const receivedDate =
-        sourceReceivedAt instanceof Date
-          ? sourceReceivedAt
-          : new Date(sourceReceivedAt);
-
-      if (!isNaN(receivedDate.getTime())) {
-        isStalePreliminary =
-          now.getTime() - receivedDate.getTime() >= staleThresholdMs;
-      }
-    }
-
-    return (
-      status === "要確認" || settlementStatus === "review" || isStalePreliminary
-    );
+    // Gmail速報であること自体は「要確認」の理由にしない。
+    // ユーザー判断が必要な分類状態か、照合確認が必要な取引だけ表示する。
+    return status === "要確認" || settlementStatus === "review";
   });
 
   filteredRows.sort((a, b) => {
@@ -513,6 +488,8 @@ function getReviewTransactionsData(options) {
 
     sourceId: getString(row, table.index, "source_id"),
 
+    sourceType: getString(row, table.index, "source_type"),
+
     sourceStatus: getString(row, table.index, "source_status"),
 
     sourceReceivedAt: formatApiDateTime_(
@@ -544,10 +521,6 @@ function getReviewTransactionCount() {
     SHEETS.TRANSACTIONS,
   );
 
-  const now = new Date();
-
-  const staleThresholdMs = 7 * 24 * 60 * 60 * 1000;
-
   let count = 0;
 
   for (const row of table.rows) {
@@ -556,35 +529,9 @@ function getReviewTransactionCount() {
     }
 
     const status = getString(row, table.index, "status");
-
     const settlementStatus = getString(row, table.index, "settlement_status");
 
-    const sourceStatus = getString(row, table.index, "source_status");
-
-    let isStalePreliminary = false;
-
-    if (
-      sourceStatus === "preliminary" ||
-      sourceStatus === "preliminary_edited"
-    ) {
-      const sourceReceivedAt = row[table.index["source_received_at"]];
-
-      const receivedDate =
-        sourceReceivedAt instanceof Date
-          ? sourceReceivedAt
-          : new Date(sourceReceivedAt);
-
-      if (!isNaN(receivedDate.getTime())) {
-        isStalePreliminary =
-          now.getTime() - receivedDate.getTime() >= staleThresholdMs;
-      }
-    }
-
-    if (
-      status === "要確認" ||
-      settlementStatus === "review" ||
-      isStalePreliminary
-    ) {
+    if (status === "要確認" || settlementStatus === "review") {
       count++;
     }
   }

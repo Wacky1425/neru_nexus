@@ -7,13 +7,29 @@ import '../constants/api_constants.dart';
 class ApiClient {
   const ApiClient._();
 
+  static final Map<String, Future<Map<String, dynamic>>> _inFlightGets =
+      <String, Future<Map<String, dynamic>>>{};
+
+  /// Test hook. Production leaves this null and uses a normal http.Client.
+  static http.Client Function()? clientFactoryForTesting;
+
+  static http.Client _createClient() {
+    return clientFactoryForTesting?.call() ?? http.Client();
+  }
+
+  static void resetTestClientFactory() {
+    clientFactoryForTesting = null;
+    _inFlightGets.clear();
+  }
+
   static Future<Map<String, dynamic>> get({
     required String action,
     Map<String, String>? queryParameters,
-  }) async {
+  }) {
     final parameters = <String, String>{
       'action': action,
       'key': ApiConstants.apiKey,
+      'apiVersion': ApiConstants.apiVersion,
       ...?queryParameters,
     };
 
@@ -23,9 +39,41 @@ class ApiClient {
       queryParameters: parameters,
     );
 
-    final response = await http.get(uri);
+    final requestKey = uri.toString();
+    final inFlight = _inFlightGets[requestKey];
 
-    return _decodeResponse(response);
+    if (inFlight != null) {
+      return inFlight;
+    }
+
+    final future = _performGet(uri);
+    _inFlightGets[requestKey] = future;
+
+    void clearInFlight() {
+      if (identical(_inFlightGets[requestKey], future)) {
+        _inFlightGets.remove(requestKey);
+      }
+    }
+
+    future.then<void>(
+      (_) => clearInFlight(),
+      onError: (Object _, StackTrace __) {
+        clearInFlight();
+      },
+    );
+
+    return future;
+  }
+
+  static Future<Map<String, dynamic>> _performGet(Uri uri) async {
+    final client = _createClient();
+
+    try {
+      final response = await client.get(uri);
+      return _decodeResponse(response);
+    } finally {
+      client.close();
+    }
   }
 
   static Future<Map<String, dynamic>> post({
@@ -36,7 +84,7 @@ class ApiClient {
       ApiConstants.baseUrl,
     );
 
-    final client = http.Client();
+    final client = _createClient();
 
     try {
       final request = http.Request(
@@ -50,6 +98,7 @@ class ApiClient {
         ..body = jsonEncode({
           'action': action,
           'key': ApiConstants.apiKey,
+          'apiVersion': ApiConstants.apiVersion,
           ...?body,
         });
 
@@ -134,6 +183,16 @@ class ApiClient {
         Map<String, dynamic>.from(
       decodedValue,
     );
+
+    final serverVersion = decoded['apiVersion']?.toString().trim();
+    if (serverVersion != null &&
+        serverVersion.isNotEmpty &&
+        serverVersion != ApiConstants.apiVersion) {
+      throw Exception(
+        'APIバージョンが一致しません。アプリを更新してください。'
+        ' (app=${ApiConstants.apiVersion}, server=$serverVersion)',
+      );
+    }
 
     if (decoded['success'] != true) {
       final error = decoded['error'];

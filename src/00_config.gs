@@ -1,3 +1,5 @@
+const NERU_API_VERSION = "1";
+
 const SHEETS = Object.freeze({
   // ===== Master =====
   CATEGORIES: "M_Categories",
@@ -8,11 +10,13 @@ const SHEETS = Object.freeze({
   MERCHANT_ALIAS: "M_MerchantAlias",
   GOALS: "M_Goals",
   FINANCIAL_SETTINGS: "M_FinancialSettings",
+  INVESTMENT_HOLDINGS: "M_InvestmentHoldings",
 
   // ===== Transaction =====
   TRANSACTIONS: "T_Transactions",
   RECURRING_CANDIDATES: "T_RecurringCandidates",
   IMPORT_HISTORY: "T_ImportHistory",
+  ERROR_LOG: "T_ErrorLog",
 
   // ===== Report =====
   MONTHLY_SUMMARY: "R_MonthlySummary",

@@ -1,0 +1,9 @@
+Phase 4 Investment Portfolio
+- M_InvestmentHoldings を必要時に自動作成（既存Spreadsheetの手動移行不要）
+- 保有銘柄CRUD APIを追加
+- quantity / price_unit / average_cost / current_price を分離し、株式・投信双方の評価額を計算
+- Yahoo Finance price symbol が設定された銘柄は価格を自動更新（6時間キャッシュ）
+- Yahoo自動更新銘柄を登録した時点で毎日7時の価格更新triggerを自動確保
+- アプリを開いた際にも価格更新を試行し、失敗時は前回価格を維持
+- 投資口座の残高を保有銘柄評価額へ連携
+- testInvestmentValuationHelpers を regression に追加

@@ -1,0 +1,14 @@
+Neru Nexus Phase 3 Recurring / 固定費
+
+実装:
+- 定期支払い候補を merchant 単位で検出
+- 2か月以上 + 月平均1.5回以下を基本条件にして、Amazon等の高頻度利用を候補化しにくくした
+- 金額安定（±15%または500円以内）を候補条件に利用
+- 住居/通信/水道光熱/金融(税金・保険)は金額変動があっても候補化可能
+- 固定費/サブスクは候補時点では suggested_type、承認時にユーザーが確定
+- 承認/無視/候補への復元
+- rebuild時に承認・無視・種類・メモを保持
+- 承認済み定期支払いのうち今月未発生分をHome固定費予測へ加算
+- fixed budgetとはmax比較なので二重計上しない
+- recurring_candidates GET / recurring_candidate_update POST API追加
+- testRecurringCandidateHelpers() 追加 + regressionに組み込み

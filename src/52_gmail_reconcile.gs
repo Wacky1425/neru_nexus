@@ -488,6 +488,7 @@ function reconcileGmailPreliminaryWithFormalCsv_(
 
 function preserveEditedGmailFields_(formalRow, gmailRow, index) {
   const preservedColumns = [
+    "item_name",
     "type",
     "major_category",
     "sub_category",

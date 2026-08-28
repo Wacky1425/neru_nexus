@@ -1,0 +1,13 @@
+Neru Nexus Phase 2 Home Fix
+基準: gas20260828_ReviewFix
+
+変更:
+- getEffectiveBudgetsForMonth_ を追加
+- Homeの予算取得を直近月継承対応に統一
+- Home APIに計算入力値と予算継承情報を追加
+- 予算更新時に latest_budget_month キャッシュも破棄
+- Home計算の自己完結回帰テスト testHomeCalculationHelpers() を追加
+- testGetHomeData() のレスポンス検証を強化
+
+検証:
+- 全 .gs を node --check で構文確認済み

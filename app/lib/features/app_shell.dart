@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/refresh/app_refresh_controller.dart';
 import 'accounts/account_balance_page.dart';
 import 'analytics/analytics_page.dart';
 import 'home/home_page.dart';
@@ -17,58 +18,78 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _currentIndex = 0;
 
+  /// Keep already-opened tabs alive, but do not build unopened tabs yet.
+  /// This avoids firing Home / Transactions / Analytics / Assets API requests
+  /// all at once on app startup.
+  late final List<Widget?> _pages;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _pages = List<Widget?>.filled(6, null);
+    _pages[0] = _buildPage(0);
+    AppRefreshController.setActiveTab(0);
+  }
+
+  Widget _buildPage(int index) {
+    switch (index) {
+      case 0:
+        return HomePage(
+          onOpenTransactions: () => _openTab(1),
+          onOpenAnalytics: () => _openTab(3),
+          onOpenAssets: () => _openTab(4),
+        );
+      case 1:
+        return const TransactionsPage();
+      case 2:
+        return const ImportPage();
+      case 3:
+        return const AnalyticsPage();
+      case 4:
+        return const AccountBalancePage();
+      case 5:
+        return const SettingsPage();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
   void _openTab(int index) {
-    if (index < 0 || index > 5) {
+    if (index < 0 || index > 5 || index == _currentIndex) {
       return;
     }
 
     setState(() {
+      _pages[index] ??= _buildPage(index);
       _currentIndex = index;
     });
+
+    AppRefreshController.setActiveTab(index);
   }
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      HomePage(
-        onOpenTransactions: () => _openTab(1),
-        onOpenAnalytics: () => _openTab(3),
-        onOpenAssets: () => _openTab(4),
-      ),
-      const TransactionsPage(),
-      const ImportPage(),
-      const AnalyticsPage(),
-      AccountBalancePage(),
-      const SettingsPage(),
-    ];
-
     return PopScope(
       // Androidの戻る操作でAppShell自体を閉じない
       canPop: false,
-
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
           return;
         }
 
-        // Home以外にいる場合
-        // → Homeへ戻る
         if (_currentIndex != 0) {
-          setState(() {
-            _currentIndex = 0;
-          });
-
-          return;
+          _openTab(0);
         }
-
-        // Homeにいる場合
-        // → 何もしない
-        // Androidの戻る操作でもアプリを終了しない
       },
-
       child: Scaffold(
-        body: IndexedStack(index: _currentIndex, children: pages),
-
+        body: IndexedStack(
+          index: _currentIndex,
+          children: List<Widget>.generate(
+            6,
+            (index) => _pages[index] ?? const SizedBox.shrink(),
+          ),
+        ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _currentIndex,
           onDestinationSelected: _openTab,

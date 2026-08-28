@@ -108,7 +108,7 @@ function getBudgetsForMonth(yearMonth) {
   return budgets;
 }
 
-function getBudgetSettings(yearMonth) {
+function getEffectiveBudgetsForMonth_(yearMonth) {
   const targetMonth = normalizeBudgetYearMonth(yearMonth);
 
   if (!targetMonth) {
@@ -117,36 +117,47 @@ function getBudgetSettings(yearMonth) {
 
   const directBudgets = getBudgetsForMonth(targetMonth);
 
-  let budgets = directBudgets;
-  let inheritedFrom = "";
+  if (Object.keys(directBudgets).length > 0) {
+    return {
+      yearMonth: targetMonth,
+      budgets: directBudgets,
+      inherited: false,
+      inheritedFrom: "",
+    };
+  }
 
-  if (Object.keys(directBudgets).length === 0) {
-    const { rows, index } = loadBudgetTable_();
+  const { rows, index } = loadBudgetTable_();
 
-    let latestMonth = "";
+  let latestMonth = "";
 
-    for (const row of rows) {
-      const rowMonth = normalizeBudgetYearMonth(row[index["year_month"]]);
+  for (const row of rows) {
+    const rowMonth = normalizeBudgetYearMonth(row[index["year_month"]]);
 
-      if (!rowMonth || rowMonth >= targetMonth) {
-        continue;
-      }
-
-      if (!latestMonth || rowMonth > latestMonth) {
-        latestMonth = rowMonth;
-      }
+    if (!rowMonth || rowMonth >= targetMonth) {
+      continue;
     }
 
-    if (latestMonth) {
-      budgets = getBudgetsForMonth(latestMonth);
-      inheritedFrom = latestMonth;
+    if (!latestMonth || rowMonth > latestMonth) {
+      latestMonth = rowMonth;
     }
   }
 
   return {
     yearMonth: targetMonth,
-    inherited: inheritedFrom !== "",
-    inheritedFrom,
+    budgets: latestMonth ? getBudgetsForMonth(latestMonth) : {},
+    inherited: latestMonth !== "",
+    inheritedFrom: latestMonth,
+  };
+}
+
+function getBudgetSettings(yearMonth) {
+  const effective = getEffectiveBudgetsForMonth_(yearMonth);
+  const budgets = effective.budgets;
+
+  return {
+    yearMonth: effective.yearMonth,
+    inherited: effective.inherited,
+    inheritedFrom: effective.inheritedFrom,
 
     salaryPlanned: Number(budgets["給与予定"] || 0),
     sideIncomePlanned: Number(budgets["副業予定"] || 0),
@@ -215,6 +226,7 @@ function updateBudgetSettingsFromApp_(data) {
   const cache = CacheService.getScriptCache();
 
   cache.remove(HOME_BUDGET_CACHE_PREFIX + yearMonth);
+  cache.remove(LATEST_BUDGET_MONTH_CACHE_KEY);
 
   clearAnalyticsSummaryCache_();
 

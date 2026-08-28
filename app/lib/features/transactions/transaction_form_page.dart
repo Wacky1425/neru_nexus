@@ -18,6 +18,9 @@ class TransactionFormResult {
     required this.paymentMethod,
     required this.status,
     required this.memo,
+    required this.purposeType,
+    required this.expenseRatio,
+    required this.evidenceUrl,
     required this.accountName,
     required this.fromAccount,
     required this.toAccount,
@@ -32,6 +35,9 @@ class TransactionFormResult {
   final String paymentMethod;
   final String status;
   final String memo;
+  final String purposeType;
+  final double expenseRatio;
+  final String evidenceUrl;
   final String? accountName;
   final String? fromAccount;
   final String? toAccount;
@@ -75,6 +81,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
   final _titleController = TextEditingController();
 
   final _memoController = TextEditingController();
+  final _evidenceUrlController = TextEditingController();
 
   final _transactionService = const TransactionService();
 
@@ -104,6 +111,11 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
 
   bool _isSaving = false;
   bool _saveRule = false;
+  bool _isBusiness = false;
+  double _expenseRatio = 1.0;
+
+  bool get _isImportedTransaction =>
+      widget.initialTransaction?.isImported ?? false;
 
   static const Map<String, List<String>> _fallbackExpenseCategoryMap = {
     '食費': ['スーパー', 'コンビニ', '外食', 'カフェ', 'その他'],
@@ -238,9 +250,15 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
       _selectedPaymentMethod = tx.paymentMethod;
     }
 
-    _isConfirmed = tx.status == '確定';
+    _isConfirmed = widget.fromReview ? true : tx.status == '確定';
 
     _memoController.text = tx.note;
+    _evidenceUrlController.text = tx.evidenceUrl;
+    _isBusiness =
+        tx.purposeType == '経費' ||
+        tx.purposeType == '事業収入' ||
+        tx.wallet == '事業';
+    _expenseRatio = tx.expenseRatio > 0 ? tx.expenseRatio : 1.0;
   }
 
   Future<MasterModel> _loadMaster() async {
@@ -421,6 +439,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
     _amountController.dispose();
     _titleController.dispose();
     _memoController.dispose();
+    _evidenceUrlController.dispose();
 
     super.dispose();
   }
@@ -459,6 +478,14 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
       _selectedSubCategory = _subCategories.isNotEmpty
           ? _subCategories.first
           : 'その他';
+
+      if (type == TransactionType.transfer) {
+        _isBusiness = false;
+      } else if (type == TransactionType.income) {
+        _isBusiness = _selectedMajorCategory == '副業';
+      } else {
+        _isBusiness = _selectedMajorCategory == '配信';
+      }
     });
   }
 
@@ -492,6 +519,15 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
       accountName: _selectedAccountName,
       status: _isConfirmed ? '確定' : '要確認',
       memo: _memoController.text.trim(),
+      purposeType: _selectedType == TransactionType.income
+          ? (_isBusiness ? '事業収入' : '私用')
+          : (_selectedType == TransactionType.expense
+                ? (_isBusiness ? '経費' : '私用')
+                : ''),
+      expenseRatio: _selectedType == TransactionType.expense && _isBusiness
+          ? _expenseRatio
+          : 0,
+      evidenceUrl: _evidenceUrlController.text.trim(),
       fromAccount: _selectedType == TransactionType.transfer
           ? _selectedFromAccountName
           : null,
@@ -650,6 +686,28 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
                 children: [
+                  if (_isImportedTransaction) ...[
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.lock_outline),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                '金額・日付・店名・利用口座は取込元データです。'
+                                '内容・分類・経費率・証憑・メモ・確定状態は編集できます。',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   SegmentedButton<TransactionType>(
                     segments: const [
                       ButtonSegment(
@@ -687,6 +745,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
 
                   TextFormField(
                     controller: _amountController,
+                    enabled: !_isImportedTransaction,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     style: const TextStyle(
@@ -723,7 +782,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                   const SizedBox(height: 8),
 
                   InkWell(
-                    onTap: _selectDate,
+                    onTap: _isImportedTransaction ? null : _selectDate,
                     borderRadius: BorderRadius.circular(12),
                     child: InputDecorator(
                       decoration: const InputDecoration(
@@ -849,8 +908,8 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                   TextFormField(
                     controller: _titleController,
                     decoration: const InputDecoration(
-                      labelText: '内容・店名',
-                      hintText: '例：スーパー、昼ごはん',
+                      labelText: '内容',
+                      hintText: '例：昼ごはん、ヨーグルト用のびん',
                       prefixIcon: Icon(Icons.receipt_long_outlined),
                       border: OutlineInputBorder(),
                     ),
@@ -862,6 +921,22 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                       return null;
                     },
                   ),
+
+                  if (_isImportedTransaction &&
+                      (widget.initialTransaction?.merchant.trim().isNotEmpty ??
+                          false)) ...[
+                    const SizedBox(height: 20),
+                    TextFormField(
+                      initialValue: widget.initialTransaction!.merchant.trim(),
+                      readOnly: true,
+                      decoration: const InputDecoration(
+                        labelText: '店名・取引先（取込元）',
+                        helperText: 'CSV照合などに使う取込元情報のため編集できません',
+                        prefixIcon: Icon(Icons.storefront_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
 
                   const SizedBox(height: 20),
 
@@ -967,25 +1042,76 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
                             ),
                           )
                           .toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
+                      onChanged: _isImportedTransaction
+                          ? null
+                          : (value) {
+                              if (value == null) return;
 
-                        final account = _accounts.firstWhere(
-                          (e) => e.accountId == value,
-                        );
+                              final account = _accounts.firstWhere(
+                                (e) => e.accountId == value,
+                              );
 
-                        setState(() {
-                          _selectedAccountId = account.accountId;
-                          _selectedAccountName = account.accountName;
-                          _selectedPaymentMethod = account.paymentMethod;
-                        });
-                      },
+                              setState(() {
+                                _selectedAccountId = account.accountId;
+                                _selectedAccountName = account.accountName;
+                                _selectedPaymentMethod = account.paymentMethod;
+                              });
+                            },
                     ),
+                  ],
+
+                  if (_selectedType != TransactionType.transfer) ...[
+                    const SizedBox(height: 20),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        _selectedType == TransactionType.income
+                            ? '副業・事業収入'
+                            : '事業経費として扱う',
+                      ),
+                      subtitle: Text(
+                        _selectedType == TransactionType.income
+                            ? 'ONにすると副業レポートの売上へ集計します'
+                            : 'ONにすると副業レポートの経費へ集計します',
+                      ),
+                      value: _isBusiness,
+                      onChanged: _isSaving
+                          ? null
+                          : (value) => setState(() => _isBusiness = value),
+                    ),
+                    if (_selectedType == TransactionType.expense &&
+                        _isBusiness) ...[
+                      const SizedBox(height: 8),
+                      Text('経費率 ${(_expenseRatio * 100).round()}%'),
+                      Slider(
+                        value: _expenseRatio,
+                        min: 0,
+                        max: 1,
+                        divisions: 20,
+                        label: '${(_expenseRatio * 100).round()}%',
+                        onChanged: _isSaving
+                            ? null
+                            : (value) => setState(() => _expenseRatio = value),
+                      ),
+                      TextFormField(
+                        controller: _evidenceUrlController,
+                        keyboardType: TextInputType.url,
+                        decoration: const InputDecoration(
+                          labelText: '証憑URL',
+                          hintText: '領収書・請求書などのDrive URL（任意）',
+                          prefixIcon: Icon(Icons.attach_file_rounded),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
                   ],
 
                   const SizedBox(height: 20),
 
                   SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('確定'),
+                    subtitle: const Text('分類内容を確認できたらONにします'),
                     value: _isConfirmed,
                     onChanged: _isSaving
                         ? null

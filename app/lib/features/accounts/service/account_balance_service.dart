@@ -160,6 +160,9 @@ class AccountBalanceService {
       totalAssets: _toInt(data['totalAssets']),
       totalLiabilities: _toInt(data['totalLiabilities']),
       netAssets: _toInt(data['netAssets']),
+      liquidAssets: _toInt(data['liquidAssets']),
+      investmentAssets: _toInt(data['investmentAssets']),
+      otherAssets: _toInt(data['otherAssets']),
     );
 
     _cachedResult = result;
@@ -189,6 +192,7 @@ class AccountBalanceService {
     required String paymentMethod,
     required String wallet,
     required String institution,
+    required String assetType,
     required bool isAsset,
     required bool isLiability,
     required int openingBalance,
@@ -205,6 +209,7 @@ class AccountBalanceService {
         'paymentMethod': paymentMethod,
         'wallet': wallet,
         'institution': institution,
+        'assetType': assetType,
         'isAsset': isAsset,
         'isLiability': isLiability,
         'openingBalance': openingBalance,
@@ -233,6 +238,7 @@ class AccountBalanceService {
     required String paymentMethod,
     required String wallet,
     required String institution,
+    required String assetType,
     required bool isAsset,
     required bool isLiability,
     required int openingBalance,
@@ -245,6 +251,7 @@ class AccountBalanceService {
         'paymentMethod': paymentMethod,
         'wallet': wallet,
         'institution': institution,
+        'assetType': assetType,
         'isAsset': isAsset,
         'isLiability': isLiability,
         'openingBalance': openingBalance,

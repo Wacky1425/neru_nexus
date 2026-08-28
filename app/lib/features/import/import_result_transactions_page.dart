@@ -117,10 +117,10 @@ class _ImportResultTransactionsPageState
 
                 final transaction = transactions[index - 1];
 
-                final displayName = transaction.merchant.trim().isNotEmpty
-                    ? transaction.merchant.trim()
-                    : transaction.itemName.trim().isNotEmpty
+                final displayName = transaction.itemName.trim().isNotEmpty
                     ? transaction.itemName.trim()
+                    : transaction.merchant.trim().isNotEmpty
+                    ? transaction.merchant.trim()
                     : '名称なし';
 
                 return ListTile(

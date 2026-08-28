@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../accounts/account_management_page.dart';
 import '../budget/budget_settings_page.dart';
+import '../business/business_report_page.dart';
 import '../categories/category_management_page.dart';
 import '../goals/goal_management_page.dart';
+import '../recurring/recurring_management_page.dart';
 import '../settlement/settlement_status_page.dart';
 import '../transactions/gmail_import_status_page.dart';
 import '../transactions/ignored_transactions_page.dart';
+import '../system/system_diagnostics_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -91,6 +94,20 @@ class SettingsPage extends StatelessWidget {
           ),
 
           ListTile(
+            leading: const Icon(Icons.autorenew_rounded),
+            title: const Text('固定費・定期支払い'),
+            subtitle: const Text('毎月の支払い候補を承認・無視'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const RecurringManagementPage(),
+                ),
+              );
+            },
+          ),
+
+          ListTile(
             leading: const Icon(Icons.link_outlined),
             title: const Text('カード照合状況'),
             subtitle: const Text('カード明細と銀行引落の一致状況を確認'),
@@ -98,6 +115,18 @@ class SettingsPage extends StatelessWidget {
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SettlementStatusPage()),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.work_outline),
+            title: const Text('配信・副業レポート'),
+            subtitle: const Text('売上・経費・利益・証憑・確定申告CSV'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const BusinessReportPage()),
               );
             },
           ),
@@ -136,6 +165,19 @@ class SettingsPage extends StatelessWidget {
                 MaterialPageRoute(
                   builder: (_) => const GmailImportStatusPage(),
                 ),
+              );
+            },
+          ),
+
+
+          ListTile(
+            leading: const Icon(Icons.health_and_safety_outlined),
+            title: const Text('システム診断・バックアップ'),
+            subtitle: const Text('データ整合性・API・エラー・バックアップを確認'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SystemDiagnosticsPage()),
               );
             },
           ),

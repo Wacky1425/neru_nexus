@@ -9,6 +9,7 @@ function createAccountFromApp_(data) {
   const paymentMethod = String(data.paymentMethod || "").trim();
   const wallet = String(data.wallet || "").trim();
   const institution = String(data.institution || "").trim();
+  const assetType = String(data.assetType || "").trim();
 
   const isAsset = data.isAsset === true;
   const isLiability = data.isLiability === true;
@@ -159,6 +160,12 @@ function createAccountFromApp_(data) {
       .getRange(sheetRowNumber, index["institution"] + 1)
       .setValue(institution);
 
+    if (index["asset_type"] !== undefined) {
+      sheet
+        .getRange(sheetRowNumber, index["asset_type"] + 1)
+        .setValue(isLiability ? "liability" : isAsset ? assetType || "cash" : "");
+    }
+
     sheet
       .getRange(sheetRowNumber, index["is_asset"] + 1)
       .setValue(isAsset ? 1 : 0);
@@ -202,6 +209,7 @@ function createAccountFromApp_(data) {
         paymentMethod,
         wallet,
         institution,
+        assetType: isLiability ? "liability" : isAsset ? assetType || "cash" : "",
         isAsset,
         isLiability,
 
@@ -241,6 +249,10 @@ function createAccountFromApp_(data) {
   row[index["wallet"]] = wallet;
 
   row[index["institution"]] = institution;
+
+  if (index["asset_type"] !== undefined) {
+    row[index["asset_type"]] = isLiability ? "liability" : isAsset ? assetType || "cash" : "";
+  }
 
   row[index["is_asset"]] = isAsset ? 1 : 0;
 
@@ -300,6 +312,7 @@ function updateAccountFromApp_(data) {
   const wallet = String(data.wallet || "").trim();
 
   const institution = String(data.institution || "").trim();
+  const assetType = String(data.assetType || "").trim();
 
   const isAsset = data.isAsset === true;
 
@@ -481,6 +494,12 @@ function updateAccountFromApp_(data) {
   sheet.getRange(targetRow, index["wallet"] + 1).setValue(wallet);
 
   sheet.getRange(targetRow, index["institution"] + 1).setValue(institution);
+
+  if (index["asset_type"] !== undefined) {
+    sheet
+      .getRange(targetRow, index["asset_type"] + 1)
+      .setValue(isLiability ? "liability" : isAsset ? assetType || "cash" : "");
+  }
 
   sheet.getRange(targetRow, index["is_asset"] + 1).setValue(isAsset ? 1 : 0);
 
@@ -678,6 +697,57 @@ function deactivateAccountFromApp_(data) {
   );
 }
 
+function normalizeAccountAssetType_(
+  rawAssetType,
+  paymentMethod,
+  accountName,
+  institution,
+  isAsset,
+  isLiability,
+) {
+  if (isLiability) {
+    return "liability";
+  }
+
+  if (!isAsset) {
+    return "";
+  }
+
+  const stored = String(rawAssetType || "").trim().toLowerCase();
+  if (stored === "cash" || stored === "investment" || stored === "other") {
+    return stored;
+  }
+
+  const hint = [
+    String(paymentMethod || ""),
+    String(accountName || ""),
+    String(institution || ""),
+  ]
+    .join(" ")
+    .normalize("NFKC")
+    .toLowerCase();
+
+  if (
+    hint.includes("証券") ||
+    hint.includes("nisa") ||
+    hint.includes("投資") ||
+    hint.includes("株")
+  ) {
+    return "investment";
+  }
+
+  if (
+    hint.includes("銀行") ||
+    hint.includes("現金") ||
+    hint.includes("電子マネー") ||
+    hint.includes("paypay")
+  ) {
+    return "cash";
+  }
+
+  return "other";
+}
+
 function getAccountsData_() {
   const sheet = SS.getSheetByName(SHEETS.ACCOUNTS);
 
@@ -741,31 +811,46 @@ function getAccountsData_() {
       continue;
     }
 
+    const isAsset =
+      index["is_asset"] === undefined
+        ? false
+        : Number(row[index["is_asset"]] || 0) === 1;
+
+    const isLiability =
+      index["is_liability"] === undefined
+        ? false
+        : Number(row[index["is_liability"]] || 0) === 1;
+
+    const institution =
+      index["institution"] === undefined
+        ? ""
+        : String(row[index["institution"]] || "").trim();
+
+    const rawAssetType =
+      index["asset_type"] === undefined
+        ? ""
+        : String(row[index["asset_type"]] || "").trim();
+
     items.push({
       accountId,
       accountName,
       paymentMethod,
       wallet,
 
-      institution:
-        index["institution"] === undefined
-          ? ""
-          : String(row[index["institution"]] || "").trim(),
+      institution,
 
-      assetType:
-        index["asset_type"] === undefined
-          ? ""
-          : String(row[index["asset_type"]] || "").trim(),
+      assetType: normalizeAccountAssetType_(
+        rawAssetType,
+        paymentMethod,
+        accountName,
+        institution,
+        isAsset,
+        isLiability,
+      ),
 
-      isAsset:
-        index["is_asset"] === undefined
-          ? false
-          : Number(row[index["is_asset"]] || 0) === 1,
+      isAsset,
 
-      isLiability:
-        index["is_liability"] === undefined
-          ? false
-          : Number(row[index["is_liability"]] || 0) === 1,
+      isLiability,
 
       active,
 
@@ -823,6 +908,7 @@ function getAccountBalancesData_() {
   const transactionTable = loadTransactions();
 
   const accounts = accountsResult.items || [];
+  const investmentValuesMap = getInvestmentAccountValuesMap_();
 
   if (accounts.length === 0) {
     return {
@@ -830,6 +916,9 @@ function getAccountBalancesData_() {
       totalAssets: 0,
       totalLiabilities: 0,
       netAssets: 0,
+      liquidAssets: 0,
+      investmentAssets: 0,
+      otherAssets: 0,
     };
   }
 
@@ -839,7 +928,14 @@ function getAccountBalancesData_() {
 
   if (transactionTable.rows.length === 0) {
     const items = accounts.map((account) => {
-      const currentBalance = Number(account.openingBalance || 0);
+      let currentBalance = Number(account.openingBalance || 0);
+
+      if (
+        account.assetType === "investment" &&
+        investmentValuesMap.has(account.accountId)
+      ) {
+        currentBalance = Number(investmentValuesMap.get(account.accountId) || 0);
+      }
 
       return {
         ...account,
@@ -1206,6 +1302,15 @@ function getAccountBalancesData_() {
       ? Math.max(0, currentBalance - nextBillingAmount)
       : 0;
 
+    // 投資口座に保有銘柄が登録されている場合は、
+    // 取引ベース残高ではなくポートフォリオ評価額を正とする。
+    if (
+      account.assetType === "investment" &&
+      investmentValuesMap.has(account.accountId)
+    ) {
+      currentBalance = Number(investmentValuesMap.get(account.accountId) || 0);
+    }
+
     return {
       ...account,
 
@@ -1225,12 +1330,25 @@ function getAccountBalancesData_() {
 function buildAccountBalanceResult_(items) {
   let totalAssets = 0;
   let totalLiabilities = 0;
+  let liquidAssets = 0;
+  let investmentAssets = 0;
+  let otherAssets = 0;
 
   for (const account of items) {
-    const balance = Number(account.currentBalance || 0);
+    const rawBalance = Number(account.currentBalance || 0);
+    const balance = Math.max(0, rawBalance);
 
     if (account.isAsset) {
       totalAssets += balance;
+
+      const assetType = String(account.assetType || "").trim();
+      if (assetType === "cash") {
+        liquidAssets += balance;
+      } else if (assetType === "investment") {
+        investmentAssets += balance;
+      } else {
+        otherAssets += balance;
+      }
     }
 
     if (account.isLiability) {
@@ -1243,6 +1361,9 @@ function buildAccountBalanceResult_(items) {
     totalAssets,
     totalLiabilities,
     netAssets: totalAssets - totalLiabilities,
+    liquidAssets,
+    investmentAssets,
+    otherAssets,
   };
 }
 

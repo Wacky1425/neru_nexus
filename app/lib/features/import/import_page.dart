@@ -398,13 +398,31 @@ class _ImportPageState extends State<ImportPage> {
               const SizedBox(height: 20),
 
               Card(
-                child: ListTile(
-                  leading: Icon(
-                    Icons.error_outline,
-                    color: Theme.of(context).colorScheme.error,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          Icons.error_outline,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                        title: const Text('取込に失敗しました'),
+                        subtitle: Text(_errorMessage!),
+                      ),
+                      if (_selectedFileName != null && _selectedFileBytes != null)
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _isImporting ? null : _importCsv,
+                            icon: const Icon(Icons.replay_outlined),
+                            label: const Text('同じCSVを再実行'),
+                          ),
+                        ),
+                    ],
                   ),
-                  title: const Text('取込に失敗しました'),
-                  subtitle: Text(_errorMessage!),
                 ),
               ),
             ],

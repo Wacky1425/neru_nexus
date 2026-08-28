@@ -278,7 +278,26 @@ function testExistingOliveCsvVsGmail() {
 }
 
 function testOliveEarlyRepaymentParsedRows(csvText) {
-  const parsed = readCsvRowsFromText_(csvText);
+  /*
+   * Apps Scriptエディタから引数なしで直接実行できる自己完結テスト。
+   *
+   * csvTextを明示的に渡した場合は、そのCSVを診断する従来用途も維持する。
+   * 引数なしの場合はテスト用Olive CSVを生成し、実データ/Sheetは変更しない。
+   */
+  const isSelfContainedTest = !String(csvText || "").trim();
+
+  const testCsvText = [
+    "利用日,加盟店,金額,請求額,備考",
+    "2026/07/01,コンビニ,1200,1200,",
+    "2026/07/02,STEAM,3000,0,",
+    "2026/07/03,FOREIGN SHOP,4500,,8月5日全額繰上返済",
+    "2026/07/04,AMAZON,2000,2000,8月10日全額繰上返済",
+    "2026/07/05,ドラッグストア,800,800,",
+  ].join("\n");
+
+  const parsed = readCsvRowsFromText_(
+    isSelfContainedTest ? testCsvText : csvText,
+  );
 
   if (
     parsed.csvType !== "olive_credit_v1" &&
@@ -287,102 +306,54 @@ function testOliveEarlyRepaymentParsedRows(csvText) {
     throw new Error("Olive CSVではありません: " + parsed.csvType);
   }
 
-  let earlyRepaymentCount = 0;
-  let earlyRepaymentAmount = 0;
-
-  let normalCount = 0;
-  let normalBilledAmount = 0;
-
-  const earlyRepaymentDates = new Set();
-
-  const earlyRepaymentItems = [];
-
-  const normalItems = [];
-
-  for (const row of parsed.rows) {
-    const date = String(row["利用日"] || "").trim();
-
-    const merchant = String(row["加盟店"] || "").trim();
-
-    const amount = Number(row["金額"] || 0);
-
-    const billedAmount = Number(row["請求額"] || 0);
-
-    const note = String(row["備考"] || "")
-      .normalize("NFKC")
-      .trim();
-
-    if (!date || !merchant || amount <= 0) {
-      continue;
-    }
-
-    const repaymentMatch = note.match(/(\d{1,2})月(\d{1,2})日全額繰上返済/);
-
-    if (repaymentMatch) {
-      earlyRepaymentCount++;
-
-      /*
-       * 繰上返済額は「請求額」ではなく
-       * 実際の利用金額を使う。
-       *
-       * 外貨利用などで請求額欄が空でも、
-       * 繰上返済対象額には含めるため。
-       */
-      earlyRepaymentAmount += amount;
-
-      earlyRepaymentDates.add(
-        `${Number(repaymentMatch[1])}/${Number(repaymentMatch[2])}`,
-      );
-
-      earlyRepaymentItems.push({
-        date,
-        merchant,
-        amount,
-        billedAmount,
-        note,
-      });
-
-      continue;
-    }
-
-    normalCount++;
-
-    /*
-     * 通常請求側は請求額を使う。
-     *
-     * 今回のSTEAMのように
-     * 利用額はあるが請求額0の場合は
-     * 8/26請求額には含めない。
-     */
-    normalBilledAmount += billedAmount;
-
-    normalItems.push({
-      date,
-      merchant,
-      amount,
-      billedAmount,
-      note,
-    });
-  }
+  const analysis = analyzeOliveEarlyRepaymentCsv_(parsed);
 
   const result = {
+    mode: isSelfContainedTest ? "self_contained_test" : "provided_csv",
     csvType: parsed.csvType,
-
-    parsedRowCount: parsed.rows.length,
-
-    earlyRepayment: {
-      count: earlyRepaymentCount,
-      amount: earlyRepaymentAmount,
-      repaymentDates: Array.from(earlyRepaymentDates),
-      items: earlyRepaymentItems,
-    },
-
-    normalBilling: {
-      count: normalCount,
-      billedAmount: normalBilledAmount,
-      items: normalItems,
-    },
+    parsedRowCount: analysis.parsedRowCount,
+    earlyRepayment: analysis.earlyRepayment,
+    normalBilling: analysis.normalBilling,
   };
+
+  if (isSelfContainedTest) {
+    const assertEqual = (label, actual, expected) => {
+      if (actual !== expected) {
+        throw new Error(
+          `${label}: expected=${expected}, actual=${actual}`,
+        );
+      }
+    };
+
+    const assertArrayEqual = (label, actual, expected) => {
+      const actualJson = JSON.stringify(actual);
+      const expectedJson = JSON.stringify(expected);
+
+      if (actualJson !== expectedJson) {
+        throw new Error(
+          `${label}: expected=${expectedJson}, actual=${actualJson}`,
+        );
+      }
+    };
+
+    assertEqual("parsedRowCount", analysis.parsedRowCount, 5);
+    assertEqual("earlyRepayment.count", analysis.earlyRepayment.count, 2);
+    assertEqual("earlyRepayment.amount", analysis.earlyRepayment.amount, 6500);
+    assertArrayEqual(
+      "earlyRepayment.repaymentDates",
+      analysis.earlyRepayment.repaymentDates,
+      ["8/5", "8/10"],
+    );
+    assertEqual("normalBilling.count", analysis.normalBilling.count, 3);
+    assertEqual("normalBilling.billedAmount", analysis.normalBilling.billedAmount, 2000);
+    assertEqual(
+      "normalBilling.billedAmountZeroCount",
+      analysis.normalBilling.billedAmountZeroCount,
+      1,
+    );
+
+    result.assertions = "PASS";
+  }
 
   Logger.log(JSON.stringify(result, null, 2));
 
@@ -642,4 +613,145 @@ function testAddGmailPreliminaryTransaction() {
       2,
     ),
   );
+}
+
+/**
+ * Phase 1 diagnostic: inspect live Olive Gmail preliminary rows against
+ * formal CSV rows without writing anything.
+ *
+ * Focuses on 2026-08 by default. Change targetYearMonth when needed.
+ */
+function diagnoseOliveGmailVsCsv202608() {
+  return diagnoseOliveGmailVsCsv_("2026-08");
+}
+
+function diagnoseOliveGmailVsCsv_(targetYearMonth) {
+  const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
+  const values = sheet.getDataRange().getValues();
+
+  if (values.length < 2) {
+    Logger.log("Transactionsにデータがありません");
+    return null;
+  }
+
+  const index = createHeaderIndex(values[0]);
+  assertRequiredColumns(
+    index,
+    [
+      "id",
+      "transaction_date",
+      "year_month",
+      "source_type",
+      "account_name",
+      "merchant",
+      "item_name",
+      "amount",
+      "import_batch",
+      "source_id",
+      "source_status",
+    ],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const targetYm = normalizeYearMonth(targetYearMonth);
+  const sourceTypeCounts = {};
+  const oliveAccountCounts = {};
+  const gmailRows = [];
+  const csvRows = [];
+  const oliveLikeRows = [];
+
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const date = normalizeSettlementDate_(row[index["transaction_date"]]);
+    const ym = normalizeYearMonth(row[index["year_month"]] || date.slice(0, 7));
+    if (ym !== targetYm) continue;
+
+    const sourceType = String(row[index["source_type"]] || "").trim();
+    const rawAccountName = String(row[index["account_name"]] || "").trim();
+    const accountName = resolveCanonicalAccountName_(rawAccountName);
+    const merchant = normalizeMerchant(String(row[index["merchant"]] || ""));
+    const amount = Number(row[index["amount"]] || 0);
+
+    sourceTypeCounts[sourceType || "(blank)"] =
+      Number(sourceTypeCounts[sourceType || "(blank)"] || 0) + 1;
+
+    if (accountName === "三井住友カードOlive" || /olive/i.test(rawAccountName)) {
+      oliveAccountCounts[`${sourceType || "(blank)"} | ${rawAccountName || "(blank)"}`] =
+        Number(oliveAccountCounts[`${sourceType || "(blank)"} | ${rawAccountName || "(blank)"}`] || 0) + 1;
+
+      oliveLikeRows.push({
+        id: String(row[index["id"]] || "").trim(),
+        date,
+        sourceType,
+        rawAccountName,
+        canonicalAccountName: accountName,
+        merchant,
+        itemName: String(row[index["item_name"]] || "").trim(),
+        amount,
+        importBatch: String(row[index["import_batch"]] || "").trim(),
+        sourceStatus: String(row[index["source_status"]] || "").trim(),
+      });
+    }
+
+    if (sourceType === "Gmail_Olive" && accountName === "三井住友カードOlive") {
+      gmailRows.push({
+        id: String(row[index["id"]] || "").trim(),
+        sourceId: String(row[index["source_id"]] || "").trim(),
+        sourceStatus: String(row[index["source_status"]] || "").trim(),
+        date,
+        merchant,
+        amount,
+      });
+    }
+
+    if (sourceType === "CSV_クレカ" && accountName === "三井住友カードOlive") {
+      csvRows.push({
+        id: String(row[index["id"]] || "").trim(),
+        date,
+        merchant,
+        amount,
+        importBatch: String(row[index["import_batch"]] || "").trim(),
+      });
+    }
+  }
+
+  const gmailDiagnostics = gmailRows.map((gmail) => {
+    const sameAmount = csvRows
+      .map((csv) => ({
+        csvTransactionId: csv.id,
+        csvDate: csv.date,
+        csvAmount: csv.amount,
+        csvMerchant: csv.merchant,
+        importBatch: csv.importBatch,
+        diffDays: diffDateDays_(gmail.date, csv.date),
+        merchantScore: merchantSimilarityScore_(gmail.merchant, csv.merchant),
+      }))
+      .filter((candidate) => candidate.csvAmount === gmail.amount)
+      .sort((a, b) => a.diffDays - b.diffDays || b.merchantScore - a.merchantScore);
+
+    return {
+      gmailTransactionId: gmail.id,
+      gmailSourceId: gmail.sourceId,
+      sourceStatus: gmail.sourceStatus,
+      date: gmail.date,
+      amount: gmail.amount,
+      merchant: gmail.merchant,
+      sameAmountCandidateCount: sameAmount.length,
+      nearestSameAmountCandidates: sameAmount.slice(0, 5),
+    };
+  });
+
+  const result = {
+    targetYearMonth: targetYm,
+    sourceTypeCounts,
+    oliveAccountCounts,
+    gmailCount: gmailRows.length,
+    csvCount: csvRows.length,
+    oliveLikeRowCount: oliveLikeRows.length,
+    gmailDiagnostics,
+    csvRows,
+  };
+
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
 }

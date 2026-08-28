@@ -231,12 +231,12 @@ class _IgnoredTransactionsPageState extends State<IgnoredTransactionsPage> {
   }
 
   static String _displayName(TransactionModel transaction) {
-    if (transaction.merchant.trim().isNotEmpty) {
-      return transaction.merchant.trim();
-    }
-
     if (transaction.itemName.trim().isNotEmpty) {
       return transaction.itemName.trim();
+    }
+
+    if (transaction.merchant.trim().isNotEmpty) {
+      return transaction.merchant.trim();
     }
 
     return '名称なし';
@@ -342,12 +342,12 @@ class _IgnoredTransactionTile extends StatelessWidget {
   }
 
   static String _displayName(TransactionModel transaction) {
-    if (transaction.merchant.trim().isNotEmpty) {
-      return transaction.merchant.trim();
-    }
-
     if (transaction.itemName.trim().isNotEmpty) {
       return transaction.itemName.trim();
+    }
+
+    if (transaction.merchant.trim().isNotEmpty) {
+      return transaction.merchant.trim();
     }
 
     return '名称なし';

@@ -25,6 +25,7 @@ function aggregateTransactionSummaries_(transactionTable) {
       "wallet",
       "amount",
       "expense_amount",
+      "purpose_type",
     ],
     SHEETS.TRANSACTIONS,
   );
@@ -89,13 +90,19 @@ function aggregateTransactionSummaries_(transactionTable) {
         }
       }
 
-      if (wallet === "事業") {
-        monthly.business_expense += amount;
+      const purposeType = getString(row, transactionTable.index, "purpose_type");
+      if (wallet === "事業" || purposeType === "経費") {
+        monthly.business_expense += expenseAmount;
       }
     } else if (type === "収入") {
       monthly.total_income += amount;
 
-      if (wallet === "事業") {
+      const purposeType = getString(row, transactionTable.index, "purpose_type");
+      if (
+        wallet === "事業" ||
+        purposeType === "事業収入" ||
+        majorCategory === "副業"
+      ) {
         monthly.business_income += amount;
       }
     } else if (type === "値引き" || type === "調整") {

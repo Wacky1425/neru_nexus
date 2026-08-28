@@ -1,0 +1,8 @@
+Phase 5 配信 / 副業機能
+- 25_business.gs追加
+- business_report API追加
+- business_tax_export_create API追加
+- 副業カテゴリ収入 / 事業収入をbusiness_incomeへ集計
+- business_expenseはexpense_ratio反映後のexpense_amountを採用
+- 取引APIでpurpose_type / expense_ratio / expense_amount / evidence_urlを公開・更新
+- Regressionにbusiness report helper / live invariant test追加

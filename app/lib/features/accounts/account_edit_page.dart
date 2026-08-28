@@ -24,6 +24,7 @@ class _AccountEditPageState extends State<AccountEditPage> {
   late final TextEditingController _balanceController;
 
   late String _wallet;
+  late String _assetType;
 
   late bool _isAsset;
   late bool _isLiability;
@@ -56,6 +57,7 @@ class _AccountEditPageState extends State<AccountEditPage> {
     );
 
     _wallet = account.wallet.isEmpty ? '生活' : account.wallet;
+    _assetType = account.assetType.isEmpty ? 'cash' : account.assetType;
 
     _isAsset = account.isAsset;
 
@@ -176,6 +178,7 @@ class _AccountEditPageState extends State<AccountEditPage> {
         paymentMethod: paymentMethod,
         wallet: _wallet,
         institution: institution,
+        assetType: _isLiability ? 'liability' : _assetType,
         isAsset: _isAsset,
         isLiability: _isLiability,
         openingBalance: balance,
@@ -515,7 +518,28 @@ class _AccountEditPageState extends State<AccountEditPage> {
             ),
           ],
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
+
+          if (_isAsset)
+            DropdownButtonFormField<String>(
+              initialValue: _assetType,
+              decoration: const InputDecoration(
+                labelText: '資産区分',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'cash', child: Text('現金・預金')),
+                DropdownMenuItem(value: 'investment', child: Text('投資')),
+                DropdownMenuItem(value: 'other', child: Text('その他資産')),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _assetType = value);
+                }
+              },
+            ),
+
+          if (_isAsset) const SizedBox(height: 24),
 
           TextField(
             controller: _balanceController,

@@ -447,11 +447,15 @@ function createTransactionFromApp_(data) {
 
   const paymentMethod = String(data.paymentMethod || "").trim();
 
-  const status = String(data.status || "要確認").trim();
-
   const accountName = String(data.accountName || "").trim();
 
+  const status = String(data.status || "要確認").trim();
+
   const memo = String(data.memo || "").trim();
+
+  const explicitPurposeType = String(data.purposeType || "").trim();
+  const explicitExpenseRatio = Number(data.expenseRatio);
+  const evidenceUrl = String(data.evidenceUrl || "").trim();
 
   if (!transactionDate) {
     throw new Error("transactionDateは必須です");
@@ -491,9 +495,22 @@ function createTransactionFromApp_(data) {
     throw new Error("statusは確定または要確認を指定してください");
   }
 
-  const purposeType = type === "収入" ? "私用" : guessPurposeType(majorCategory, subCategory);
+  const purposeType =
+    type === "収入"
+      ? explicitPurposeType === "事業収入" || majorCategory === "副業" ? "事業収入" : "私用"
+      : explicitPurposeType === "経費" || explicitPurposeType === "私用"
+        ? explicitPurposeType
+        : guessPurposeType(majorCategory, subCategory);
 
-  const wallet = purposeType === "経費" ? "事業" : "生活";
+  const expenseRatio =
+    type === "支出" && Number.isFinite(explicitExpenseRatio)
+      ? Math.max(0, Math.min(1, explicitExpenseRatio))
+      : type === "支出"
+        ? guessExpenseRatio(majorCategory, subCategory)
+        : 0;
+
+  const wallet =
+    purposeType === "経費" || purposeType === "事業収入" ? "事業" : "生活";
 
   const tx = {
     transaction_date: transactionDate,
@@ -510,7 +527,7 @@ function createTransactionFromApp_(data) {
 
     payment_method: paymentMethod,
 
-    evidence_url: "",
+    evidence_url: evidenceUrl,
 
     original_image_url: "",
 
@@ -528,7 +545,7 @@ function createTransactionFromApp_(data) {
 
     purpose_type: purposeType,
 
-    expense_ratio: type === "支出" ? guessExpenseRatio(majorCategory, subCategory) : 0,
+    expense_ratio: expenseRatio,
 
     status: status,
 
@@ -591,6 +608,11 @@ function createTransactionFromApp_(data) {
 
         status: tx.status,
 
+        purposeType: tx.purpose_type || "",
+        expenseRatio: Number(tx.expense_ratio || 0),
+        expenseAmount: Number(tx.amount || 0) * Number(tx.expense_ratio || 0),
+        evidenceUrl: tx.evidence_url || "",
+
         wallet: tx.wallet,
 
         intent: tx.intent || "",
@@ -612,6 +634,8 @@ function createTransactionFromApp_(data) {
         importBatch: tx.import_batch || "",
 
         note: tx.note || "",
+
+        sourceType: tx.source_type || "",
       },
     },
     "ok",
@@ -635,9 +659,15 @@ function updateTransactionFromApp_(data) {
 
   const paymentMethod = String(data.paymentMethod || "").trim();
 
+  const accountName = String(data.accountName || "").trim();
+
   const status = String(data.status || "要確認").trim();
 
   const memo = String(data.memo || "").trim();
+
+  const explicitPurposeType = String(data.purposeType || "").trim();
+  const explicitExpenseRatio = Number(data.expenseRatio);
+  const evidenceUrl = String(data.evidenceUrl || "").trim();
 
   const saveRule = toBoolean_(data.saveRule, false);
 
@@ -715,6 +745,10 @@ function updateTransactionFromApp_(data) {
       "import_batch",
       "duplicate_key",
       "status",
+      "purpose_type",
+      "expense_ratio",
+      "expense_amount",
+      "evidence_url",
       "wallet",
       "intent",
       "from_account",
@@ -763,6 +797,17 @@ function updateTransactionFromApp_(data) {
     "source_status",
   );
 
+  const existingSourceType = getString(
+    existingRow,
+    tableIndex,
+    "source_type",
+  );
+
+  const existingMerchant = getString(existingRow, tableIndex, "merchant");
+
+  const isImportedTransaction =
+    existingSourceType !== "" && existingSourceType !== "Neru Nexus App";
+
   const existingSourceReceivedAt =
     existingRow[tableIndex["source_received_at"]] || "";
 
@@ -787,11 +832,22 @@ function updateTransactionFromApp_(data) {
 
   const isCreditCardSettlement = subCategory === "クレカ引落";
 
-  const purposeType = type === "収入" ? "私用" : guessPurposeType(majorCategory, subCategory);
+  const purposeType =
+    type === "収入"
+      ? explicitPurposeType === "事業収入" || majorCategory === "副業" ? "事業収入" : "私用"
+      : explicitPurposeType === "経費" || explicitPurposeType === "私用"
+        ? explicitPurposeType
+        : guessPurposeType(majorCategory, subCategory);
 
-  const expenseRatio = type === "支出" ? guessExpenseRatio(majorCategory, subCategory) : 0;
+  const expenseRatio =
+    type === "支出" && Number.isFinite(explicitExpenseRatio)
+      ? Math.max(0, Math.min(1, explicitExpenseRatio))
+      : type === "支出"
+        ? guessExpenseRatio(majorCategory, subCategory)
+        : 0;
 
-  const wallet = purposeType === "経費" ? "事業" : "生活";
+  const wallet =
+    purposeType === "経費" || purposeType === "事業収入" ? "事業" : "生活";
 
   const intent = type === "収入" ? "収入" : guessIntent(type, majorCategory, subCategory);
 
@@ -800,15 +856,19 @@ function updateTransactionFromApp_(data) {
 
     type,
 
-    source_type:
-      getString(existingRow, tableIndex, "source_type") || "Neru Nexus App",
+    source_type: existingSourceType || "Neru Nexus App",
 
     payment_method: paymentMethod,
 
-    account_name:
-      getString(existingRow, tableIndex, "account_name") || "App Manual",
+    account_name: isImportedTransaction
+      ? getString(existingRow, tableIndex, "account_name")
+      : resolveCanonicalAccountName_(
+          accountName || getString(existingRow, tableIndex, "account_name"),
+        ),
 
-    merchant: normalizeMerchant(title),
+    merchant: isImportedTransaction
+      ? existingMerchant
+      : normalizeMerchant(title),
 
     item_name: title,
 
@@ -826,7 +886,7 @@ function updateTransactionFromApp_(data) {
 
     note: memo,
 
-    evidence_url: getString(existingRow, tableIndex, "evidence_url"),
+    evidence_url: evidenceUrl,
 
     original_image_url: getString(
       existingRow,
@@ -981,6 +1041,11 @@ function updateTransactionFromApp_(data) {
 
         status,
 
+        purposeType,
+        expenseRatio,
+        expenseAmount: amount * expenseRatio,
+        evidenceUrl: updatedTransaction.evidence_url || "",
+
         wallet,
 
         intent: updatedTransaction.intent || "",
@@ -1004,6 +1069,8 @@ function updateTransactionFromApp_(data) {
         note: updatedTransaction.note || "",
 
         sourceId: updatedTransaction.source_id || "",
+
+        sourceType: updatedTransaction.source_type || "",
 
         sourceStatus: updatedTransaction.source_status || "",
 
@@ -1152,6 +1219,7 @@ function getTransactionsData(options) {
       "import_batch",
       "note",
       "source_id",
+      "source_type",
       "source_status",
       "source_received_at",
     ],
@@ -1258,6 +1326,10 @@ function getTransactionsData(options) {
     majorCategory: getString(row, table.index, "major_category"),
     subCategory: getString(row, table.index, "sub_category"),
     status: getString(row, table.index, "status"),
+    purposeType: getString(row, table.index, "purpose_type"),
+    expenseRatio: getNumber(row, table.index, "expense_ratio"),
+    expenseAmount: getNumber(row, table.index, "expense_amount"),
+    evidenceUrl: getString(row, table.index, "evidence_url"),
     wallet: getString(row, table.index, "wallet"),
     intent: getString(row, table.index, "intent"),
     rawText: getString(row, table.index, "raw_text"),
@@ -1270,6 +1342,7 @@ function getTransactionsData(options) {
     importBatch: getString(row, table.index, "import_batch"),
     note: getString(row, table.index, "note"),
     sourceId: getString(row, table.index, "source_id"),
+    sourceType: getString(row, table.index, "source_type"),
     sourceStatus: getString(row, table.index, "source_status"),
 
     sourceReceivedAt: formatApiDateTime_(

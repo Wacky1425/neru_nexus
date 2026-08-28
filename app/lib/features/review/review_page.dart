@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../transactions/model/transaction_model.dart';
 import '../transactions/transaction_detail_page.dart';
 import 'service/review_service.dart';
 
@@ -17,6 +18,10 @@ class _ReviewPageState extends State<ReviewPage> {
 
   bool _hasChanged = false;
 
+  final Set<String> _hiddenTransactionIds = <String>{};
+  final Map<String, TransactionModel> _updatedTransactions =
+      <String, TransactionModel>{};
+
   @override
   void initState() {
     super.initState();
@@ -29,6 +34,8 @@ class _ReviewPageState extends State<ReviewPage> {
 
     setState(() {
       _future = future;
+      _hiddenTransactionIds.clear();
+      _updatedTransactions.clear();
     });
 
     await future;
@@ -74,9 +81,16 @@ class _ReviewPageState extends State<ReviewPage> {
               return const Center(child: Text('要確認データがありません'));
             }
 
-            final items = result.items;
+            final originalItems = result.items;
+            final items = originalItems
+                .where((item) => !_hiddenTransactionIds.contains(item.id))
+                .map((item) => _updatedTransactions[item.id] ?? item)
+                .toList();
 
-            final total = result.total;
+            final hiddenCount = originalItems
+                .where((item) => _hiddenTransactionIds.contains(item.id))
+                .length;
+            final total = (result.total - hiddenCount).clamp(0, result.total);
 
             if (items.isEmpty) {
               return RefreshIndicator(
@@ -133,23 +147,15 @@ class _ReviewPageState extends State<ReviewPage> {
                   final isSettlementReview =
                       transaction.settlementStatus == 'review';
 
-                  final isStalePreliminary = transaction.isStalePreliminary;
-
                   final displayName = transaction.itemName.trim().isNotEmpty
                       ? transaction.itemName.trim()
                       : transaction.merchant.trim().isNotEmpty
                       ? transaction.merchant.trim()
                       : '名称なし';
 
-                  String reviewMessage;
-
-                  if (isStalePreliminary) {
-                    reviewMessage = 'CSV未確定のまま7日以上経過';
-                  } else if (isSettlementReview) {
-                    reviewMessage = '移動先またはクレカ照合を確認';
-                  } else {
-                    reviewMessage = 'カテゴリを確認';
-                  }
+                  final reviewMessage = isSettlementReview
+                      ? '移動先またはクレカ照合を確認'
+                      : 'カテゴリを確認';
 
                   return ListTile(
                     contentPadding: const EdgeInsets.symmetric(
@@ -159,51 +165,16 @@ class _ReviewPageState extends State<ReviewPage> {
 
                     leading: CircleAvatar(
                       child: Icon(
-                        isStalePreliminary
-                            ? Icons.schedule_outlined
-                            : isSettlementReview
+                        isSettlementReview
                             ? Icons.swap_horiz_rounded
                             : Icons.warning_amber_rounded,
                       ),
                     ),
 
-                    title: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            displayName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-
-                        if (isStalePreliminary) ...[
-                          const SizedBox(width: 8),
-
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.secondaryContainer,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              '速報',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSecondaryContainer,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
+                    title: Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
 
                     subtitle: Column(
@@ -251,7 +222,36 @@ class _ReviewPageState extends State<ReviewPage> {
 
                       _hasChanged = true;
 
-                      await _reload();
+                      if (result.type == TransactionDetailResultType.refresh ||
+                          result.refreshReview) {
+                        await _reload();
+                        return;
+                      }
+
+                      setState(() {
+                        if (result.type ==
+                            TransactionDetailResultType.deleted) {
+                          _hiddenTransactionIds.add(transaction.id);
+                          _updatedTransactions.remove(transaction.id);
+                          return;
+                        }
+
+                        final updated = result.transaction;
+                        if (updated == null) {
+                          return;
+                        }
+
+                        final stillNeedsReview =
+                            updated.status == '要確認' ||
+                            updated.settlementStatus == 'review';
+
+                        if (stillNeedsReview) {
+                          _updatedTransactions[transaction.id] = updated;
+                        } else {
+                          _hiddenTransactionIds.add(transaction.id);
+                          _updatedTransactions.remove(transaction.id);
+                        }
+                      });
                     },
                   );
                 },

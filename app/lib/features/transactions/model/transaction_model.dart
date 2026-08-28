@@ -9,6 +9,10 @@ class TransactionModel {
     required this.majorCategory,
     required this.subCategory,
     required this.status,
+    required this.purposeType,
+    required this.expenseRatio,
+    required this.expenseAmount,
+    required this.evidenceUrl,
     required this.wallet,
     required this.intent,
     required this.paymentMethod,
@@ -21,6 +25,7 @@ class TransactionModel {
     required this.importBatch,
     required this.note,
     required this.sourceId,
+    required this.sourceType,
     required this.sourceStatus,
     required this.sourceReceivedAt,
   });
@@ -42,6 +47,11 @@ class TransactionModel {
   final String subCategory;
 
   final String status;
+
+  final String purposeType;
+  final double expenseRatio;
+  final int expenseAmount;
+  final String evidenceUrl;
 
   final String wallet;
 
@@ -67,9 +77,17 @@ class TransactionModel {
 
   final String sourceId;
 
+  final String sourceType;
+
   final String sourceStatus;
 
   final String sourceReceivedAt;
+
+  bool get isImported {
+    final value = sourceType.trim();
+
+    return value.isNotEmpty && value != 'Neru Nexus App';
+  }
 
   bool get isPreliminary {
     final value = sourceStatus.trim().toLowerCase();
@@ -105,7 +123,7 @@ class TransactionModel {
 
     final difference = DateTime.now().difference(receivedAt);
 
-    return difference.inDays >= 7;
+    return difference.inDays >= 30;
   }
 
   factory TransactionModel.fromJson(Map<String, dynamic> json) {
@@ -127,6 +145,14 @@ class TransactionModel {
       subCategory: json['subCategory']?.toString() ?? '',
 
       status: json['status']?.toString() ?? '',
+
+      purposeType: json['purposeType']?.toString() ?? '',
+
+      expenseRatio: (json['expenseRatio'] as num?)?.toDouble() ?? 0,
+
+      expenseAmount: (json['expenseAmount'] as num?)?.toInt() ?? 0,
+
+      evidenceUrl: json['evidenceUrl']?.toString() ?? '',
 
       wallet: json['wallet']?.toString() ?? '',
 
@@ -151,6 +177,8 @@ class TransactionModel {
       note: json['note']?.toString() ?? '',
 
       sourceId: json['sourceId']?.toString() ?? '',
+
+      sourceType: json['sourceType']?.toString() ?? '',
 
       sourceStatus: json['sourceStatus']?.toString() ?? '',
 

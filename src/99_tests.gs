@@ -135,6 +135,22 @@ function testGetHomeData() {
     throw new Error("monthlySurplus が数値ではありません");
   }
 
+  if (typeof data.projectedIncome !== "number") {
+    throw new Error("projectedIncome が数値ではありません");
+  }
+
+  if (typeof data.fixedExpenseBudget !== "number") {
+    throw new Error("fixedExpenseBudget が数値ではありません");
+  }
+
+  if (typeof data.variableExpenseBudget !== "number") {
+    throw new Error("variableExpenseBudget が数値ではありません");
+  }
+
+  if (typeof data.budgetInherited !== "boolean") {
+    throw new Error("budgetInherited がbooleanではありません");
+  }
+
   if (typeof data.baseNisa !== "number") {
     throw new Error("baseNisa が数値ではありません");
   }
@@ -164,6 +180,56 @@ function testGetHomeData() {
   }
 
   Logger.log("Home APIデータ取得成功");
+}
+
+function testHomeCalculationHelpers() {
+  const budgets = {
+    "固定費予算": 80000,
+    "変動費予算": 50000,
+  };
+
+  const expenses = {
+    fixedExpense: 60000,
+    variableExpense: 20000,
+  };
+
+  const projectedIncome = 230000;
+
+  const freeCash = calculateMonthlyFreeCash_(
+    budgets,
+    expenses,
+    projectedIncome,
+  );
+
+  if (freeCash !== 100000) {
+    throw new Error(`monthlyFreeCash不一致: ${freeCash}`);
+  }
+
+  const availableMoney = calculateAvailableMoney_(
+    budgets,
+    expenses,
+    projectedIncome,
+  );
+
+  if (availableMoney !== 30000) {
+    throw new Error(`availableMoney不一致: ${availableMoney}`);
+  }
+
+  const overBudget = calculateAvailableMoney_(
+    budgets,
+    { fixedExpense: 90000, variableExpense: 55000 },
+    projectedIncome,
+  );
+
+  if (overBudget !== -5000) {
+    throw new Error(`予算超過時availableMoney不一致: ${overBudget}`);
+  }
+
+  return {
+    freeCash,
+    availableMoney,
+    overBudget,
+  };
 }
 
 function testGetTransactionsData() {
@@ -944,6 +1010,11 @@ function testGmailImportDryRunSummary() {
 }
 
 function runRegressionTests() {
+  testBusinessReportHelpers();
+  testGetBusinessReportData();
+  testInvestmentValuationHelpers();
+  testAccountAssetTypeHelpers();
+  testRecurringCandidateHelpers();
   const tests = [
     // ==========================================================
     // Core / Sheet / Loader
@@ -1003,6 +1074,11 @@ function runRegressionTests() {
     {
       name: "testGetHomeData",
       fn: testGetHomeData,
+    },
+
+    {
+      name: "testHomeCalculationHelpers",
+      fn: testHomeCalculationHelpers,
     },
 
     {
@@ -1471,4 +1547,111 @@ function testCleanup7GuessMetadata() {
   }
 
   return { caseCount: cases.length };
+}
+
+function testRecurringCandidateHelpers() {
+  const table = {
+    index: {
+      transaction_date: 0,
+      type: 1,
+      merchant: 2,
+      amount: 3,
+      major_category: 4,
+      sub_category: 5,
+      source_status: 6,
+    },
+    rows: [
+      ["2026-05-01", "支出", "NETFLIX", 1490, "娯楽", "動画", "formal"],
+      ["2026-06-01", "支出", "NETFLIX", 1490, "娯楽", "動画", "formal"],
+      ["2026-07-01", "支出", "NETFLIX", 1490, "娯楽", "動画", "formal"],
+      ["2026-05-10", "支出", "東京電力", 4200, "水道光熱", "電気", "formal"],
+      ["2026-06-10", "支出", "東京電力", 6100, "水道光熱", "電気", "formal"],
+      ["2026-07-10", "支出", "東京電力", 7300, "水道光熱", "電気", "formal"],
+      ["2026-05-02", "支出", "Amazon", 1000, "私用", "買い物", "formal"],
+      ["2026-05-12", "支出", "Amazon", 3000, "私用", "買い物", "formal"],
+      ["2026-06-02", "支出", "Amazon", 1200, "私用", "買い物", "formal"],
+      ["2026-06-12", "支出", "Amazon", 4500, "私用", "買い物", "formal"],
+      ["2026-07-02", "支出", "Amazon", 2000, "私用", "買い物", "formal"],
+      ["2026-07-12", "支出", "Amazon", 5000, "私用", "買い物", "formal"],
+    ],
+  };
+
+  const items = buildRecurringCandidateObjects_(buildRecurringCandidateMap_(table));
+  const netflix = items.find((item) => item.merchant === "NETFLIX");
+  const power = items.find((item) => item.merchant === "東京電力");
+  const amazon = items.find((item) => item.merchant === "Amazon");
+
+  if (!netflix || netflix.suggestedType !== "サブスク") {
+    throw new Error("NETFLIXをサブスク候補として検出できませんでした");
+  }
+  if (!power || power.suggestedType !== "固定費") {
+    throw new Error("変動額の水道光熱費を固定費候補として検出できませんでした");
+  }
+  if (amazon) {
+    throw new Error("高頻度EC利用を定期支払い候補から除外できませんでした");
+  }
+
+  Logger.log(JSON.stringify({ assertions: "PASS", items }, null, 2));
+  return { assertions: "PASS", items };
+}
+
+
+function testAccountAssetTypeHelpers() {
+  const cases = [
+    ["", "銀行", "三井住友銀行", "三井住友銀行", true, false, "cash"],
+    ["", "その他", "SBI証券", "SBI証券", true, false, "investment"],
+    ["investment", "銀行", "投資用口座", "", true, false, "investment"],
+    ["", "クレジットカード", "Olive", "", false, true, "liability"],
+    ["", "その他", "その他資産", "", true, false, "other"],
+  ];
+
+  for (const item of cases) {
+    const actual = normalizeAccountAssetType_(
+      item[0],
+      item[1],
+      item[2],
+      item[3],
+      item[4],
+      item[5],
+    );
+
+    if (actual !== item[6]) {
+      throw new Error(
+        `assetType推定不一致: expected=${item[6]}, actual=${actual}`,
+      );
+    }
+  }
+
+  Logger.log(JSON.stringify({ assertions: "PASS", caseCount: cases.length }));
+  return { assertions: "PASS", caseCount: cases.length };
+}
+
+
+function testInvestmentValuationHelpers() {
+  const stockValue = investmentMarketValue_(10, 2500, 1);
+  const fundValue = investmentMarketValue_(123456, 18450, 10000);
+  const fundCost = investmentCostValue_(123456, 15000, 10000);
+
+  if (stockValue !== 25000) {
+    throw new Error(`株式評価額計算不一致: ${stockValue}`);
+  }
+
+  if (Math.abs(fundValue - 227776.32) > 0.01) {
+    throw new Error(`投信評価額計算不一致: ${fundValue}`);
+  }
+
+  if (Math.abs(fundCost - 185184) > 0.01) {
+    throw new Error(`投信取得額計算不一致: ${fundCost}`);
+  }
+
+  if (normalizeInvestmentSecurityType_("fund") !== "fund") {
+    throw new Error("securityType正規化不一致");
+  }
+
+  if (normalizeInvestmentProvider_("yahoo", "cash") !== "manual") {
+    throw new Error("現金provider正規化不一致");
+  }
+
+  Logger.log(JSON.stringify({ assertions: "PASS", caseCount: 5 }));
+  return { assertions: "PASS", caseCount: 5 };
 }

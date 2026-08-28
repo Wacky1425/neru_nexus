@@ -645,6 +645,77 @@ function createSafeMonthlyDate_(year, zeroBasedMonth, requestedDay) {
   return new Date(year, zeroBasedMonth, Math.min(requestedDay, lastDay));
 }
 
+/**
+ * Homeで使う個人収入を集計する。
+ *
+ * - 事業Walletの収入は個人の資金配分へ直接混ぜない。
+ * - 給与実績（収入/給与）が1件でもあれば給与予定は置換済みとみなす。
+ * - 給与以外の生活Wallet等の実収入は、そのまま個人実収入として加算する。
+ */
+function calculateHomeIncomeBreakdown_(yearMonth, salaryPlanned) {
+  const table = loadTransactions();
+
+  if (table.rows.length === 0) {
+    return {
+      salaryActual: 0,
+      salaryReceived: false,
+      personalIncomeActual: 0,
+      projectedPersonalIncome: Math.max(0, Number(salaryPlanned || 0)),
+    };
+  }
+
+  assertRequiredColumns(
+    table.index,
+    ["transaction_date", "type", "amount", "sub_category", "wallet"],
+    SHEETS.TRANSACTIONS,
+  );
+
+  let salaryActual = 0;
+  let personalOtherIncome = 0;
+  let salaryReceived = false;
+
+  for (const row of table.rows) {
+    if (isIgnoredTransactionRow_(row, table.index)) {
+      continue;
+    }
+
+    if (normalizeYearMonth(row[table.index["transaction_date"]]) !== yearMonth) {
+      continue;
+    }
+
+    if (getString(row, table.index, "type") !== "収入") {
+      continue;
+    }
+
+    // 事業のお金はHomeの個人資金配分に直接混ぜない。
+    if (getString(row, table.index, "wallet") === "事業") {
+      continue;
+    }
+
+    const amount = Math.max(0, getNumber(row, table.index, "amount"));
+    const subCategory = getString(row, table.index, "sub_category");
+
+    if (subCategory === "給与") {
+      salaryActual += amount;
+      salaryReceived = true;
+    } else {
+      personalOtherIncome += amount;
+    }
+  }
+
+  const personalIncomeActual = salaryActual + personalOtherIncome;
+  const salaryComponent = salaryReceived
+    ? salaryActual
+    : Math.max(0, Number(salaryPlanned || 0));
+
+  return {
+    salaryActual,
+    salaryReceived,
+    personalIncomeActual,
+    projectedPersonalIncome: salaryComponent + personalOtherIncome,
+  };
+}
+
 // ============================================================
 // Home API Data
 // ============================================================
@@ -660,7 +731,10 @@ function getHomeData() {
 
   ensureSummaryFresh_(yearMonth);
 
-  const budgets = getBudgetsForMonth(yearMonth);
+  // Budget画面と同じ継承ルールをHomeでも使う。
+  // 当月設定がない場合は直近の過去月設定を引き継ぐ。
+  const effectiveBudget = getEffectiveBudgetsForMonth_(yearMonth);
+  const budgets = effectiveBudget.budgets;
 
   const monthlyData = loadAnalyticsMonthlySummary_();
 
@@ -672,17 +746,27 @@ function getHomeData() {
 
   const totalIncome = Number(monthly?.totalIncome || 0);
 
-  const plannedIncome =
-    Number(budgets["給与予定"] || 0) + Number(budgets["副業予定"] || 0);
+  const salaryPlanned = Number(budgets["給与予定"] || 0);
+  const sideIncomePlanned = Number(budgets["副業予定"] || 0);
 
-  // 月途中でも予定収入を使えるようにする。
-  // 実収入が予定を上回った場合は実収入を採用。
-  const projectedIncome = Math.max(totalIncome, plannedIncome);
+  // 個人のHome資金配分には事業Walletの収入を直接混ぜない。
+  // 給与は、入金前だけ予定額を使い、給与実績が入ったら実績へ置換する。
+  const incomeBreakdown = calculateHomeIncomeBreakdown_(yearMonth, salaryPlanned);
+  const plannedIncome = incomeBreakdown.salaryReceived ? 0 : salaryPlanned;
+  const projectedIncome = incomeBreakdown.projectedPersonalIncome;
+
+  // 承認済みの定期支払いで、今月まだ発生していない分を固定費見込へ加える。
+  // 固定費予算とは max 比較されるため、予算との二重計上はしない。
+  const recurringForecast = getApprovedRecurringForecast_(yearMonth);
+  const fixedExpenseForecastWithRecurring =
+    fixedExpense + Number(recurringForecast.remainingTotal || 0);
 
   const expenses = {
-    fixedExpense,
+    fixedExpense: fixedExpenseForecastWithRecurring,
+    fixedExpenseActual: fixedExpense,
+    recurringRemaining: Number(recurringForecast.remainingTotal || 0),
     variableExpense,
-    totalExpense: fixedExpense + variableExpense,
+    totalExpense: fixedExpenseForecastWithRecurring + variableExpense,
   };
 
   // ============================================================
@@ -751,6 +835,8 @@ function getHomeData() {
   // その他
   // ============================================================
 
+  const sideBusinessIncome = Number(monthly?.businessIncome || 0);
+  const sideBusinessExpense = Number(monthly?.businessExpense || 0);
   const sideBusinessProfit = Number(monthly?.businessProfit || 0);
   const recentTransactions = getHomeRecentTransactions_();
 
@@ -763,6 +849,24 @@ function getHomeData() {
 
     availableMoney,
     dailyBudget,
+
+    // Homeの金額を説明できるよう、計算に使った入力値も返す。
+    plannedIncome,
+    salaryPlanned,
+    salaryActual: incomeBreakdown.salaryActual,
+    salaryReceived: incomeBreakdown.salaryReceived,
+    sideIncomePlanned,
+    actualIncome: incomeBreakdown.personalIncomeActual,
+    projectedIncome,
+    fixedExpenseActual: fixedExpense,
+    recurringExpectedTotal: Number(recurringForecast.expectedTotal || 0),
+    recurringRemaining: Number(recurringForecast.remainingTotal || 0),
+    recurringForecastItems: recurringForecast.items || [],
+    variableExpenseActual: variableExpense,
+    fixedExpenseBudget: Number(budgets["固定費予算"] || 0),
+    variableExpenseBudget: Number(budgets["変動費予算"] || 0),
+    budgetInherited: effectiveBudget.inherited === true,
+    budgetInheritedFrom: effectiveBudget.inheritedFrom || "",
 
     // ==========================================================
     // 今月のおすすめ資金配分
@@ -839,6 +943,8 @@ function getHomeData() {
     // その他
     // ==========================================================
 
+    sideBusinessIncome,
+    sideBusinessExpense,
     sideBusinessProfit,
     moneyHealth,
     recentTransactions,

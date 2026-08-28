@@ -8,6 +8,8 @@ import 'widgets/money_card.dart';
 import 'widgets/recent_transaction_card.dart';
 import '../goals/goal_management_page.dart';
 import '../budget/budget_settings_page.dart';
+import '../recurring/recurring_management_page.dart';
+import '../business/business_report_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -29,6 +31,8 @@ class _HomePageState extends State<HomePage> {
   final HomeService _homeService = const HomeService();
 
   late Future<HomeModel> _homeFuture;
+  Future<void>? _reloadFuture;
+  bool _needsRefresh = false;
 
   @override
   void initState() {
@@ -37,11 +41,13 @@ class _HomePageState extends State<HomePage> {
     _homeFuture = _homeService.fetchHome();
 
     AppRefreshController.dataVersion.addListener(_handleAppRefresh);
+    AppRefreshController.activeTabIndex.addListener(_handleActiveTabChanged);
   }
 
   @override
   void dispose() {
     AppRefreshController.dataVersion.removeListener(_handleAppRefresh);
+    AppRefreshController.activeTabIndex.removeListener(_handleActiveTabChanged);
 
     super.dispose();
   }
@@ -51,12 +57,52 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    setState(() {
-      _homeFuture = _homeService.fetchHome();
-    });
+    if (AppRefreshController.activeTabIndex.value != 0) {
+      _needsRefresh = true;
+      return;
+    }
+
+    _reload().catchError((Object _) {});
   }
 
-  Future<void> _reload() async {
+  void _handleActiveTabChanged() {
+    if (!mounted || AppRefreshController.activeTabIndex.value != 0) {
+      return;
+    }
+
+    if (_needsRefresh) {
+      _needsRefresh = false;
+      _reload().catchError((Object _) {});
+    }
+  }
+
+  Future<void> _reload() {
+    final running = _reloadFuture;
+
+    if (running != null) {
+      return running;
+    }
+
+    final future = _performReload();
+    _reloadFuture = future;
+
+    void clearReloadFuture() {
+      if (identical(_reloadFuture, future)) {
+        _reloadFuture = null;
+      }
+    }
+
+    future.then<void>(
+      (_) => clearReloadFuture(),
+      onError: (Object _, StackTrace __) {
+        clearReloadFuture();
+      },
+    );
+
+    return future;
+  }
+
+  Future<void> _performReload() async {
     final future = _homeService.fetchHome();
 
     setState(() {
@@ -105,7 +151,8 @@ class _HomePageState extends State<HomePage> {
     return FutureBuilder<HomeModel>(
       future: _homeFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
 
@@ -129,6 +176,11 @@ class _HomePageState extends State<HomePage> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
             children: [
+              if (snapshot.connectionState == ConnectionState.waiting) ...[
+                const LinearProgressIndicator(minHeight: 2),
+                const SizedBox(height: 12),
+              ],
+
               // ============================================================
               // Header
               // ============================================================
@@ -224,6 +276,97 @@ class _HomePageState extends State<HomePage> {
                   rawLiquidCash: home.liquidCash,
                   formatMoney: _formatMoney,
                 ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // ============================================================
+              // 定期支払い予測
+              // ============================================================
+              if (home.recurringExpectedTotal > 0) ...[
+                _TappableCard(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const RecurringManagementPage(),
+                      ),
+                    );
+                  },
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        children: [
+                          _AllocationRow(
+                            icon: Icons.autorenew_rounded,
+                            label: '毎月の定期支払い見込',
+                            value: _formatMoney(home.recurringExpectedTotal),
+                            subtitle: home.recurringRemaining > 0
+                                ? '今月これから ${_formatMoney(home.recurringRemaining)}'
+                                : '今月分はすべて発生済み',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+
+              // ============================================================
+              // 副業
+              // ============================================================
+              _SectionLabel(
+                title: '副業',
+                icon: Icons.work_outline,
+              ),
+
+              const SizedBox(height: 12),
+
+              _TappableCard(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const BusinessReportPage(),
+                    ),
+                  );
+                },
+                child: Card(
+                  child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      _AllocationRow(
+                        icon: Icons.south_west_rounded,
+                        label: '今月の売上',
+                        value: _formatMoney(home.sideBusinessIncome),
+                      ),
+                      const SizedBox(height: 14),
+                      _AllocationRow(
+                        icon: Icons.north_east_rounded,
+                        label: '今月の経費',
+                        value: _formatMoney(home.sideBusinessExpense),
+                      ),
+                      const SizedBox(height: 14),
+                      _AllocationRow(
+                        icon: Icons.account_balance_wallet_outlined,
+                        label: '今月の利益',
+                        value: _formatMoney(home.sideBusinessProfit),
+                        subtitle: home.sideIncomePlanned > 0
+                            ? '売上予定 ${_formatMoney(home.sideIncomePlanned)}'
+                            : '個人の資金配分には直接含めません',
+                      ),
+                      if (home.sideIncomePlanned > 0) ...[
+                        const SizedBox(height: 14),
+                        const _InfoBox(
+                          icon: Icons.info_outline,
+                          text: '副業のお金は事業Walletとして管理し、個人のNISA・余剰資金には直接含めません。',
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
               ),
 
               const SizedBox(height: 24),
@@ -337,6 +480,15 @@ class _AllocationCard extends StatelessWidget {
 
   final String Function(int) formatMoney;
 
+  String _formatYearMonthLabel(String yearMonth) {
+    final parts = yearMonth.split('-');
+    if (parts.length != 2) {
+      return yearMonth;
+    }
+    final month = int.tryParse(parts[1]);
+    return month == null ? yearMonth : '${parts[0]}年$month月';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -397,6 +549,16 @@ class _AllocationCard extends StatelessWidget {
                 icon: Icons.savings_outlined,
                 label: '未配分',
                 value: formatMoney(home.unallocatedCash),
+              ),
+            ],
+
+            if (home.budgetInherited && home.budgetInheritedFrom.isNotEmpty) ...[
+              const SizedBox(height: 18),
+
+              _InfoBox(
+                icon: Icons.history_rounded,
+                text:
+                    '${_formatYearMonthLabel(home.budgetInheritedFrom)}の予算設定を引き継いで計算しています。',
               ),
             ],
 
@@ -768,6 +930,30 @@ class _EmergencyFundCard extends StatelessWidget {
             const SizedBox(height: 8),
 
             _MoneyRow(label: '現金・預金', value: formatMoney(rawLiquidCash)),
+
+            if (_toInt(emergencyFund['reservedGoalCash']) > 0) ...[
+              const SizedBox(height: 8),
+              _MoneyRow(
+                label: 'うち目的資金として確保',
+                value: '-${formatMoney(_toInt(emergencyFund['reservedGoalCash']))}',
+              ),
+            ],
+
+            if (_toInt(emergencyFund['upcomingCardPayments']) > 0) ...[
+              const SizedBox(height: 8),
+              _MoneyRow(
+                label: 'うちカード支払予定',
+                value: '-${formatMoney(_toInt(emergencyFund['upcomingCardPayments']))}',
+              ),
+            ],
+
+            if (_toInt(emergencyFund['cashNeededUntilPayday']) > 0) ...[
+              const SizedBox(height: 8),
+              _MoneyRow(
+                label: '給料日までの生活費確保',
+                value: '-${formatMoney(_toInt(emergencyFund['cashNeededUntilPayday']))}',
+              ),
+            ],
 
             const SizedBox(height: 8),
 

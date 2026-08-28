@@ -5,6 +5,23 @@ class HomeModel {
     required this.availableMoney,
     required this.dailyBudget,
 
+    required this.plannedIncome,
+    required this.salaryPlanned,
+    required this.salaryActual,
+    required this.salaryReceived,
+    required this.sideIncomePlanned,
+    required this.actualIncome,
+    required this.projectedIncome,
+    required this.fixedExpenseActual,
+    required this.recurringExpectedTotal,
+    required this.recurringRemaining,
+    required this.recurringForecastItems,
+    required this.variableExpenseActual,
+    required this.fixedExpenseBudget,
+    required this.variableExpenseBudget,
+    required this.budgetInherited,
+    required this.budgetInheritedFrom,
+
     required this.monthlySurplus,
 
     required this.goalAllocation,
@@ -33,6 +50,8 @@ class HomeModel {
     required this.totalLiabilities,
     required this.netAssets,
 
+    required this.sideBusinessIncome,
+    required this.sideBusinessExpense,
     required this.sideBusinessProfit,
 
     required this.moneyHealth,
@@ -51,6 +70,24 @@ class HomeModel {
   final int availableMoney;
 
   final int dailyBudget;
+
+  /// Home計算に使用した収入・予算の内訳。
+  final int plannedIncome;
+  final int salaryPlanned;
+  final int salaryActual;
+  final bool salaryReceived;
+  final int sideIncomePlanned;
+  final int actualIncome;
+  final int projectedIncome;
+  final int fixedExpenseActual;
+  final int recurringExpectedTotal;
+  final int recurringRemaining;
+  final List<Map<String, dynamic>> recurringForecastItems;
+  final int variableExpenseActual;
+  final int fixedExpenseBudget;
+  final int variableExpenseBudget;
+  final bool budgetInherited;
+  final String budgetInheritedFrom;
 
   // ============================================================
   // 今月の資金配分
@@ -111,6 +148,8 @@ class HomeModel {
   // その他
   // ============================================================
 
+  final int sideBusinessIncome;
+  final int sideBusinessExpense;
   final int sideBusinessProfit;
 
   final Map<String, dynamic> moneyHealth;
@@ -126,6 +165,26 @@ class HomeModel {
       availableMoney: _toInt(json['availableMoney']),
 
       dailyBudget: _toInt(json['dailyBudget']),
+
+      plannedIncome: _toInt(json['plannedIncome']),
+      salaryPlanned: _toInt(json['salaryPlanned']),
+      salaryActual: _toInt(json['salaryActual']),
+      salaryReceived: json['salaryReceived'] == true,
+      sideIncomePlanned: _toInt(json['sideIncomePlanned']),
+      actualIncome: _toInt(json['actualIncome']),
+      projectedIncome: _toInt(json['projectedIncome']),
+      fixedExpenseActual: _toInt(json['fixedExpenseActual']),
+      recurringExpectedTotal: _toInt(json['recurringExpectedTotal']),
+      recurringRemaining: _toInt(json['recurringRemaining']),
+      recurringForecastItems: (json['recurringForecastItems'] as List? ?? [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList(),
+      variableExpenseActual: _toInt(json['variableExpenseActual']),
+      fixedExpenseBudget: _toInt(json['fixedExpenseBudget']),
+      variableExpenseBudget: _toInt(json['variableExpenseBudget']),
+      budgetInherited: json['budgetInherited'] == true,
+      budgetInheritedFrom: json['budgetInheritedFrom']?.toString() ?? '',
 
       monthlySurplus: _toInt(json['monthlySurplus']),
 
@@ -168,6 +227,8 @@ class HomeModel {
 
       netAssets: _toInt(json['netAssets']),
 
+      sideBusinessIncome: _toInt(json['sideBusinessIncome']),
+      sideBusinessExpense: _toInt(json['sideBusinessExpense']),
       sideBusinessProfit: _toInt(json['sideBusinessProfit']),
 
       moneyHealth: Map<String, dynamic>.from(json['moneyHealth'] as Map? ?? {}),

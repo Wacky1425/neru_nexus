@@ -4,10 +4,50 @@ import '../model/gmail_import_status_model.dart';
 import '../model/transaction_model.dart';
 import '../transaction_form_page.dart';
 
+class TransactionPageResult {
+  const TransactionPageResult({
+    required this.items,
+    required this.total,
+    required this.limit,
+    required this.offset,
+    required this.hasMore,
+  });
+
+  final List<TransactionModel> items;
+  final int total;
+  final int limit;
+  final int offset;
+  final bool hasMore;
+}
+
 class TransactionService {
   const TransactionService();
 
   Future<List<TransactionModel>> fetchTransactions({
+    int limit = 100,
+    int offset = 0,
+    String? yearMonth,
+    String? keyword,
+    String? majorCategory,
+    String? settlementId,
+    String? importBatch,
+    bool reviewOnly = false,
+  }) async {
+    final page = await fetchTransactionPage(
+      limit: limit,
+      offset: offset,
+      yearMonth: yearMonth,
+      keyword: keyword,
+      majorCategory: majorCategory,
+      settlementId: settlementId,
+      importBatch: importBatch,
+      reviewOnly: reviewOnly,
+    );
+
+    return page.items;
+  }
+
+  Future<TransactionPageResult> fetchTransactionPage({
     int limit = 100,
     int offset = 0,
     String? yearMonth,
@@ -39,7 +79,13 @@ class TransactionService {
       queryParameters: parameters,
     );
 
-    return _parseTransactions(data['items'], errorLabel: '取引一覧');
+    return TransactionPageResult(
+      items: _parseTransactions(data['items'], errorLabel: '取引一覧'),
+      total: _toInt(data['total']),
+      limit: _toInt(data['limit']),
+      offset: _toInt(data['offset']),
+      hasMore: data['hasMore'] == true,
+    );
   }
 
   Future<TransactionModel> createTransaction({
@@ -57,6 +103,9 @@ class TransactionService {
         'paymentMethod': transaction.paymentMethod,
         'status': transaction.status,
         'memo': transaction.memo,
+        'purposeType': transaction.purposeType,
+        'expenseRatio': transaction.expenseRatio,
+        'evidenceUrl': transaction.evidenceUrl,
         'accountName': transaction.accountName,
       },
     );
@@ -93,8 +142,12 @@ class TransactionService {
         'subCategory': transaction.subCategory,
         'title': transaction.title,
         'paymentMethod': transaction.paymentMethod,
+        'accountName': transaction.accountName ?? '',
         'status': transaction.status,
         'memo': transaction.memo,
+        'purposeType': transaction.purposeType,
+        'expenseRatio': transaction.expenseRatio,
+        'evidenceUrl': transaction.evidenceUrl,
         'saveRule': saveRule,
         'merchant': merchant,
         'fromAccount': transaction.fromAccount ?? '',

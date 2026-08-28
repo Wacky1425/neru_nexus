@@ -16,6 +16,7 @@ class TransactionsPage extends StatefulWidget {
 }
 
 class _TransactionsPageState extends State<TransactionsPage> {
+  static const int _pageSize = 50;
   final TextEditingController _searchController = TextEditingController();
 
   String _searchKeyword = '';
@@ -29,6 +30,11 @@ class _TransactionsPageState extends State<TransactionsPage> {
   final ReviewService _reviewService = const ReviewService();
 
   Future<int>? _reviewCountFuture;
+  Future<void>? _reloadFuture;
+  bool _needsRefresh = false;
+  bool _loadingMore = false;
+  int _totalCount = 0;
+  bool _hasMore = false;
 
   @override
   void initState() {
@@ -39,6 +45,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
     _reviewCountFuture = _reviewService.fetchReviewCount();
 
     AppRefreshController.dataVersion.addListener(_handleAppRefresh);
+    AppRefreshController.activeTabIndex.addListener(_handleActiveTabChanged);
   }
 
   void _handleAppRefresh() {
@@ -46,16 +53,28 @@ class _TransactionsPageState extends State<TransactionsPage> {
       return;
     }
 
-    setState(() {
-      _transactionsFuture = _fetchTransactions();
+    if (AppRefreshController.activeTabIndex.value != 1) {
+      _needsRefresh = true;
+      return;
+    }
 
-      _reviewCountFuture = _reviewService.fetchReviewCount();
-    });
+    _reload().catchError((Object _) {});
+  }
+
+  void _handleActiveTabChanged() {
+    if (!mounted || AppRefreshController.activeTabIndex.value != 1) {
+      return;
+    }
+
+    if (_needsRefresh) {
+      _needsRefresh = false;
+      _reload().catchError((Object _) {});
+    }
   }
 
   Future<List<TransactionModel>> _fetchTransactions() async {
-    final transactions = await _transactionService.fetchTransactions(
-      limit: 100,
+    final page = await _transactionService.fetchTransactionPage(
+      limit: _pageSize,
       offset: 0,
       keyword: _searchKeyword,
       yearMonth: _selectedYearMonth,
@@ -63,20 +82,96 @@ class _TransactionsPageState extends State<TransactionsPage> {
       reviewOnly: _reviewOnly,
     );
 
-    _transactions = transactions;
+    _transactions = page.items;
+    _totalCount = page.total;
+    _hasMore = page.hasMore;
 
-    return transactions;
+    return page.items;
   }
 
-  Future<void> _reload() async {
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore) {
+      return;
+    }
+
+    setState(() {
+      _loadingMore = true;
+    });
+
+    try {
+      final page = await _transactionService.fetchTransactionPage(
+        limit: _pageSize,
+        offset: _transactions.length,
+        keyword: _searchKeyword,
+        yearMonth: _selectedYearMonth,
+        majorCategory: _selectedMajorCategory,
+        reviewOnly: _reviewOnly,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final existingIds = _transactions.map((item) => item.id).toSet();
+      _transactions.addAll(
+        page.items.where((item) => !existingIds.contains(item.id)),
+      );
+      _transactions.sort(
+        (a, b) => b.transactionDate.compareTo(a.transactionDate),
+      );
+
+      setState(() {
+        _totalCount = page.total;
+        _hasMore = page.hasMore;
+        _transactionsFuture = Future.value(
+          List<TransactionModel>.from(_transactions),
+        );
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingMore = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _reload() {
+    final running = _reloadFuture;
+
+    if (running != null) {
+      return running;
+    }
+
+    final future = _performReload();
+    _reloadFuture = future;
+
+    void clearReloadFuture() {
+      if (identical(_reloadFuture, future)) {
+        _reloadFuture = null;
+      }
+    }
+
+    future.then<void>(
+      (_) => clearReloadFuture(),
+      onError: (Object _, StackTrace __) {
+        clearReloadFuture();
+      },
+    );
+
+    return future;
+  }
+
+  Future<void> _performReload() async {
     final transactionsFuture = _fetchTransactions();
+    final reviewCountFuture = _reviewService.fetchReviewCount();
 
     setState(() {
       _transactionsFuture = transactionsFuture;
-      _reviewCountFuture = _reviewService.fetchReviewCount();
+      _reviewCountFuture = reviewCountFuture;
     });
 
-    await transactionsFuture;
+    await Future.wait<dynamic>([transactionsFuture, reviewCountFuture]);
   }
 
   Future<void> _applyTransactionResult(
@@ -102,12 +197,21 @@ class _TransactionsPageState extends State<TransactionsPage> {
           return;
         }
 
-        _transactions[index] = updated;
+        final stillMatches = _matchesCurrentFilters(updated);
 
-        // 日付変更時などの表示順も維持する
-        _transactions.sort(
-          (a, b) => b.transactionDate.compareTo(a.transactionDate),
-        );
+        if (stillMatches) {
+          _transactions[index] = updated;
+
+          // 日付変更時などの表示順も維持する
+          _transactions.sort(
+            (a, b) => b.transactionDate.compareTo(a.transactionDate),
+          );
+        } else {
+          _transactions.removeAt(index);
+          if (_totalCount > 0) {
+            _totalCount--;
+          }
+        }
 
         final newNeedsReview =
             updated.status == '要確認' || updated.settlementStatus == 'review';
@@ -126,7 +230,11 @@ class _TransactionsPageState extends State<TransactionsPage> {
         break;
 
       case TransactionDetailResultType.deleted:
+        final beforeLength = _transactions.length;
         _transactions.removeWhere((item) => item.id == original.id);
+        if (_transactions.length < beforeLength && _totalCount > 0) {
+          _totalCount--;
+        }
 
         setState(() {
           _transactionsFuture = Future.value(
@@ -138,6 +246,10 @@ class _TransactionsPageState extends State<TransactionsPage> {
           }
         });
 
+        break;
+
+      case TransactionDetailResultType.refresh:
+        await _reload();
         break;
     }
   }
@@ -213,6 +325,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
 
     if (shouldShow) {
       _transactions.insert(0, created);
+      _totalCount++;
 
       _transactions.sort(
         (a, b) => b.transactionDate.compareTo(a.transactionDate),
@@ -242,6 +355,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
   void dispose() {
     _searchController.dispose();
     AppRefreshController.dataVersion.removeListener(_handleAppRefresh);
+    AppRefreshController.activeTabIndex.removeListener(_handleActiveTabChanged);
 
     super.dispose();
   }
@@ -306,7 +420,8 @@ class _TransactionsPageState extends State<TransactionsPage> {
       body: FutureBuilder<List<TransactionModel>>(
         future: _transactionsFuture ?? _fetchTransactions(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
 
@@ -336,6 +451,11 @@ class _TransactionsPageState extends State<TransactionsPage> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
               children: [
+                if (snapshot.connectionState == ConnectionState.waiting) ...[
+                  const LinearProgressIndicator(minHeight: 2),
+                  const SizedBox(height: 10),
+                ],
+
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -478,7 +598,9 @@ class _TransactionsPageState extends State<TransactionsPage> {
                 const SizedBox(height: 8),
 
                 Text(
-                  '${filteredTransactions.length}件表示',
+                  _totalCount > filteredTransactions.length
+                      ? '${filteredTransactions.length} / $_totalCount件表示'
+                      : '${filteredTransactions.length}件表示',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
 
@@ -498,6 +620,27 @@ class _TransactionsPageState extends State<TransactionsPage> {
                 const SizedBox(height: 12),
 
                 ..._buildGroupedTransactions(context, filteredTransactions),
+
+                if (_hasMore) ...[
+                  const SizedBox(height: 8),
+                  Center(
+                    child: OutlinedButton.icon(
+                      onPressed: _loadingMore ? null : _loadMore,
+                      icon: _loadingMore
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.expand_more),
+                      label: Text(
+                        _loadingMore
+                            ? '読み込み中…'
+                            : 'さらに読み込む（残り ${(_totalCount - filteredTransactions.length).clamp(0, _totalCount)}件）',
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           );
@@ -894,10 +1037,10 @@ class _TransactionTile extends StatelessWidget {
         ? colorScheme.tertiary
         : colorScheme.error;
 
-    final displayName = transaction.merchant.trim().isNotEmpty
-        ? transaction.merchant.trim()
-        : transaction.itemName.trim().isNotEmpty
+    final displayName = transaction.itemName.trim().isNotEmpty
         ? transaction.itemName.trim()
+        : transaction.merchant.trim().isNotEmpty
+        ? transaction.merchant.trim()
         : '名称なし';
 
     final category = transaction.subCategory.trim().isNotEmpty
@@ -993,10 +1136,10 @@ class _TransactionTile extends StatelessWidget {
       context: context,
       showDragHandle: true,
       builder: (sheetContext) {
-        final displayName = transaction.merchant.trim().isNotEmpty
-            ? transaction.merchant.trim()
-            : transaction.itemName.trim().isNotEmpty
+        final displayName = transaction.itemName.trim().isNotEmpty
             ? transaction.itemName.trim()
+            : transaction.merchant.trim().isNotEmpty
+            ? transaction.merchant.trim()
             : '名称なし';
 
         return SafeArea(

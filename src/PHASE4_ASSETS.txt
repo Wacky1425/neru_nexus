@@ -1,0 +1,6 @@
+Phase 4 Assets
+- account_create / account_updateでasset_typeを保存
+- 既存asset_type空欄をpayment_method / 口座名 / 金融機関から推定
+- account_balances APIに liquidAssets / investmentAssets / otherAssetsを追加
+- 負残高を総資産/総負債へ負数加算しないよう集計を防御
+- testAccountAssetTypeHelpersをregressionへ追加

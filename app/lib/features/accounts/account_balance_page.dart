@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'model/account_balance_model.dart';
 import 'service/account_balance_service.dart';
 
+import '../investments/investment_holdings_page.dart';
 import '../settlement/settlement_status_page.dart';
 import '../settlement/service/settlement_service.dart';
 
@@ -30,6 +31,7 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
   Object? _error;
 
   int _settlementReviewCount = 0;
+  bool _needsRefresh = false;
 
   @override
   void initState() {
@@ -44,6 +46,7 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
     AppRefreshController.accountBalanceVersion.addListener(
       _handleAccountBalanceRefresh,
     );
+    AppRefreshController.activeTabIndex.addListener(_handleActiveTabChanged);
 
     _initialize();
   }
@@ -68,17 +71,17 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
       }
     }
 
-    await _load();
+    final tasks = <Future<void>>[_load()];
 
     /*
      * 照合キャッシュがまだ無い場合だけ取得。
-     *
-     * 既に照合画面を開いたことがある場合は
-     * キャッシュ件数をそのまま使う。
+     * 口座残高とは独立しているため並列取得する。
      */
     if (!SettlementService.hasCache) {
-      await _loadSettlementStatus();
+      tasks.add(_loadSettlementStatus());
     }
+
+    await Future.wait(tasks);
   }
 
   // ============================================================
@@ -135,7 +138,23 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
       return;
     }
 
+    if (AppRefreshController.activeTabIndex.value != 4) {
+      _needsRefresh = true;
+      return;
+    }
+
     _load();
+  }
+
+  void _handleActiveTabChanged() {
+    if (!mounted || AppRefreshController.activeTabIndex.value != 4) {
+      return;
+    }
+
+    if (_needsRefresh) {
+      _needsRefresh = false;
+      _load();
+    }
   }
 
   // ============================================================
@@ -177,6 +196,16 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
     }
   }
 
+  Future<void> _openInvestmentHoldings() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const InvestmentHoldingsPage()),
+    );
+
+    if (!mounted) return;
+    AccountBalanceService.clearCache();
+    await _load();
+  }
+
   Future<void> _openSettlementStatus() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(builder: (_) => const SettlementStatusPage()),
@@ -216,6 +245,7 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
     AppRefreshController.accountBalanceVersion.removeListener(
       _handleAccountBalanceRefresh,
     );
+    AppRefreshController.activeTabIndex.removeListener(_handleActiveTabChanged);
 
     super.dispose();
   }
@@ -278,6 +308,22 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
 
                 const SizedBox(height: 16),
 
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.show_chart),
+                    title: const Text('投資ポートフォリオ'),
+                    subtitle: Text(
+                      result.investmentAssets > 0
+                          ? '保有銘柄・口数・評価額を確認'
+                          : '保有銘柄を登録して評価額を自動更新',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _openInvestmentHoldings,
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
                 // =================================================
                 // カード照合
                 // =================================================
@@ -289,18 +335,51 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
 
                 const SizedBox(height: 24),
 
-                Text(
-                  '口座',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                ),
+                if (result.items.any((account) => account.isAsset)) ...[
+                  Text(
+                    '資産口座',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...result.items
+                      .where((account) => account.isAsset)
+                      .map((account) => _AccountCard(account: account)),
+                ],
 
-                const SizedBox(height: 12),
+                if (result.items.any((account) => account.isLiability)) ...[
+                  const SizedBox(height: 24),
+                  Text(
+                    '負債',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...result.items
+                      .where((account) => account.isLiability)
+                      .map((account) => _AccountCard(account: account)),
+                ],
 
-                ...result.items.map(
-                  (account) => _AccountCard(account: account),
-                ),
+                if (result.items.any(
+                  (account) => !account.isAsset && !account.isLiability,
+                )) ...[
+                  const SizedBox(height: 24),
+                  Text(
+                    'その他',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...result.items
+                      .where(
+                        (account) =>
+                            !account.isAsset && !account.isLiability,
+                      )
+                      .map((account) => _AccountCard(account: account)),
+                ],
               ],
             ),
           );
@@ -352,6 +431,25 @@ class _SummaryCard extends StatelessWidget {
                 ),
               ],
             ),
+
+            const Divider(height: 32),
+
+            _AccountAmountRow(
+              label: '現金・預金',
+              value: _formatYen(result.liquidAssets),
+            ),
+            const SizedBox(height: 8),
+            _AccountAmountRow(
+              label: '投資',
+              value: _formatYen(result.investmentAssets),
+            ),
+            if (result.otherAssets != 0) ...[
+              const SizedBox(height: 8),
+              _AccountAmountRow(
+                label: 'その他資産',
+                value: _formatYen(result.otherAssets),
+              ),
+            ],
           ],
         ),
       ),

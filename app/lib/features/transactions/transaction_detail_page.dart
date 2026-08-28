@@ -6,18 +6,27 @@ import 'transaction_form_page.dart';
 
 enum TransactionDetailAction { edit, manualConfirm, ignore, delete }
 
-enum TransactionDetailResultType { updated, deleted }
+enum TransactionDetailResultType { updated, deleted, refresh }
 
 class TransactionDetailResult {
-  const TransactionDetailResult.updated(this.transaction)
-    : type = TransactionDetailResultType.updated;
+  const TransactionDetailResult.updated(
+    this.transaction, {
+    this.refreshReview = false,
+  }) : type = TransactionDetailResultType.updated;
 
   const TransactionDetailResult.deleted()
     : type = TransactionDetailResultType.deleted,
-      transaction = null;
+      transaction = null,
+      refreshReview = false;
+
+  const TransactionDetailResult.refresh()
+    : type = TransactionDetailResultType.refresh,
+      transaction = null,
+      refreshReview = true;
 
   final TransactionDetailResultType type;
   final TransactionModel? transaction;
+  final bool refreshReview;
 }
 
 class TransactionDetailPage extends StatefulWidget {
@@ -203,6 +212,24 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                             '正式なCSV明細ではまだ確定していません。',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
+                          if (transaction.sourceReceivedAt.trim().isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              '速報受信日時：${transaction.sourceReceivedAt}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                          if (transaction.isStalePreliminary) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              '正式CSV未確認のまま30日以上経過しています。',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -217,6 +244,10 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
 
           _Item(title: '内容', value: _displayName(transaction)),
 
+          if (transaction.merchant.trim().isNotEmpty &&
+              transaction.merchant.trim() != transaction.itemName.trim())
+            _Item(title: '店名・取引先', value: transaction.merchant.trim()),
+
           _Item(title: '大カテゴリ', value: transaction.majorCategory),
 
           _Item(title: '小カテゴリ', value: transaction.subCategory),
@@ -228,6 +259,18 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
           _Item(title: 'Intent', value: transaction.intent),
 
           _Item(title: '分類状態', value: transaction.status),
+
+          if (transaction.purposeType.trim().isNotEmpty)
+            _Item(title: '用途', value: transaction.purposeType),
+
+          if (transaction.purposeType == '経費')
+            _Item(
+              title: '経費率',
+              value: '${(transaction.expenseRatio * 100).round()}%（${_formatYen(transaction.expenseAmount)}）',
+            ),
+
+          if (transaction.evidenceUrl.trim().isNotEmpty)
+            _Item(title: '証憑URL', value: transaction.evidenceUrl),
 
           if (transaction.isPreliminary)
             const _Item(title: 'データ状態', value: '速報（CSV未確定）'),
@@ -479,7 +522,12 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
 
     Navigator.of(
       context,
-    ).pop(TransactionDetailResult.updated(updatedTransaction));
+    ).pop(
+      TransactionDetailResult.updated(
+        updatedTransaction,
+        refreshReview: result.savedRule,
+      ),
+    );
   }
 
   Future<void> _manualConfirmTransaction(BuildContext context) async {
@@ -727,7 +775,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
         return;
       }
 
-      Navigator.of(context).pop(TransactionDetailResult.updated);
+      Navigator.of(context).pop(const TransactionDetailResult.refresh());
     } catch (error) {
       if (!mounted) {
         return;

@@ -1,0 +1,6 @@
+Phase 2 Home / Money Allocation 完成版
+- Home個人収入を取引明細から再集計
+- 給与入金前: 給与予定を採用 / 入金後: 給与実績へ置換
+- 事業Wallet収入は個人のprojectedIncomeへ直接混ぜない
+- businessIncome / businessExpense / businessProfit をHome APIへ返却
+- 生活防衛資金は既存の安全側控除を維持

@@ -17,6 +17,8 @@ class AnalyticsPage extends StatefulWidget {
 class _AnalyticsPageState extends State<AnalyticsPage> {
   late DateTime _selectedMonth;
   late Future<AnalyticsModel> _analyticsFuture;
+  Future<void>? _reloadFuture;
+  bool _needsRefresh = false;
 
   @override
   void initState() {
@@ -29,6 +31,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     _analyticsFuture = _fetchSelectedMonth();
 
     AppRefreshController.dataVersion.addListener(_handleAppRefresh);
+    AppRefreshController.activeTabIndex.addListener(_handleActiveTabChanged);
   }
 
   void _handleAppRefresh() {
@@ -36,9 +39,23 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       return;
     }
 
-    setState(() {
-      _analyticsFuture = _fetchSelectedMonth();
-    });
+    if (AppRefreshController.activeTabIndex.value != 3) {
+      _needsRefresh = true;
+      return;
+    }
+
+    _reload().catchError((Object _) {});
+  }
+
+  void _handleActiveTabChanged() {
+    if (!mounted || AppRefreshController.activeTabIndex.value != 3) {
+      return;
+    }
+
+    if (_needsRefresh) {
+      _needsRefresh = false;
+      _reload().catchError((Object _) {});
+    }
   }
 
   Future<AnalyticsModel> _fetchSelectedMonth() {
@@ -82,17 +99,46 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     });
   }
 
-  Future<void> _reload() async {
+  Future<void> _reload() {
+    final running = _reloadFuture;
+
+    if (running != null) {
+      return running;
+    }
+
+    final future = _performReload();
+    _reloadFuture = future;
+
+    void clearReloadFuture() {
+      if (identical(_reloadFuture, future)) {
+        _reloadFuture = null;
+      }
+    }
+
+    future.then<void>(
+      (_) => clearReloadFuture(),
+      onError: (Object _, StackTrace __) {
+        clearReloadFuture();
+      },
+    );
+
+    return future;
+  }
+
+  Future<void> _performReload() async {
+    final future = _fetchSelectedMonth();
+
     setState(() {
-      _analyticsFuture = _fetchSelectedMonth();
+      _analyticsFuture = future;
     });
 
-    await _analyticsFuture;
+    await future;
   }
 
   @override
   void dispose() {
     AppRefreshController.dataVersion.removeListener(_handleAppRefresh);
+    AppRefreshController.activeTabIndex.removeListener(_handleActiveTabChanged);
 
     super.dispose();
   }
@@ -103,7 +149,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       child: FutureBuilder<AnalyticsModel>(
         future: _analyticsFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
 
@@ -123,6 +170,11 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
               children: [
+                if (snapshot.connectionState == ConnectionState.waiting) ...[
+                  const LinearProgressIndicator(minHeight: 2),
+                  const SizedBox(height: 12),
+                ],
+
                 Text(
                   'Analytics',
                   style: Theme.of(context).textTheme.headlineMedium,

@@ -18,6 +18,7 @@ class _AccountCreatePageState extends State<AccountCreatePage> {
 
   String _paymentMethod = '銀行';
   String _wallet = '生活';
+  String _assetType = 'cash';
 
   bool _isLiability = false;
   bool _saving = false;
@@ -96,6 +97,7 @@ class _AccountCreatePageState extends State<AccountCreatePage> {
         paymentMethod: _paymentMethod,
         wallet: _wallet,
         institution: institution,
+        assetType: _isLiability ? 'liability' : _assetType,
         isAsset: !_isLiability,
         isLiability: _isLiability,
         openingBalance: openingBalance,
@@ -249,7 +251,28 @@ class _AccountCreatePageState extends State<AccountCreatePage> {
             },
           ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
+
+          if (!_isLiability)
+            DropdownButtonFormField<String>(
+              initialValue: _assetType,
+              decoration: const InputDecoration(
+                labelText: '資産区分',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'cash', child: Text('現金・預金')),
+                DropdownMenuItem(value: 'investment', child: Text('投資')),
+                DropdownMenuItem(value: 'other', child: Text('その他資産')),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _assetType = value);
+                }
+              },
+            ),
+
+          if (!_isLiability) const SizedBox(height: 24),
 
           TextField(
             controller: _balanceController,
