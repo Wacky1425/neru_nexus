@@ -1,0 +1,20 @@
+Neru Nexus V1.1-2 Business Report Enhancement
+
+Implemented:
+- Annual business KPIs: profit margin, effective expense ratio, evidence coverage.
+- Monthly sales / deductible expense / profit chart.
+- Best-profit and worst-profit month.
+- Monthly evidence-missing counts.
+- Expense category share of deductible expenses.
+- Dedicated evidence-missing transaction section.
+- Existing tax CSV export remains unchanged and compatible.
+- GAS report now returns enhanced KPI fields and evidenceMissingItems.
+- Regression test strengthened; Flutter model test added.
+
+No spreadsheet migration is required.
+
+After deployment:
+1. Deploy GAS.
+2. Run runReleaseChecks().
+3. Run flutter test and flutter analyze.
+4. Open Settings/Home > 配信・副業 and confirm the enhanced report.

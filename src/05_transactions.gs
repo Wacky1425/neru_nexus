@@ -73,51 +73,73 @@ function findTransactionById_(id) {
   };
 }
 
-function buildTransactionRow(tx, id, createdAt, yearMonth, duplicateKey) {
+function buildTransactionRecord_(tx, id, createdAt, yearMonth, duplicateKey) {
   const amount = Number(tx.amount || 0);
   const expenseRatio = Number(tx.expense_ratio || 0);
 
-  return [
+  return {
     id,
-    tx.transaction_date || "",
+    transaction_date: tx.transaction_date || "",
+    recorded_at: createdAt,
+    year_month: yearMonth,
+    type: tx.type || "",
+    source_type: tx.source_type || "manual",
+    payment_method: tx.payment_method || "",
+    account_name: tx.account_name || "",
+    merchant: tx.merchant || "",
+    item_name: tx.item_name || "",
+    raw_text: tx.raw_text || "",
+    amount,
+    major_category: tx.major_category || "",
+    sub_category: tx.sub_category || "",
+    purpose_type: tx.purpose_type || "",
+    expense_ratio: expenseRatio,
+    expense_amount: amount * expenseRatio,
+    note: tx.note || "",
+    evidence_url: tx.evidence_url || "",
+    original_image_url: tx.original_image_url || "",
+    import_batch: tx.import_batch || "",
+    duplicate_key: duplicateKey,
+    status: tx.status || "",
+    wallet: tx.wallet || "生活",
+    intent: tx.intent || "その他",
+    from_account: tx.from_account || "",
+    to_account: tx.to_account || "",
+    settlement_status: tx.settlement_status || "",
+    settlement_id: tx.settlement_id || "",
+    source_id: tx.source_id || "",
+    source_status: tx.source_status || "",
+    source_received_at: tx.source_received_at || "",
+    major_category_id: tx.major_category_id || "",
+    sub_category_id: tx.sub_category_id || "",
+    account_id: tx.account_id || "",
+    from_account_id: tx.from_account_id || "",
+    to_account_id: tx.to_account_id || "",
+  };
+}
+
+function buildTransactionRow(
+  tx,
+  id,
+  createdAt,
+  yearMonth,
+  duplicateKey,
+  fallbackRow,
+) {
+  const table = repositoryLoadTable_(SHEETS.TRANSACTIONS);
+  const record = buildTransactionRecord_(
+    tx,
+    id,
     createdAt,
     yearMonth,
-    tx.type || "",
-    tx.source_type || "manual",
-    tx.payment_method || "",
-    tx.account_name || "",
-    tx.merchant || "",
-    tx.item_name || "",
-    tx.raw_text || "",
-    amount,
-    tx.major_category || "",
-    tx.sub_category || "",
-    tx.purpose_type || "",
-    expenseRatio,
-    amount * expenseRatio,
-    tx.note || "",
-    tx.evidence_url || "",
-    tx.original_image_url || "",
-    tx.import_batch || "",
     duplicateKey,
-    tx.status || "",
-    tx.wallet || "生活",
-    tx.intent || "その他",
+  );
 
-    tx.from_account || "",
-    tx.to_account || "",
-    tx.settlement_status || "",
-    tx.settlement_id || "",
-
-    // Gmail速報など、元データの一意ID
-    tx.source_id || "",
-
-    // preliminary / confirmed / ignored / manual_confirmed
-    tx.source_status || "",
-
-    // 元データを受信した日時
-    tx.source_received_at || "",
-  ];
+  return objectToRowByHeaders_(
+    table.headers,
+    record,
+    fallbackRow,
+  );
 }
 
 function resolveTransactionYearMonth(transactionDate, fallbackDate) {
@@ -198,21 +220,15 @@ function normalizeDuplicateDate_(value) {
 }
 
 function getExistingDuplicateKeyCounts() {
-  const sheet = SS.getSheetByName(SHEETS.TRANSACTIONS);
-
-  if (!sheet) {
-    throw new Error(`${SHEETS.TRANSACTIONS}シートがありません`);
-  }
-
-  const values = sheet.getDataRange().getValues();
-
+  const table = repositoryLoadTable_(SHEETS.TRANSACTIONS);
+  const values = table.values;
   const counts = new Map();
 
   if (values.length < 2) {
     return counts;
   }
 
-  const index = createHeaderIndex(values[0]);
+  const index = table.index;
 
   assertRequiredColumns(
     index,
@@ -286,12 +302,11 @@ function loadMerchantAliases() {
 
   if (!sheet) return new Map();
 
-  const values = sheet.getDataRange().getValues();
+  const table = repositoryLoadTable_(SHEETS.MERCHANT_ALIAS);
+  const values = table.values;
   if (values.length < 2) return new Map();
 
-  const headers = values[0];
-  const idx = {};
-  headers.forEach((h, i) => (idx[h] = i));
+  const idx = table.index;
 
   const map = new Map();
 
@@ -323,15 +338,45 @@ function appendTransactionRows(rows) {
     return 0;
   }
 
-  const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
+  const table = repositoryLoadTable_(SHEETS.TRANSACTIONS);
+  const headers = table.headers.map((value) => String(value || "").trim());
 
-  sheet
-    .getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length)
-    .setValues(rows);
+  if (
+    !headers.includes("major_category_id") ||
+    !headers.includes("sub_category_id")
+  ) {
+    throw new Error(
+      "V2.0-1移行が未実施です。migrateV201CategoryIds()を先に実行してください",
+    );
+  }
 
-  clearTableCache(SHEETS.TRANSACTIONS);
+  if (
+    !headers.includes("account_id") ||
+    !headers.includes("from_account_id") ||
+    !headers.includes("to_account_id")
+  ) {
+    throw new Error(
+      "V2.0-2移行が未実施です。migrateV202AccountIds()を先に実行してください",
+    );
+  }
+
+  const objects = rows.map((row) => {
+    if (!Array.isArray(row) || row.length !== headers.length) {
+      throw new Error(
+        `T_Transactions列数不一致: row=${row && row.length}, headers=${headers.length}`,
+      );
+    }
+
+    return rowToObject(headers, row);
+  });
+
+  const addedCount = repositoryAppendObjects_(
+    SHEETS.TRANSACTIONS,
+    objects,
+  );
+
   clearAccountBalanceCache_();
-  return rows.length;
+  return addedCount;
 }
 
 function addTransactions(transactions, options = {}) {
@@ -360,11 +405,81 @@ function addTransactions(transactions, options = {}) {
 
   let skippedCount = 0;
 
+  const accountIdentityLookup = buildAccountIdentityLookup_();
+
   for (const originalTransaction of transactions) {
+    const categoryIdentity = resolveCategoryIdentity_(
+      originalTransaction.type,
+      originalTransaction.major_category,
+      originalTransaction.sub_category,
+    );
+
+    const accountIdentity = resolveAccountIdentity_(
+      originalTransaction.account_name,
+      accountIdentityLookup,
+    );
+    const fromAccountIdentity = resolveAccountIdentity_(
+      originalTransaction.from_account,
+      accountIdentityLookup,
+    );
+    const toAccountIdentity = resolveAccountIdentity_(
+      originalTransaction.to_account,
+      accountIdentityLookup,
+    );
+
+    if (
+      String(originalTransaction.account_name || "").trim() &&
+      !accountIdentity.resolved
+    ) {
+      throw new Error(
+        `取引口座「${originalTransaction.account_name}」をM_Accountsから解決できません`,
+      );
+    }
+
+    if (
+      String(originalTransaction.from_account || "").trim() &&
+      !fromAccountIdentity.resolved
+    ) {
+      throw new Error(
+        `移動元口座「${originalTransaction.from_account}」をM_Accountsから解決できません`,
+      );
+    }
+
+    if (
+      String(originalTransaction.to_account || "").trim() &&
+      !toAccountIdentity.resolved
+    ) {
+      throw new Error(
+        `移動先口座「${originalTransaction.to_account}」をM_Accountsから解決できません`,
+      );
+    }
+
     const tx = {
       ...originalTransaction,
 
-      account_name: resolveCanonicalAccountName_(originalTransaction.account_name),
+      account_name: accountIdentity.accountName,
+      from_account: fromAccountIdentity.accountName,
+      to_account: toAccountIdentity.accountName,
+
+      account_id:
+        String(originalTransaction.account_id || "").trim() ||
+        accountIdentity.accountId,
+
+      from_account_id:
+        String(originalTransaction.from_account_id || "").trim() ||
+        fromAccountIdentity.accountId,
+
+      to_account_id:
+        String(originalTransaction.to_account_id || "").trim() ||
+        toAccountIdentity.accountId,
+
+      major_category_id:
+        String(originalTransaction.major_category_id || "").trim() ||
+        categoryIdentity.majorCategoryId,
+
+      sub_category_id:
+        String(originalTransaction.sub_category_id || "").trim() ||
+        categoryIdentity.subCategoryId,
     };
 
     const duplicateKey = buildDuplicateKey(tx);
@@ -443,11 +558,15 @@ function createTransactionFromApp_(data) {
 
   const subCategory = String(data.subCategory || "").trim();
 
+  const requestedMajorCategoryId = String(data.majorCategoryId || "").trim();
+  const requestedSubCategoryId = String(data.subCategoryId || "").trim();
+
   const title = String(data.title || "").trim();
 
   const paymentMethod = String(data.paymentMethod || "").trim();
 
   const accountName = String(data.accountName || "").trim();
+  const requestedAccountId = String(data.accountId || "").trim();
 
   const status = String(data.status || "要確認").trim();
 
@@ -459,6 +578,8 @@ function createTransactionFromApp_(data) {
 
   const fromAccount = String(data.fromAccount || "").trim();
   const toAccount = String(data.toAccount || "").trim();
+  const requestedFromAccountId = String(data.fromAccountId || "").trim();
+  const requestedToAccountId = String(data.toAccountId || "").trim();
 
   if (!transactionDate) {
     throw new Error("transactionDateは必須です");
@@ -515,6 +636,56 @@ function createTransactionFromApp_(data) {
     }
   }
 
+  const accountIdentity =
+    type === "移動"
+      ? validateRequestedAccountIdentity_(
+          requestedFromAccountId,
+          fromAccount,
+          "移動元口座",
+        )
+      : validateRequestedAccountIdentity_(
+          requestedAccountId,
+          accountName,
+          "利用口座",
+        );
+
+  const fromAccountIdentity =
+    type === "移動"
+      ? validateRequestedAccountIdentity_(
+          requestedFromAccountId,
+          fromAccount,
+          "移動元口座",
+        )
+      : { accountId: "", accountName: "", resolved: false };
+
+  const toAccountIdentity =
+    type === "移動"
+      ? validateRequestedAccountIdentity_(
+          requestedToAccountId,
+          toAccount,
+          "移動先口座",
+        )
+      : { accountId: "", accountName: "", resolved: false };
+
+  const categoryIdentity = resolveCategoryIdentity_(
+    type,
+    majorCategory,
+    subCategory,
+  );
+
+  if (!categoryIdentity.resolved) {
+    throw new Error("指定されたカテゴリをM_Categoriesから解決できません");
+  }
+
+  if (
+    (requestedMajorCategoryId &&
+      requestedMajorCategoryId !== categoryIdentity.majorCategoryId) ||
+    (requestedSubCategoryId &&
+      requestedSubCategoryId !== categoryIdentity.subCategoryId)
+  ) {
+    throw new Error("カテゴリIDとカテゴリ名が一致しません");
+  }
+
   const purposeType =
     type === "移動"
       ? "私用"
@@ -567,27 +738,32 @@ function createTransactionFromApp_(data) {
 
     sub_category: subCategory,
 
+    major_category_id: categoryIdentity.majorCategoryId,
+
+    sub_category_id: categoryIdentity.subCategoryId,
+
     purpose_type: purposeType,
 
     expense_ratio: expenseRatio,
 
     status: status,
 
-    account_name:
-      type === "移動"
-        ? resolveCanonicalAccountName_(fromAccount)
-        : accountName,
+    account_name: accountIdentity.accountName,
+
+    account_id: accountIdentity.accountId,
 
     wallet,
 
     intent:
       type === "収入" ? "収入" : guessIntent(type, majorCategory, subCategory),
 
-    from_account:
-      type === "移動" ? resolveCanonicalAccountName_(fromAccount) : "",
+    from_account: fromAccountIdentity.accountName,
 
-    to_account:
-      type === "移動" ? resolveCanonicalAccountName_(toAccount) : "",
+    from_account_id: fromAccountIdentity.accountId,
+
+    to_account: toAccountIdentity.accountName,
+
+    to_account_id: toAccountIdentity.accountId,
 
     settlement_status: type === "移動" ? "none" : "",
 
@@ -644,6 +820,10 @@ function createTransactionFromApp_(data) {
 
         subCategory: tx.sub_category,
 
+        majorCategoryId: tx.major_category_id || "",
+
+        subCategoryId: tx.sub_category_id || "",
+
         status: tx.status,
 
         purposeType: tx.purpose_type || "",
@@ -659,6 +839,8 @@ function createTransactionFromApp_(data) {
 
         accountName: tx.account_name || "",
 
+        accountId: tx.account_id || "",
+
         rawText: tx.raw_text || "",
 
         settlementStatus: tx.settlement_status || "",
@@ -667,7 +849,11 @@ function createTransactionFromApp_(data) {
 
         fromAccount: tx.from_account || "",
 
+        fromAccountId: tx.from_account_id || "",
+
         toAccount: tx.to_account || "",
+
+        toAccountId: tx.to_account_id || "",
 
         importBatch: tx.import_batch || "",
 
@@ -693,11 +879,15 @@ function updateTransactionFromApp_(data) {
 
   const subCategory = String(data.subCategory || "").trim();
 
+  const requestedMajorCategoryId = String(data.majorCategoryId || "").trim();
+  const requestedSubCategoryId = String(data.subCategoryId || "").trim();
+
   const title = String(data.title || "").trim();
 
   const paymentMethod = String(data.paymentMethod || "").trim();
 
   const accountName = String(data.accountName || "").trim();
+  const requestedAccountId = String(data.accountId || "").trim();
 
   const status = String(data.status || "要確認").trim();
 
@@ -714,6 +904,9 @@ function updateTransactionFromApp_(data) {
   const fromAccount = String(data.fromAccount || "").trim();
 
   const toAccount = String(data.toAccount || "").trim();
+
+  const requestedFromAccountId = String(data.fromAccountId || "").trim();
+  const requestedToAccountId = String(data.toAccountId || "").trim();
 
   if (!id) {
     throw new Error("idは必須です");
@@ -796,6 +989,11 @@ function updateTransactionFromApp_(data) {
       "source_id",
       "source_status",
       "source_received_at",
+      "major_category_id",
+      "sub_category_id",
+      "account_id",
+      "from_account_id",
+      "to_account_id",
     ],
     SHEETS.TRANSACTIONS,
   );
@@ -889,6 +1087,61 @@ function updateTransactionFromApp_(data) {
 
   const intent = type === "収入" ? "収入" : guessIntent(type, majorCategory, subCategory);
 
+  const categoryIdentity = resolveCategoryIdentity_(
+    type,
+    majorCategory,
+    subCategory,
+  );
+
+  if (!categoryIdentity.resolved) {
+    throw new Error("指定されたカテゴリをM_Categoriesから解決できません");
+  }
+
+  if (
+    (requestedMajorCategoryId &&
+      requestedMajorCategoryId !== categoryIdentity.majorCategoryId) ||
+    (requestedSubCategoryId &&
+      requestedSubCategoryId !== categoryIdentity.subCategoryId)
+  ) {
+    throw new Error("カテゴリIDとカテゴリ名が一致しません");
+  }
+
+  const effectiveAccountName = isImportedTransaction
+    ? getString(existingRow, tableIndex, "account_name")
+    : type === "移動"
+      ? fromAccount || getString(existingRow, tableIndex, "from_account")
+      : accountName || getString(existingRow, tableIndex, "account_name");
+
+  const accountIdentity = validateRequestedAccountIdentity_(
+    isImportedTransaction
+      ? getString(existingRow, tableIndex, "account_id")
+      : type === "移動"
+        ? requestedFromAccountId
+        : requestedAccountId,
+    effectiveAccountName,
+    type === "移動" ? "移動元口座" : "利用口座",
+  );
+
+  const fromAccountIdentity =
+    type === "移動"
+      ? validateRequestedAccountIdentity_(
+          requestedFromAccountId ||
+            getString(existingRow, tableIndex, "from_account_id"),
+          fromAccount || getString(existingRow, tableIndex, "from_account"),
+          "移動元口座",
+        )
+      : { accountId: "", accountName: "", resolved: false };
+
+  const toAccountIdentity =
+    type === "移動"
+      ? validateRequestedAccountIdentity_(
+          requestedToAccountId ||
+            getString(existingRow, tableIndex, "to_account_id"),
+          toAccount || getString(existingRow, tableIndex, "to_account"),
+          "移動先口座",
+        )
+      : { accountId: "", accountName: "", resolved: false };
+
   const updatedTransaction = {
     transaction_date: transactionDate,
 
@@ -898,11 +1151,9 @@ function updateTransactionFromApp_(data) {
 
     payment_method: paymentMethod,
 
-    account_name: isImportedTransaction
-      ? getString(existingRow, tableIndex, "account_name")
-      : resolveCanonicalAccountName_(
-          accountName || getString(existingRow, tableIndex, "account_name"),
-        ),
+    account_name: accountIdentity.accountName,
+
+    account_id: accountIdentity.accountId,
 
     merchant: isImportedTransaction
       ? existingMerchant
@@ -917,6 +1168,10 @@ function updateTransactionFromApp_(data) {
     major_category: majorCategory,
 
     sub_category: subCategory,
+
+    major_category_id: categoryIdentity.majorCategoryId,
+
+    sub_category_id: categoryIdentity.subCategoryId,
 
     purpose_type: purposeType,
 
@@ -940,19 +1195,13 @@ function updateTransactionFromApp_(data) {
 
     intent,
 
-    from_account:
-      type === "移動"
-        ? resolveCanonicalAccountName_(
-            fromAccount || getString(existingRow, tableIndex, "from_account"),
-          )
-        : "",
+    from_account: fromAccountIdentity.accountName,
 
-    to_account:
-      type === "移動"
-        ? resolveCanonicalAccountName_(
-            toAccount || getString(existingRow, tableIndex, "to_account"),
-          )
-        : "",
+    from_account_id: fromAccountIdentity.accountId,
+
+    to_account: toAccountIdentity.accountName,
+
+    to_account_id: toAccountIdentity.accountId,
 
     settlement_status:
       type !== "移動"
@@ -991,17 +1240,16 @@ function updateTransactionFromApp_(data) {
     recordedAt,
     yearMonth,
     duplicateKey,
+    existingRow,
   );
-
-  const sheet = found.sheet;
 
   const sheetRowNumber = found.rowNumber;
 
-  sheet
-    .getRange(sheetRowNumber, 1, 1, updatedRow.length)
-    .setValues([updatedRow]);
-
-  clearTableCache(SHEETS.TRANSACTIONS);
+  repositoryUpdateObjectByRow_(
+    SHEETS.TRANSACTIONS,
+    sheetRowNumber,
+    rowToObject(repositoryLoadTable_(SHEETS.TRANSACTIONS).headers, updatedRow),
+  );
 
   clearAccountBalanceCache_();
 
@@ -1077,6 +1325,10 @@ function updateTransactionFromApp_(data) {
 
         subCategory,
 
+        majorCategoryId: updatedTransaction.major_category_id || "",
+
+        subCategoryId: updatedTransaction.sub_category_id || "",
+
         status,
 
         purposeType,
@@ -1092,6 +1344,8 @@ function updateTransactionFromApp_(data) {
 
         accountName: updatedTransaction.account_name || "",
 
+        accountId: updatedTransaction.account_id || "",
+
         rawText: updatedTransaction.raw_text || "",
 
         settlementStatus: updatedTransaction.settlement_status || "",
@@ -1100,7 +1354,11 @@ function updateTransactionFromApp_(data) {
 
         fromAccount: updatedTransaction.from_account || "",
 
+        fromAccountId: updatedTransaction.from_account_id || "",
+
         toAccount: updatedTransaction.to_account || "",
+
+        toAccountId: updatedTransaction.to_account_id || "",
 
         importBatch: updatedTransaction.import_batch || "",
 
@@ -1363,6 +1621,14 @@ function getTransactionsData(options) {
     type: getString(row, table.index, "type"),
     majorCategory: getString(row, table.index, "major_category"),
     subCategory: getString(row, table.index, "sub_category"),
+    majorCategoryId:
+      table.index["major_category_id"] === undefined
+        ? ""
+        : getString(row, table.index, "major_category_id"),
+    subCategoryId:
+      table.index["sub_category_id"] === undefined
+        ? ""
+        : getString(row, table.index, "sub_category_id"),
     status: getString(row, table.index, "status"),
     purposeType: getString(row, table.index, "purpose_type"),
     expenseRatio: getNumber(row, table.index, "expense_ratio"),
@@ -1373,6 +1639,10 @@ function getTransactionsData(options) {
     rawText: getString(row, table.index, "raw_text"),
     paymentMethod: getString(row, table.index, "payment_method"),
     accountName: getString(row, table.index, "account_name"),
+    accountId:
+      table.index["account_id"] === undefined
+        ? ""
+        : getString(row, table.index, "account_id"),
     settlementStatus: getString(row, table.index, "settlement_status"),
     settlementId: getString(row, table.index, "settlement_id"),
     fromAccount: getString(row, table.index, "from_account"),

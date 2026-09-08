@@ -1,0 +1,5 @@
+Phase 4 Assets
+- 資産区分 cash / investment / other をFlutterで作成・編集可能化
+- 資産画面に現金・預金 / 投資 / その他資産の内訳を追加
+- 口座一覧を資産 / 負債 / その他に分離
+- 既存口座のasset_type空欄はGASで安全に推定するためSpreadsheet移行不要

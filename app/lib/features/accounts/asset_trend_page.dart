@@ -119,6 +119,11 @@ class _AssetTrendPageState extends State<AssetTrendPage> {
               const SizedBox(height: 16),
               _TrendChart(items: result.items),
               const SizedBox(height: 16),
+              _InvestmentPerformanceCard(
+                performance: result.investmentPerformance,
+                months: _months,
+              ),
+              const SizedBox(height: 16),
               _CompositionCard(snapshot: result.latest!),
               const SizedBox(height: 16),
               _HistoryCard(items: result.items.reversed.take(12).toList()),
@@ -291,6 +296,124 @@ class _TrendChart extends StatelessWidget {
   }
 }
 
+
+class _InvestmentPerformanceCard extends StatelessWidget {
+  const _InvestmentPerformanceCard({
+    required this.performance,
+    required this.months,
+  });
+
+  final InvestmentPerformanceResult performance;
+  final int months;
+
+  @override
+  Widget build(BuildContext context) {
+    final periodLabel = months == 0
+        ? '全期間'
+        : months == 12
+            ? '直近1年'
+            : '直近$monthsか月';
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '投資資産の増減内訳',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              periodLabel,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 16),
+            if (!performance.comparable)
+              const Text('比較できるSnapshotが2件以上になると内訳を表示します')
+            else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: _InvestmentMetric(
+                      label: '投資資産の増減',
+                      value: _signedYen(performance.investmentChange),
+                    ),
+                  ),
+                  Expanded(
+                    child: _InvestmentMetric(
+                      label: '自分で入れたお金',
+                      value: _signedYen(performance.netContribution),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: _InvestmentMetric(
+                      label: '運用による増減',
+                      value: _signedYen(performance.investmentReturn),
+                    ),
+                  ),
+                  Expanded(
+                    child: _InvestmentMetric(
+                      label: '概算運用率',
+                      value: _signedPercent(
+                        performance.investmentReturnRate,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                '${_yen(performance.startInvestmentAssets)} → '
+                '${_yen(performance.endInvestmentAssets)}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '「自分で入れたお金」は、投資口座への資金移動から算出します。'
+                '運用率は簡易計算で、厳密なTWR/XIRRではありません。',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class _InvestmentMetric extends StatelessWidget {
+  const _InvestmentMetric({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+  }
+}
+
 class _CompositionCard extends StatelessWidget {
   const _CompositionCard({required this.snapshot});
   final AssetSnapshotModel snapshot;
@@ -368,7 +491,10 @@ class _HistoryCard extends StatelessWidget {
               ListTile(
                 dense: true,
                 title: Text(item.snapshotDate),
-                subtitle: Text('資産 ${_yen(item.totalAssets)} / 負債 ${_yen(item.totalLiabilities)}'),
+                subtitle: Text(
+                  '資産 ${_yen(item.totalAssets)} / 負債 ${_yen(item.totalLiabilities)}'
+                  '${item.periodContribution != 0 || item.periodInvestmentReturn != 0 ? '\n投資: 入金 ${_signedYen(item.periodContribution)} / 運用 ${_signedYen(item.periodInvestmentReturn)}' : ''}',
+                ),
                 trailing: Text(
                   _yen(item.netAssets),
                   style: const TextStyle(fontWeight: FontWeight.bold),

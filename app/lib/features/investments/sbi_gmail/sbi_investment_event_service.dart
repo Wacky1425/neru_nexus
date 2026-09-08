@@ -27,12 +27,15 @@ class SbiInvestmentEventService {
     return SbiInvestmentScanResult.fromJson(data);
   }
 
-  Future<void> apply(SbiInvestmentEventModel event) async {
+  Future<void> apply(
+    SbiInvestmentEventModel event, {
+    String? holdingId,
+  }) async {
     await ApiClient.post(
       action: 'sbi_investment_event_apply',
       body: {
         'eventId': event.eventId,
-        'holdingId': event.holdingId,
+        'holdingId': holdingId ?? event.holdingId,
       },
     );
   }

@@ -210,6 +210,13 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
 
+              const SizedBox(height: 12),
+
+              _ForecastRecommendationCard(
+                forecast: home.homeForecast,
+                formatMoney: _formatMoney,
+              ),
+
               const SizedBox(height: 24),
 
               // ============================================================
@@ -472,6 +479,137 @@ class _SectionLabel extends StatelessWidget {
 // ============================================================================
 // おすすめ配分
 // ============================================================================
+
+
+class _ForecastRecommendationCard extends StatelessWidget {
+  const _ForecastRecommendationCard({
+    required this.forecast,
+    required this.formatMoney,
+  });
+
+  final Map<String, dynamic> forecast;
+  final String Function(int) formatMoney;
+
+  int _int(String key) {
+    final value = forecast[key];
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  List<Map<String, dynamic>> _maps(String key) {
+    return (forecast[key] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (forecast.isEmpty) return const SizedBox.shrink();
+
+    final projectedExpense = _int('projectedExpense');
+    final projectedBalance = _int('projectedBalance');
+    final variableProjected = _int('variableProjected');
+    final safeDailySpend = _int('safeDailySpend');
+    final remainingDays = _int('remainingDays');
+    final safeRemainingSpend = _int('safeRemainingSpend');
+    final remainingVariableBudget = _int('remainingVariableBudget');
+    final cardPayments = _int('upcomingCardPayments');
+    final alerts = _maps('alerts');
+    final recommendations = _maps('recommendations');
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.auto_awesome_outlined),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '月末予測とおすすめ',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _MoneyRow(
+              label: '月末支出見込',
+              value: formatMoney(projectedExpense),
+            ),
+            const SizedBox(height: 8),
+            _MoneyRow(
+              label: '月末収支見込',
+              value: formatMoney(projectedBalance),
+              emphasize: projectedBalance < 0,
+            ),
+            const SizedBox(height: 8),
+            _MoneyRow(
+              label: '変動費ペース',
+              value: formatMoney(variableProjected),
+            ),
+            if (remainingDays > 0) ...[
+              const SizedBox(height: 8),
+              _MoneyRow(
+                label: '残りの安全な1日目安',
+                value: formatMoney(safeDailySpend),
+              ),
+              if (safeRemainingSpend < remainingVariableBudget)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '現金残高も考慮して上限を調整しています',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+            ],
+            if (cardPayments > 0) ...[
+              const SizedBox(height: 8),
+              _MoneyRow(
+                label: 'カード支払見込',
+                value: formatMoney(cardPayments),
+              ),
+            ],
+            if (alerts.isNotEmpty) ...[
+              const Divider(height: 28),
+              for (final alert in alerts) ...[
+                _InfoBox(
+                  icon: alert['severity'] == 'high'
+                      ? Icons.warning_amber_rounded
+                      : Icons.info_outline,
+                  text:
+                      '${alert['title'] ?? ''}\n${alert['message'] ?? ''}',
+                ),
+                const SizedBox(height: 8),
+              ],
+            ],
+            if (recommendations.isNotEmpty) ...[
+              const Divider(height: 24),
+              Text(
+                'おすすめ',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              const SizedBox(height: 8),
+              for (final item in recommendations.take(3))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    '・${item['message'] ?? item['title'] ?? ''}',
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _AllocationCard extends StatelessWidget {
   const _AllocationCard({required this.home, required this.formatMoney});

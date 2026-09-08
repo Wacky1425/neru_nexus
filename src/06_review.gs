@@ -462,6 +462,16 @@ function getReviewTransactionsData(options) {
 
     subCategory: getString(row, table.index, "sub_category"),
 
+    majorCategoryId:
+      table.index["major_category_id"] === undefined
+        ? ""
+        : getString(row, table.index, "major_category_id"),
+
+    subCategoryId:
+      table.index["sub_category_id"] === undefined
+        ? ""
+        : getString(row, table.index, "sub_category_id"),
+
     status: getString(row, table.index, "status"),
 
     wallet: getString(row, table.index, "wallet"),
@@ -471,14 +481,26 @@ function getReviewTransactionsData(options) {
     paymentMethod: getString(row, table.index, "payment_method"),
 
     accountName: getString(row, table.index, "account_name"),
+    accountId:
+      table.index["account_id"] === undefined
+        ? ""
+        : getString(row, table.index, "account_id"),
 
     rawText: getString(row, table.index, "raw_text"),
 
     note: getString(row, table.index, "note"),
 
     fromAccount: getString(row, table.index, "from_account"),
+    fromAccountId:
+      table.index["from_account_id"] === undefined
+        ? ""
+        : getString(row, table.index, "from_account_id"),
 
     toAccount: getString(row, table.index, "to_account"),
+    toAccountId:
+      table.index["to_account_id"] === undefined
+        ? ""
+        : getString(row, table.index, "to_account_id"),
 
     settlementStatus: getString(row, table.index, "settlement_status"),
 

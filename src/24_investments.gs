@@ -17,6 +17,9 @@ const INVESTMENT_HOLDING_HEADERS_ = Object.freeze([
   "price_unit",
   "average_cost",
   "current_price",
+  "previous_close",
+  "price_change",
+  "price_change_rate",
   "price_updated_at",
   "note",
   "is_active",
@@ -68,6 +71,22 @@ function normalizeInvestmentProvider_(value, securityType) {
   return text === "yahoo" ? "yahoo" : "manual";
 }
 
+function normalizeInvestmentSymbol_(value, securityType) {
+  let text = String(value == null ? "" : value).trim();
+
+  // Google Sheets can coerce an all-numeric fund code to a number and remove
+  // its leading zero (e.g. 03311187 -> 3311187). Japanese mutual-fund quote
+  // codes are handled as identifiers, never as numeric values.
+  if (
+    normalizeInvestmentSecurityType_(securityType) === "fund" &&
+    /^\d{7}$/.test(text)
+  ) {
+    text = text.padStart(8, "0");
+  }
+
+  return text;
+}
+
 function investmentMarketValue_(quantity, currentPrice, priceUnit) {
   const q = Math.max(0, Number(quantity || 0));
   const price = Math.max(0, Number(currentPrice || 0));
@@ -104,7 +123,30 @@ function getInvestmentHoldingsData_() {
     const priceUnit = Math.max(1, Number(row[table.index["price_unit"]] || 1));
     const averageCost = Number(row[table.index["average_cost"]] || 0);
     const currentPrice = Number(row[table.index["current_price"]] || 0);
+    const previousClose =
+      table.index["previous_close"] === undefined
+        ? 0
+        : Number(row[table.index["previous_close"]] || 0);
+    const priceChange =
+      table.index["price_change"] === undefined
+        ? currentPrice > 0 && previousClose > 0
+          ? currentPrice - previousClose
+          : 0
+        : Number(row[table.index["price_change"]] || 0);
+    const priceChangeRate =
+      table.index["price_change_rate"] === undefined
+        ? previousClose > 0
+          ? priceChange / previousClose * 100
+          : 0
+        : Number(row[table.index["price_change_rate"]] || 0);
     const marketValue = investmentMarketValue_(quantity, currentPrice, priceUnit);
+    const previousMarketValue = investmentMarketValue_(
+      quantity,
+      previousClose,
+      priceUnit,
+    );
+    const dailyChangeValue =
+      previousClose > 0 ? marketValue - previousMarketValue : 0;
     const costValue = investmentCostValue_(quantity, averageCost, priceUnit);
     const profitLoss = marketValue - costValue;
     const profitLossRate = costValue > 0 ? profitLoss / costValue * 100 : 0;
@@ -115,7 +157,10 @@ function getInvestmentHoldingsData_() {
       accountName: account ? account.accountName : "",
       securityType,
       name: String(row[table.index["name"]] || "").trim(),
-      symbol: String(row[table.index["symbol"]] || "").trim(),
+      symbol: normalizeInvestmentSymbol_(
+        row[table.index["symbol"]],
+        securityType,
+      ),
       priceProvider: normalizeInvestmentProvider_(
         row[table.index["price_provider"]],
         securityType,
@@ -124,10 +169,15 @@ function getInvestmentHoldingsData_() {
       priceUnit,
       averageCost,
       currentPrice,
+      previousClose,
+      priceChange,
+      priceChangeRate,
+      dailyChangeValue: Math.round(dailyChangeValue),
       marketValue: Math.round(marketValue),
       costValue: Math.round(costValue),
       profitLoss: Math.round(profitLoss),
       profitLossRate,
+      portfolioWeight: 0,
       priceUpdatedAt: row[table.index["price_updated_at"]]
         ? new Date(row[table.index["price_updated_at"]]).toISOString()
         : "",
@@ -142,9 +192,41 @@ function getInvestmentHoldingsData_() {
     return a.name.localeCompare(b.name, "ja");
   });
 
-  const totalMarketValue = items.reduce((sum, item) => sum + item.marketValue, 0);
-  const totalCostValue = items.reduce((sum, item) => sum + item.costValue, 0);
+  const totalMarketValue = items.reduce(
+    (sum, item) => sum + item.marketValue,
+    0,
+  );
+  const totalCostValue = items.reduce(
+    (sum, item) => sum + item.costValue,
+    0,
+  );
   const totalProfitLoss = totalMarketValue - totalCostValue;
+  const totalDailyChange = items.reduce(
+    (sum, item) => sum + item.dailyChangeValue,
+    0,
+  );
+  const previousPortfolioValue = totalMarketValue - totalDailyChange;
+  const totalDailyChangeRate =
+    previousPortfolioValue > 0
+      ? totalDailyChange / previousPortfolioValue * 100
+      : 0;
+
+  for (const item of items) {
+    item.portfolioWeight =
+      totalMarketValue > 0 ? item.marketValue / totalMarketValue * 100 : 0;
+  }
+
+  const pricedItems = items.filter(
+    (item) => item.securityType !== "cash" && item.currentPrice > 0,
+  );
+  const previousCloseItems = pricedItems.filter(
+    (item) => item.previousClose > 0,
+  );
+  const latestPriceUpdatedAt = items
+    .map((item) => item.priceUpdatedAt)
+    .filter(Boolean)
+    .sort()
+    .pop() || "";
 
   return {
     items,
@@ -153,6 +235,11 @@ function getInvestmentHoldingsData_() {
     totalProfitLoss,
     totalProfitLossRate:
       totalCostValue > 0 ? totalProfitLoss / totalCostValue * 100 : 0,
+    totalDailyChange: Math.round(totalDailyChange),
+    totalDailyChangeRate,
+    pricedHoldingCount: pricedItems.length,
+    dailyChangeAvailableCount: previousCloseItems.length,
+    latestPriceUpdatedAt,
   };
 }
 
@@ -168,8 +255,8 @@ function saveInvestmentHoldingFromApp_(data, isUpdate) {
   const table = loadInvestmentHoldings_();
   const accountId = String(data.accountId || "").trim();
   const name = String(data.name || "").trim();
-  const symbol = String(data.symbol || "").trim();
   const securityType = normalizeInvestmentSecurityType_(data.securityType);
+  const symbol = normalizeInvestmentSymbol_(data.symbol, securityType);
   const priceProvider = normalizeInvestmentProvider_(data.priceProvider, securityType);
   const quantity = Number(data.quantity || 0);
   const priceUnit = Math.max(1, Number(data.priceUnit || (securityType === "fund" ? 10000 : 1)));
@@ -216,7 +303,19 @@ function saveInvestmentHoldingFromApp_(data, isUpdate) {
   write("account_id", accountId);
   write("security_type", securityType);
   write("name", name);
-  write("symbol", symbol);
+
+  // Symbol is an identifier. Force plain-text cell format so Sheets does not
+  // strip leading zeroes from fund codes such as 03311187.
+  const symbolRange = table.sheet.getRange(
+    sheetRow,
+    table.index["symbol"] + 1,
+  );
+  // setNumberFormat("@") alone is not enough: setValue("03311187") can still
+  // be parsed by Sheets as a number. A leading apostrophe forces text storage;
+  // getValue()/API reads return the identifier without the apostrophe.
+  symbolRange.setNumberFormat("@");
+  symbolRange.setValue(symbol ? "'" + symbol : "");
+
   write("price_provider", priceProvider);
   write("quantity", quantity);
   write("price_unit", priceUnit);
@@ -262,11 +361,221 @@ function deactivateInvestmentHoldingFromApp_(data) {
   throw new Error("保有銘柄が見つかりません");
 }
 
-function fetchYahooFinancePrice_(symbol) {
+function stripYahooJapanHtml_(html) {
+  return String(html || "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&minus;|&#8722;/gi, "-")
+    .replace(/&yen;|&#165;/gi, "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#44;/g, ",")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseYahooJapanFundHistoryQuote_(html, symbol) {
+  const source = String(html || "");
+  const rows = source.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || [];
+
+  for (const rowHtml of rows) {
+    const text = stripYahooJapanHtml_(rowHtml);
+    if (!/\d{4}[\/年.-]\d{1,2}[\/月.-]\d{1,2}日?/.test(text)) continue;
+
+    const dateMatch = text.match(
+      /(\d{4})[\/年.-](\d{1,2})[\/月.-](\d{1,2})日?/,
+    );
+    if (!dateMatch) continue;
+
+    const afterDate = text.slice((dateMatch.index || 0) + dateMatch[0].length);
+    const numbers = afterDate.match(/[+\-−]?\d[\d,]*(?:\.\d+)?/g) || [];
+    if (numbers.length < 2) continue;
+
+    const parseNumber = (value) =>
+      Number(String(value || "").replace(/,/g, "").replace(/−/g, "-"));
+
+    const currentPrice = parseNumber(numbers[0]);
+    const priceChange = parseNumber(numbers[1]);
+    if (!(currentPrice > 0) || !Number.isFinite(priceChange)) continue;
+
+    const previousClose = currentPrice - priceChange;
+    const priceChangeRate =
+      previousClose > 0 ? priceChange / previousClose * 100 : 0;
+
+    return {
+      currentPrice,
+      previousClose: previousClose > 0 ? previousClose : 0,
+      priceChange,
+      priceChangeRate,
+      currency: "JPY",
+      exchangeName: "Yahoo!ファイナンス 投資信託",
+      source: "yahoo_japan_fund_history",
+      symbol: String(symbol || "").trim(),
+      priceDate:
+        `${dateMatch[1]}-${String(dateMatch[2]).padStart(2, "0")}` +
+        `-${String(dateMatch[3]).padStart(2, "0")}`,
+    };
+  }
+
+  throw new Error(
+    `Yahoo!ファイナンス投信時系列から基準価額を解析できませんでした: ${symbol}`,
+  );
+}
+
+function parseKabumapFundQuote_(html, symbol) {
+  const text = stripYahooJapanHtml_(html);
+  const code = String(symbol || "").trim();
+
+  // 株マップの実ページは「コード」「適用日」「基準価額」が別セルなので、
+  // 1本の連結正規表現ではなく各項目を独立して拾う。
+  const escapedCode = code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const codePattern = new RegExp(
+    "コード\\s*[|｜:]?\\s*" + escapedCode + "(?:\\s|$)",
+    "i",
+  );
+  if (!codePattern.test(text)) {
+    throw new Error(`株マップで投信コードを確認できませんでした: ${code}`);
+  }
+
+  const dateMatch = text.match(
+    /適用日\s*[|｜:]?\s*(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/,
+  );
+  if (!dateMatch) {
+    throw new Error(`株マップで適用日を解析できませんでした: ${code}`);
+  }
+
+  const priceMatch = text.match(
+    /基準価額\s*[|｜:]?\s*([0-9,]+(?:\.\d+)?)\s*円/,
+  );
+  if (!priceMatch) {
+    throw new Error(`株マップで基準価額を解析できませんでした: ${code}`);
+  }
+
+  const currentPrice = Number(String(priceMatch[1]).replace(/,/g, ""));
+  if (!(currentPrice > 0)) {
+    throw new Error(`株マップの基準価額が不正です: ${code}`);
+  }
+
+  return {
+    currentPrice,
+    previousClose: 0,
+    priceChange: 0,
+    priceChangeRate: 0,
+    currency: "JPY",
+    exchangeName: "投信株マップ",
+    source: "kabumap_fund",
+    symbol: code,
+    priceDate:
+      `${dateMatch[1]}-${String(dateMatch[2]).padStart(2, "0")}` +
+      `-${String(dateMatch[3]).padStart(2, "0")}`,
+  };
+}
+
+function fetchKabumapFundQuote_(symbol) {
+  const normalized = normalizeInvestmentSymbol_(symbol, "fund");
+  if (!normalized) throw new Error("投信symbolが空です");
+
+  const url =
+    "https://fund.kabumap.com/servlets/fund/Action" +
+    "?SRC=basic/perf&codetext=" +
+    encodeURIComponent(normalized);
+  const response = UrlFetchApp.fetch(url, {
+    muteHttpExceptions: true,
+    followRedirects: true,
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+        "AppleWebKit/537.36 Chrome/120 Safari/537.36",
+      "Accept-Language": "ja-JP,ja;q=0.9",
+    },
+  });
+
+  const code = response.getResponseCode();
+  if (code !== 200) {
+    throw new Error(`投信株マップ HTTP ${code}`);
+  }
+
+  const html = response.getBlob().getDataAsString("Shift_JIS");
+  try {
+    return parseKabumapFundQuote_(html, normalized);
+  } catch (error) {
+    const plain = stripYahooJapanHtml_(html);
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = titleMatch
+      ? stripYahooJapanHtml_(titleMatch[1]).slice(0, 120)
+      : "";
+    const preview = plain.slice(0, 240);
+    throw new Error(
+      `${error && error.message ? error.message : error}` +
+      ` [url=${url}, bytes=${html.length}, title=${title || "-"}, ` +
+      `preview=${preview || "-"}]`,
+    );
+  }
+}
+
+function fetchYahooJapanFundQuote_(symbol) {
+  const normalized = normalizeInvestmentSymbol_(symbol, "fund");
+  if (!normalized) throw new Error("投信symbolが空です");
+
+  const url =
+    `https://finance.yahoo.co.jp/quote/${encodeURIComponent(normalized)}/history`;
+  const response = UrlFetchApp.fetch(url, {
+    muteHttpExceptions: true,
+    followRedirects: true,
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+        "AppleWebKit/537.36 Chrome/120 Safari/537.36",
+      "Accept-Language": "ja-JP,ja;q=0.9",
+    },
+  });
+
+  const code = response.getResponseCode();
+  if (code !== 200) {
+    throw new Error(`Yahoo!ファイナンス投信 HTTP ${code}`);
+  }
+
+  return parseYahooJapanFundHistoryQuote_(
+    response.getContentText("UTF-8"),
+    normalized,
+  );
+}
+
+function fetchInvestmentQuote_(symbol, securityType) {
+  const type = normalizeInvestmentSecurityType_(securityType);
+  if (type === "fund") {
+    const errors = [];
+
+    // Yahoo!ファイナンスはApps ScriptのUrlFetchAppからHTTP 500になる
+    // ケースがあるため、投信コードを直接指定できる株マップを主経路にする。
+    try {
+      return fetchKabumapFundQuote_(symbol);
+    } catch (error) {
+      errors.push(`kabumap: ${error && error.message ? error.message : error}`);
+    }
+
+    // ブラウザ側では取得可能なYahoo!ファイナンスを予備経路として残す。
+    try {
+      return fetchYahooJapanFundQuote_(symbol);
+    } catch (error) {
+      errors.push(`yahoo_jp: ${error && error.message ? error.message : error}`);
+    }
+
+    throw new Error(
+      `投資信託の基準価額取得に失敗しました (${errors.join(" / ")})`,
+    );
+  }
+  return fetchYahooFinanceQuote_(symbol);
+}
+
+function fetchYahooFinanceQuote_(symbol) {
   const encoded = encodeURIComponent(String(symbol || "").trim());
   if (!encoded) throw new Error("symbolが空です");
 
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?range=5d&interval=1d`;
+  const url =
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}` +
+    "?range=5d&interval=1d";
   const response = UrlFetchApp.fetch(url, {
     muteHttpExceptions: true,
     headers: { "User-Agent": "Mozilla/5.0" },
@@ -277,21 +586,76 @@ function fetchYahooFinancePrice_(symbol) {
   }
 
   const parsed = JSON.parse(response.getContentText());
-  const result = parsed && parsed.chart && parsed.chart.result && parsed.chart.result[0];
-  if (!result) throw new Error("Yahoo Financeから価格を取得できませんでした");
+  const result =
+    parsed &&
+    parsed.chart &&
+    parsed.chart.result &&
+    parsed.chart.result[0];
 
-  const metaPrice = Number(result.meta && result.meta.regularMarketPrice);
-  if (Number.isFinite(metaPrice) && metaPrice > 0) return metaPrice;
-
-  const closes = result.indicators && result.indicators.quote && result.indicators.quote[0]
-    ? result.indicators.quote[0].close || []
-    : [];
-  for (let i = closes.length - 1; i >= 0; i--) {
-    const value = Number(closes[i]);
-    if (Number.isFinite(value) && value > 0) return value;
+  if (!result) {
+    throw new Error("Yahoo Financeから価格を取得できませんでした");
   }
 
-  throw new Error("有効な市場価格がありません");
+  const meta = result.meta || {};
+  const closes =
+    result.indicators &&
+    result.indicators.quote &&
+    result.indicators.quote[0]
+      ? result.indicators.quote[0].close || []
+      : [];
+
+  const validCloses = closes
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  const metaPrice = Number(meta.regularMarketPrice);
+  const currentPrice =
+    Number.isFinite(metaPrice) && metaPrice > 0
+      ? metaPrice
+      : validCloses.length
+        ? validCloses[validCloses.length - 1]
+        : 0;
+
+  if (!(currentPrice > 0)) {
+    throw new Error("有効な市場価格がありません");
+  }
+
+  const metaPreviousClose = Number(
+    meta.regularMarketPreviousClose || meta.chartPreviousClose,
+  );
+
+  let previousClose =
+    Number.isFinite(metaPreviousClose) && metaPreviousClose > 0
+      ? metaPreviousClose
+      : 0;
+
+  if (!(previousClose > 0) && validCloses.length >= 2) {
+    const last = validCloses[validCloses.length - 1];
+    previousClose =
+      Math.abs(last - currentPrice) < 1e-9
+        ? validCloses[validCloses.length - 2]
+        : last;
+  }
+
+  const priceChange =
+    previousClose > 0 ? currentPrice - previousClose : 0;
+  const priceChangeRate =
+    previousClose > 0 ? priceChange / previousClose * 100 : 0;
+
+  return {
+    currentPrice,
+    previousClose,
+    priceChange,
+    priceChangeRate,
+    currency: String(meta.currency || "").trim(),
+    exchangeName: String(
+      meta.fullExchangeName || meta.exchangeName || "",
+    ).trim(),
+  };
+}
+
+function fetchYahooFinancePrice_(symbol) {
+  return fetchYahooFinanceQuote_(symbol).currentPrice;
 }
 
 function refreshSingleInvestmentPrice_(holdingId, force) {
@@ -312,12 +676,33 @@ function refreshSingleInvestmentPrice_(holdingId, force) {
       if (age < INVESTMENT_PRICE_CACHE_HOURS_ * 60 * 60 * 1000) return false;
     }
 
-    const symbol = String(row[table.index["symbol"]] || "").trim();
-    const price = fetchYahooFinancePrice_(symbol);
+    const securityType = normalizeInvestmentSecurityType_(
+      row[table.index["security_type"]],
+    );
+    const symbol = normalizeInvestmentSymbol_(
+      row[table.index["symbol"]],
+      securityType,
+    );
+    const quote = fetchInvestmentQuote_(symbol, securityType);
     const sheetRow = i + 2;
-    table.sheet.getRange(sheetRow, table.index["current_price"] + 1).setValue(price);
-    table.sheet.getRange(sheetRow, table.index["price_updated_at"] + 1).setValue(now);
-    table.sheet.getRange(sheetRow, table.index["updated_at"] + 1).setValue(now);
+    table.sheet
+      .getRange(sheetRow, table.index["current_price"] + 1)
+      .setValue(quote.currentPrice);
+    table.sheet
+      .getRange(sheetRow, table.index["previous_close"] + 1)
+      .setValue(quote.previousClose);
+    table.sheet
+      .getRange(sheetRow, table.index["price_change"] + 1)
+      .setValue(quote.priceChange);
+    table.sheet
+      .getRange(sheetRow, table.index["price_change_rate"] + 1)
+      .setValue(quote.priceChangeRate);
+    table.sheet
+      .getRange(sheetRow, table.index["price_updated_at"] + 1)
+      .setValue(now);
+    table.sheet
+      .getRange(sheetRow, table.index["updated_at"] + 1)
+      .setValue(now);
     return true;
   }
 
@@ -361,6 +746,239 @@ function getInvestmentAccountValuesMap_() {
     map.set(item.accountId, (map.get(item.accountId) || 0) + item.marketValue);
   }
   return map;
+}
+
+function calculateInvestmentDashboardMetrics_(items) {
+  const source = Array.isArray(items) ? items : [];
+  const totalMarketValue = source.reduce(
+    (sum, item) => sum + Number(item.marketValue || 0),
+    0,
+  );
+  const totalDailyChange = source.reduce(
+    (sum, item) => sum + Number(item.dailyChangeValue || 0),
+    0,
+  );
+  const previousValue = totalMarketValue - totalDailyChange;
+
+  return {
+    totalMarketValue,
+    totalDailyChange,
+    totalDailyChangeRate:
+      previousValue > 0
+        ? totalDailyChange / previousValue * 100
+        : 0,
+    weights: source.map((item) => ({
+      holdingId: String(item.holdingId || ""),
+      weight:
+        totalMarketValue > 0
+          ? Number(item.marketValue || 0) / totalMarketValue * 100
+          : 0,
+    })),
+  };
+}
+
+function repairV213InvestmentSymbols() {
+  const table = loadInvestmentHoldings_();
+  let repaired = 0;
+
+  table.rows.forEach((row, index) => {
+    const securityType = normalizeInvestmentSecurityType_(
+      row[table.index["security_type"]],
+    );
+    const raw = String(row[table.index["symbol"]] || "").trim();
+    const normalized = normalizeInvestmentSymbol_(raw, securityType);
+    if (!normalized || normalized === raw) return;
+
+    const range = table.sheet.getRange(
+      index + 2,
+      table.index["symbol"] + 1,
+    );
+    range.setNumberFormat("@");
+    range.setValue("'" + normalized);
+    repaired += 1;
+  });
+
+  const result = { ready: true, repaired };
+  console.log(JSON.stringify(result));
+  return result;
+}
+
+function diagnoseV213FundSource() {
+  const symbol = "03311187";
+  const url =
+    "https://fund.kabumap.com/servlets/fund/Action" +
+    "?SRC=basic/perf&codetext=" +
+    encodeURIComponent(symbol);
+  const response = UrlFetchApp.fetch(url, {
+    muteHttpExceptions: true,
+    followRedirects: true,
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+        "AppleWebKit/537.36 Chrome/120 Safari/537.36",
+      "Accept-Language": "ja-JP,ja;q=0.9",
+    },
+  });
+  const html = response.getBlob().getDataAsString("Shift_JIS");
+  const plain = stripYahooJapanHtml_(html);
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const result = {
+    ready:
+      response.getResponseCode() === 200 &&
+      plain.indexOf(symbol) >= 0 &&
+      plain.indexOf("基準価額") >= 0,
+    responseCode: response.getResponseCode(),
+    charset: "Shift_JIS",
+    bytes: html.length,
+    hasSymbol: plain.indexOf(symbol) >= 0,
+    hasPriceLabel: plain.indexOf("基準価額") >= 0,
+    title: titleMatch
+      ? stripYahooJapanHtml_(titleMatch[1]).slice(0, 120)
+      : "",
+    preview: plain.slice(0, 300),
+    url,
+  };
+  console.log(JSON.stringify(result));
+  return result;
+}
+
+function testV213FundQuote() {
+  const symbol = "03311187";
+  const quote = fetchInvestmentQuote_(symbol, "fund");
+  const result = {
+    ready: Number(quote.currentPrice) > 0,
+    symbol,
+    currentPrice: quote.currentPrice,
+    previousClose: quote.previousClose,
+    priceChange: quote.priceChange,
+    priceChangeRate: quote.priceChangeRate,
+    priceDate: quote.priceDate || "",
+    source: quote.source || "",
+  };
+  console.log(JSON.stringify(result));
+  if (!result.ready) {
+    throw new Error("投資信託の基準価額取得に失敗しました");
+  }
+  return result;
+}
+
+function verifyV213InvestmentDashboard() {
+  const table = loadInvestmentHoldings_();
+  const requiredColumns = [
+    "current_price",
+    "previous_close",
+    "price_change",
+    "price_change_rate",
+    "price_updated_at",
+  ];
+  const missingColumns = requiredColumns.filter(
+    (column) => table.index[column] === undefined,
+  );
+
+  const recoveredLeadingZeroSymbols = table.rows.filter((row) => {
+    const securityType = normalizeInvestmentSecurityType_(
+      row[table.index["security_type"]],
+    );
+    const raw = String(row[table.index["symbol"]] || "").trim();
+    return securityType === "fund" && /^\d{7}$/.test(raw);
+  }).length;
+
+  const result = {
+    ready: missingColumns.length === 0,
+    holdingCount: table.rows.length,
+    missingColumns,
+    recoveredLeadingZeroSymbols,
+    priceCacheHours: INVESTMENT_PRICE_CACHE_HOURS_,
+    issues:
+      missingColumns.length > 0
+        ? [`missing columns: ${missingColumns.join(",")}`]
+        : [],
+  };
+
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+function testInvestmentDashboardMetrics_() {
+  const metrics = calculateInvestmentDashboardMetrics_([
+    {
+      holdingId: "a",
+      marketValue: 60000,
+      dailyChangeValue: 600,
+    },
+    {
+      holdingId: "b",
+      marketValue: 40000,
+      dailyChangeValue: -200,
+    },
+  ]);
+
+  if (metrics.totalMarketValue !== 100000) {
+    throw new Error("投資Dashboard評価額集計失敗");
+  }
+
+  if (metrics.totalDailyChange !== 400) {
+    throw new Error("投資Dashboard前日比集計失敗");
+  }
+
+  const weightA = metrics.weights.find(
+    (item) => item.holdingId === "a",
+  );
+  if (!weightA || Math.abs(weightA.weight - 60) > 1e-9) {
+    throw new Error("投資Dashboard構成比計算失敗");
+  }
+
+  const expectedRate = 400 / 99600 * 100;
+  if (
+    Math.abs(metrics.totalDailyChangeRate - expectedRate) > 1e-9
+  ) {
+    throw new Error("投資Dashboard前日比率計算失敗");
+  }
+
+  if (
+    normalizeInvestmentSymbol_("3311187", "fund") !== "03311187"
+  ) {
+    throw new Error("投信価格シンボルの先頭0復元失敗");
+  }
+
+  if (
+    normalizeInvestmentSymbol_("7203.T", "stock") !== "7203.T"
+  ) {
+    throw new Error("株式価格シンボルの正規化失敗");
+  }
+
+  const fundQuote = parseYahooJapanFundHistoryQuote_(
+    "<table><tr><td>2026年9月7日</td><td>44,308</td>" +
+      "<td>-84</td><td>12,715,941</td></tr></table>",
+    "03311187",
+  );
+  if (
+    fundQuote.currentPrice !== 44308 ||
+    fundQuote.previousClose !== 44392 ||
+    fundQuote.priceChange !== -84
+  ) {
+    throw new Error("Yahoo!投信時系列パーサー失敗");
+  }
+
+  const kabumapQuote = parseKabumapFundQuote_(
+    "<table>" +
+      "<tr><th>コード</th><td>03311187</td></tr>" +
+      "<tr><th>適用日</th><td>2026/09/04</td></tr>" +
+      "<tr><th>基準価額</th><td>44,392円</td></tr>" +
+    "</table>",
+    "03311187",
+  );
+  if (
+    kabumapQuote.currentPrice !== 44392 ||
+    kabumapQuote.priceDate !== "2026-09-04"
+  ) {
+    throw new Error("株マップ投信パーサー失敗");
+  }
+
+  return {
+    assertions: "PASS",
+    metrics,
+  };
 }
 
 function ensureInvestmentPriceDailyTrigger_() {

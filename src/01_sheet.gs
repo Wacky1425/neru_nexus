@@ -14,7 +14,7 @@ function getRequiredSheet(sheetName) {
     throw new Error("シート名が指定されていません");
   }
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  const sheet = SS.getSheetByName(name);
 
   if (!sheet) {
     throw new Error(`${name} シートがありません`);

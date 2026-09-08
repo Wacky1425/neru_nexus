@@ -271,8 +271,10 @@ function getSystemDiagnostics_() {
   const integrity = runDataIntegrityCheck_();
   return {
     apiVersion: NERU_API_VERSION,
+    supportedApiVersions: [...NERU_API_SUPPORTED_VERSIONS],
     service: "Neru Nexus API",
     spreadsheetName: SS.getName(),
+    backend: getBackendStatus_(),
     integrity,
     latestBackup: getLatestBackupInfo_(),
     recentErrors: getRecentErrorLogs_(10),
@@ -281,6 +283,72 @@ function getSystemDiagnostics_() {
 }
 
 function runReleaseChecks() {
+  const categoryIdVerification = verifyV201CategoryIds();
+  if (!categoryIdVerification.ready) {
+    throw new Error(
+      "V2.0-1 Category ID検証に失敗しました: " +
+        JSON.stringify(categoryIdVerification),
+    );
+  }
+
+  const accountIdVerification = verifyV202AccountIds();
+  if (!accountIdVerification.ready) {
+    throw new Error(
+      "V2.0-2 Account ID検証に失敗しました: " +
+        JSON.stringify(accountIdVerification),
+    );
+  }
+
+  const apiV2Verification = verifyV203ApiV2();
+  if (!apiV2Verification.ready) {
+    throw new Error(
+      "V2.0-3 API v2検証に失敗しました: " +
+        JSON.stringify(apiV2Verification),
+    );
+  }
+
+  const authV2Verification = verifyV204Auth();
+  if (!authV2Verification.ready) {
+    throw new Error(
+      "V2.0-4端末認証検証に失敗しました: " +
+        JSON.stringify(authV2Verification),
+    );
+  }
+
+  const backendVerification = verifyV205BackendBoundary();
+  if (!backendVerification.ready) {
+    throw new Error(
+      "V2.0-5 Backend境界検証に失敗しました: " +
+        JSON.stringify(backendVerification),
+    );
+  }
+
+  const sbiInvestmentVerification = verifyV212SbiInvestmentStability();
+  if (!sbiInvestmentVerification.ready) {
+    throw new Error(
+      "V2.1-2 SBI投資連携検証に失敗しました: " +
+        JSON.stringify(sbiInvestmentVerification),
+    );
+  }
+
+  const investmentDashboardVerification =
+    verifyV213InvestmentDashboard();
+  if (!investmentDashboardVerification.ready) {
+    throw new Error(
+      "V2.1-3 Investment Dashboard検証に失敗しました: " +
+        JSON.stringify(investmentDashboardVerification),
+    );
+  }
+
+  const investmentPlannerVerification =
+    verifyV214InvestmentPlanner();
+  if (!investmentPlannerVerification.ready) {
+    throw new Error(
+      "V2.1-4 Investment Planner検証に失敗しました: " +
+        JSON.stringify(investmentPlannerVerification),
+    );
+  }
+
   const regression = runRegressionTests();
   const integrity = runDataIntegrityCheck_();
   if (!integrity.ok) {
@@ -292,6 +360,14 @@ function runReleaseChecks() {
   const sbiInvestmentTrigger = installDailySbiInvestmentTrigger_();
   const result = {
     apiVersion: NERU_API_VERSION,
+    categoryIdVerification,
+    accountIdVerification,
+    apiV2Verification,
+    authV2Verification,
+    backendVerification,
+    sbiInvestmentVerification,
+    investmentDashboardVerification,
+    investmentPlannerVerification,
     regression,
     integrity,
     backupTrigger,

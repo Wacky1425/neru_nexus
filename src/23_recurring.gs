@@ -385,6 +385,7 @@ function getApprovedRecurringForecast_(yearMonth) {
 
   const transactionTable = loadTransactions();
   const seenMerchantKeys = new Set();
+  const actualAmountByMerchantKey = new Map();
 
   if (transactionTable.rows.length > 0) {
     for (const row of transactionTable.rows) {
@@ -400,10 +401,14 @@ function getApprovedRecurringForecast_(yearMonth) {
       if (getString(row, transactionTable.index, "type") !== "支出") {
         continue;
       }
-      seenMerchantKeys.add(
-        buildRecurringCandidateKey_(
-          getString(row, transactionTable.index, "merchant"),
-        ),
+      const merchantKey = buildRecurringCandidateKey_(
+        getString(row, transactionTable.index, "merchant"),
+      );
+      seenMerchantKeys.add(merchantKey);
+      actualAmountByMerchantKey.set(
+        merchantKey,
+        Number(actualAmountByMerchantKey.get(merchantKey) || 0) +
+          Math.abs(getNumber(row, transactionTable.index, "amount")),
       );
     }
   }
@@ -412,6 +417,13 @@ function getApprovedRecurringForecast_(yearMonth) {
     const key = String(row.candidate_key || "") || buildRecurringCandidateKey_(row.merchant);
     const amount = Math.max(0, Number(row.avg_amount || 0));
     const occurred = seenMerchantKeys.has(key);
+    const actualAmount = Math.max(
+      0,
+      Number(actualAmountByMerchantKey.get(key) || 0),
+    );
+    const increaseAmount = occurred ? Math.max(0, actualAmount - amount) : 0;
+    const increaseRate =
+      occurred && amount > 0 ? increaseAmount / amount : 0;
     const expectedDay = Math.max(0, Math.min(31, Number(row.expected_day || 0)));
     const now = new Date();
     const isCurrentMonth = normalizeYearMonth(now) === yearMonth;
@@ -424,6 +436,10 @@ function getApprovedRecurringForecast_(yearMonth) {
       expectedDay,
       yearlyEstimate: Math.max(0, Number(row.yearly_estimate || amount * 12)),
       occurred,
+      actualAmount,
+      increaseAmount,
+      increaseRate,
+      increased: occurred && increaseRate >= 0.15 && increaseAmount >= 300,
       overdue,
       remainingAmount: occurred ? 0 : amount,
     };

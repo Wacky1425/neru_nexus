@@ -27,6 +27,9 @@ class SystemErrorLog {
 class SystemDiagnosticsModel {
   const SystemDiagnosticsModel({
     required this.apiVersion,
+    required this.backend,
+    required this.backendSchemaVersion,
+    required this.headerBasedWrites,
     required this.integrityOk,
     required this.checks,
     required this.errors,
@@ -37,6 +40,9 @@ class SystemDiagnosticsModel {
   });
 
   final String apiVersion;
+  final String backend;
+  final String backendSchemaVersion;
+  final bool headerBasedWrites;
   final bool integrityOk;
   final List<SystemCheckItem> checks;
   final List<String> errors;
@@ -52,9 +58,19 @@ class SystemDiagnosticsModel {
     final latestBackup = json['latestBackup'] is Map
         ? Map<String, dynamic>.from(json['latestBackup'] as Map)
         : <String, dynamic>{};
+    final backend = json['backend'] is Map
+        ? Map<String, dynamic>.from(json['backend'] as Map)
+        : <String, dynamic>{};
+    final guarantees = backend['guarantees'] is Map
+        ? Map<String, dynamic>.from(backend['guarantees'] as Map)
+        : <String, dynamic>{};
 
     return SystemDiagnosticsModel(
       apiVersion: json['apiVersion']?.toString() ?? '',
+      backend: backend['backend']?.toString() ?? '',
+      backendSchemaVersion: backend['schemaVersion']?.toString() ?? '',
+      headerBasedWrites:
+          guarantees['physicalColumnOrderIndependentForRepositoryWrites'] == true,
       integrityOk: integrity['ok'] == true,
       checks: (integrity['checks'] as List? ?? const [])
           .whereType<Map>()

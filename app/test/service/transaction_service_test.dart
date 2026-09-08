@@ -12,7 +12,8 @@ void main() {
 
   test('fetchTransactions trims optional filters and parses items', () async {
     ApiClient.clientFactoryForTesting = () => MockClient((request) async {
-      expect(request.url.queryParameters['action'], 'transactions');
+      expect(request.url.queryParameters['route'], 'transactions.list');
+      expect(request.url.queryParameters['apiVersion'], '2');
       expect(request.url.queryParameters['yearMonth'], '2026-08');
       expect(request.url.queryParameters['keyword'], isNull);
       expect(request.url.queryParameters['reviewOnly'], 'true');
@@ -88,10 +89,13 @@ void main() {
   test('createTransaction sends transfer type and both accounts', () async {
     ApiClient.clientFactoryForTesting = () => MockClient((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
-      expect(body['action'], 'transaction_create');
+      expect(body['route'], 'transactions.create');
+      expect(body['apiVersion'], '2');
       expect(body['type'], '移動');
       expect(body['fromAccount'], '三井住友銀行');
+      expect(body['fromAccountId'], 'acc_smbc');
       expect(body['toAccount'], '住信SBIネット銀行');
+      expect(body['toAccountId'], 'acc_sbi');
 
       return http.Response.bytes(
         utf8.encode(
@@ -135,7 +139,9 @@ void main() {
         expenseRatio: 0,
         evidenceUrl: '',
         fromAccount: '三井住友銀行',
+        fromAccountId: 'acc_smbc',
         toAccount: '住信SBIネット銀行',
+        toAccountId: 'acc_sbi',
       ),
     );
 

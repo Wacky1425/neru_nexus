@@ -12,6 +12,7 @@ const SBI_INVESTMENT_EVENT_HEADERS_ = [
   "security_name", "symbol", "quantity", "price", "amount",
   "subject", "gmail_url", "holding_id", "holding_name",
   "match_score", "status", "raw_excerpt", "created_at", "updated_at",
+  "applied_at", "applied_holding_id",
 ];
 
 function ensureSbiInvestmentEventSheet_() {
@@ -32,6 +33,7 @@ function ensureSbiInvestmentEventSheet_() {
   if (missing.length) {
     sheet.getRange(1, headers.length + 1, 1, missing.length)
       .setValues([missing]);
+    clearTableCache(SHEETS.SBI_INVESTMENT_EVENTS);
   }
   return sheet;
 }
@@ -258,6 +260,14 @@ function getSbiInvestmentEventsData_(options = {}) {
     holdingName: getString(row, table.index, "holding_name"),
     matchScore: getNumber(row, table.index, "match_score"),
     status: getString(row, table.index, "status"),
+    appliedAt:
+      table.index["applied_at"] === undefined
+        ? ""
+        : formatApiDateTime_(row[table.index["applied_at"]]),
+    appliedHoldingId:
+      table.index["applied_holding_id"] === undefined
+        ? ""
+        : getString(row, table.index, "applied_holding_id"),
   }))
     .filter((item) => item.eventId)
     .filter((item) => includeDone || !["applied", "ignored"].includes(item.status));
@@ -279,96 +289,252 @@ function findSbiInvestmentEvent_(eventId) {
   throw new Error("SBI証券イベントが見つかりません");
 }
 
-function updateSbiInvestmentEventStatus_(found, status) {
+function updateSbiInvestmentEventStatus_(found, status, metadata = {}) {
   const row = found.row.slice();
   row[found.table.index["status"]] = status;
   row[found.table.index["updated_at"]] = new Date();
+
+  if (
+    found.table.index["applied_at"] !== undefined &&
+    metadata.appliedAt !== undefined
+  ) {
+    row[found.table.index["applied_at"]] = metadata.appliedAt;
+  }
+
+  if (
+    found.table.index["applied_holding_id"] !== undefined &&
+    metadata.appliedHoldingId !== undefined
+  ) {
+    row[found.table.index["applied_holding_id"]] =
+      metadata.appliedHoldingId;
+  }
+
   getRequiredSheet(SHEETS.SBI_INVESTMENT_EVENTS)
     .getRange(found.rowNumber, 1, 1, row.length)
     .setValues([row]);
   clearTableCache(SHEETS.SBI_INVESTMENT_EVENTS);
 }
 
-function applySbiInvestmentEventFromApp_(data) {
-  const found = findSbiInvestmentEvent_(data.eventId);
-  const holdingId =
-    String(data.holdingId || "").trim() ||
-    getString(found.row, found.table.index, "holding_id");
-  if (!holdingId) throw new Error("保有銘柄を特定できません");
+function resolveSbiEventUnitPrice_(
+  quantity,
+  eventPrice,
+  eventAmount,
+  priceUnit,
+) {
+  const qty = Number(quantity || 0);
+  const price = Number(eventPrice || 0);
+  const amount = Number(eventAmount || 0);
+  const unit = Math.max(1, Number(priceUnit || 1));
 
-  const side = getString(found.row, found.table.index, "side");
-  const eventQuantity = getNumber(found.row, found.table.index, "quantity");
-  const eventPrice = getNumber(found.row, found.table.index, "price");
-  if (!["buy", "sell"].includes(side) || !(eventQuantity > 0)) {
-    throw new Error("売買イベントの内容が不正です");
+  if (price > 0) {
+    return {
+      unitPrice: price,
+      source: "event_price",
+    };
   }
 
-  const holdings = loadInvestmentHoldings_();
-  let targetIndex = -1;
-  for (let i = 0; i < holdings.rows.length; i++) {
-    if (
-      String(holdings.rows[i][holdings.index["holding_id"]] || "").trim() ===
-      holdingId
-    ) {
-      targetIndex = i;
-      break;
-    }
-  }
-  if (targetIndex < 0) throw new Error("保有銘柄が見つかりません");
-
-  const row = holdings.rows[targetIndex].slice();
-  if (Number(row[holdings.index["is_active"]] || 0) === 0) {
-    throw new Error("無効な保有銘柄には適用できません");
+  if (amount > 0 && qty > 0) {
+    return {
+      unitPrice: amount / (qty / unit),
+      source: "event_amount",
+    };
   }
 
-  const oldQuantity = Number(row[holdings.index["quantity"]] || 0);
-  const priceUnit = Math.max(1, Number(row[holdings.index["price_unit"]] || 1));
-  const oldAverageCost = Number(row[holdings.index["average_cost"]] || 0);
-
-  let newQuantity = oldQuantity;
-  let newAverageCost = oldAverageCost;
-
-  if (side === "buy") {
-    newQuantity = oldQuantity + eventQuantity;
-    if (eventPrice > 0 && newQuantity > 0) {
-      const oldCost = investmentCostValue_(oldQuantity, oldAverageCost, priceUnit);
-      const addedCost = investmentCostValue_(eventQuantity, eventPrice, priceUnit);
-      newAverageCost = (oldCost + addedCost) / (newQuantity / priceUnit);
-    }
-  } else {
-    if (eventQuantity > oldQuantity + 1e-9) {
-      throw new Error("売却数量が現在の保有数量を超えています");
-    }
-    newQuantity = Math.max(0, oldQuantity - eventQuantity);
-  }
-
-  const sheetRow = targetIndex + 2;
-  holdings.sheet.getRange(sheetRow, holdings.index["quantity"] + 1)
-    .setValue(newQuantity);
-  holdings.sheet.getRange(sheetRow, holdings.index["average_cost"] + 1)
-    .setValue(newQuantity > 0 ? newAverageCost : 0);
-  holdings.sheet.getRange(sheetRow, holdings.index["updated_at"] + 1)
-    .setValue(new Date());
-
-  updateSbiInvestmentEventStatus_(found, "applied");
-  clearAccountBalanceCache_();
-
-  return createJsonResponse_({
-    applied: true,
-    holdingId,
-    oldQuantity,
-    newQuantity,
-    oldAverageCost,
-    newAverageCost: newQuantity > 0 ? newAverageCost : 0,
-  }, "ok");
+  return {
+    unitPrice: 0,
+    source: "unknown",
+  };
 }
 
+function applySbiInvestmentEventFromApp_(data) {
+  const eventId = String(data.eventId || "").trim();
+  if (!eventId) throw new Error("eventIdがありません");
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+
+  try {
+    // Re-read after acquiring the lock. This makes repeated taps / retries
+    // idempotent even when two requests arrive almost simultaneously.
+    const found = findSbiInvestmentEvent_(eventId);
+    const currentStatus = getString(
+      found.row,
+      found.table.index,
+      "status",
+    );
+
+    if (currentStatus === "applied") {
+      const appliedHoldingId =
+        found.table.index["applied_holding_id"] === undefined
+          ? getString(found.row, found.table.index, "holding_id")
+          : getString(
+              found.row,
+              found.table.index,
+              "applied_holding_id",
+            );
+
+      return createJsonResponse_(
+        {
+          applied: true,
+          alreadyApplied: true,
+          holdingId: appliedHoldingId,
+        },
+        "ok",
+      );
+    }
+
+    if (currentStatus === "ignored") {
+      throw new Error("対象外にしたイベントはそのまま反映できません");
+    }
+
+    if (!["matched", "unmatched"].includes(currentStatus)) {
+      throw new Error(`反映できないイベント状態です: ${currentStatus}`);
+    }
+
+    const holdingId =
+      String(data.holdingId || "").trim() ||
+      getString(found.row, found.table.index, "holding_id");
+    if (!holdingId) throw new Error("反映先の保有銘柄を選択してください");
+
+    const side = getString(found.row, found.table.index, "side");
+    const eventQuantity = getNumber(
+      found.row,
+      found.table.index,
+      "quantity",
+    );
+    const eventPrice = getNumber(found.row, found.table.index, "price");
+    const eventAmount = getNumber(found.row, found.table.index, "amount");
+
+    if (!["buy", "sell"].includes(side) || !(eventQuantity > 0)) {
+      throw new Error("売買イベントの内容が不正です");
+    }
+
+    const holdings = loadInvestmentHoldings_();
+    let targetIndex = -1;
+
+    for (let i = 0; i < holdings.rows.length; i++) {
+      if (
+        String(
+          holdings.rows[i][holdings.index["holding_id"]] || "",
+        ).trim() === holdingId
+      ) {
+        targetIndex = i;
+        break;
+      }
+    }
+
+    if (targetIndex < 0) throw new Error("保有銘柄が見つかりません");
+
+    const row = holdings.rows[targetIndex].slice();
+
+    if (Number(row[holdings.index["is_active"]] || 0) === 0) {
+      throw new Error("無効な保有銘柄には適用できません");
+    }
+
+    const oldQuantity = Number(row[holdings.index["quantity"]] || 0);
+    const priceUnit = Math.max(
+      1,
+      Number(row[holdings.index["price_unit"]] || 1),
+    );
+    const oldAverageCost = Number(
+      row[holdings.index["average_cost"]] || 0,
+    );
+
+    const resolvedPrice = resolveSbiEventUnitPrice_(
+      eventQuantity,
+      eventPrice,
+      eventAmount,
+      priceUnit,
+    );
+
+    let newQuantity = oldQuantity;
+    let newAverageCost = oldAverageCost;
+
+    if (side === "buy") {
+      newQuantity = oldQuantity + eventQuantity;
+
+      if (resolvedPrice.unitPrice > 0 && newQuantity > 0) {
+        const oldCost = investmentCostValue_(
+          oldQuantity,
+          oldAverageCost,
+          priceUnit,
+        );
+        const addedCost = investmentCostValue_(
+          eventQuantity,
+          resolvedPrice.unitPrice,
+          priceUnit,
+        );
+
+        newAverageCost =
+          (oldCost + addedCost) / (newQuantity / priceUnit);
+      }
+    } else {
+      if (eventQuantity > oldQuantity + 1e-9) {
+        throw new Error("売却数量が現在の保有数量を超えています");
+      }
+
+      newQuantity = Math.max(0, oldQuantity - eventQuantity);
+    }
+
+    const sheetRow = targetIndex + 2;
+
+    holdings.sheet
+      .getRange(sheetRow, holdings.index["quantity"] + 1)
+      .setValue(newQuantity);
+    holdings.sheet
+      .getRange(sheetRow, holdings.index["average_cost"] + 1)
+      .setValue(newQuantity > 0 ? newAverageCost : 0);
+    holdings.sheet
+      .getRange(sheetRow, holdings.index["updated_at"] + 1)
+      .setValue(new Date());
+
+    updateSbiInvestmentEventStatus_(found, "applied", {
+      appliedAt: new Date(),
+      appliedHoldingId: holdingId,
+    });
+
+    clearAccountBalanceCache_();
+
+    return createJsonResponse_(
+      {
+        applied: true,
+        alreadyApplied: false,
+        holdingId,
+        oldQuantity,
+        newQuantity,
+        oldAverageCost,
+        newAverageCost: newQuantity > 0 ? newAverageCost : 0,
+        priceUnit,
+        appliedUnitPrice: resolvedPrice.unitPrice,
+        priceSource: resolvedPrice.source,
+      },
+      "ok",
+    );
+  } finally {
+    lock.releaseLock();
+  }
+}
 function ignoreSbiInvestmentEventFromApp_(data) {
   const found = findSbiInvestmentEvent_(data.eventId);
-  updateSbiInvestmentEventStatus_(found, "ignored");
-  return createJsonResponse_({ ignored: true }, "ok");
-}
+  const status = getString(found.row, found.table.index, "status");
 
+  if (status === "applied") {
+    throw new Error("反映済みイベントは対象外に変更できません");
+  }
+
+  if (status === "ignored") {
+    return createJsonResponse_(
+      { ignored: true, alreadyIgnored: true },
+      "ok",
+    );
+  }
+
+  updateSbiInvestmentEventStatus_(found, "ignored");
+  return createJsonResponse_(
+    { ignored: true, alreadyIgnored: false },
+    "ok",
+  );
+}
 function scanSbiInvestmentGmailFromApp_(data) {
   return createJsonResponse_(
     scanSbiInvestmentGmail_({ days: data.days, limit: data.limit }),
@@ -389,6 +555,94 @@ function installDailySbiInvestmentTrigger_() {
 
 function runDailySbiInvestmentScan_() {
   return scanSbiInvestmentGmail_({ days: 7, limit: 200 });
+}
+
+function verifyV212SbiInvestmentStability() {
+  const table = getSbiInvestmentEventTable_();
+  const requiredColumns = [
+    "event_id",
+    "message_id",
+    "holding_id",
+    "status",
+    "applied_at",
+    "applied_holding_id",
+  ];
+
+  const missingColumns = requiredColumns.filter(
+    (column) => table.index[column] === undefined,
+  );
+
+  const eventIds = new Set();
+  const messageIds = new Set();
+  const duplicateEventIds = [];
+  const duplicateMessageIds = [];
+  let appliedCount = 0;
+  let legacyAppliedWithoutAuditCount = 0;
+
+  for (const row of table.rows) {
+    const eventId = getString(row, table.index, "event_id");
+    const messageId = getString(row, table.index, "message_id");
+    const status = getString(row, table.index, "status");
+
+    if (eventId) {
+      if (eventIds.has(eventId)) duplicateEventIds.push(eventId);
+      eventIds.add(eventId);
+    }
+
+    if (messageId) {
+      if (messageIds.has(messageId)) duplicateMessageIds.push(messageId);
+      messageIds.add(messageId);
+    }
+
+    if (status === "applied") {
+      appliedCount++;
+      const appliedAt =
+        table.index["applied_at"] === undefined
+          ? ""
+          : row[table.index["applied_at"]];
+      const appliedHoldingId =
+        table.index["applied_holding_id"] === undefined
+          ? ""
+          : getString(row, table.index, "applied_holding_id");
+
+      // Events applied before V2.1-2 legitimately have no new audit fields.
+      if (!appliedAt || !appliedHoldingId) {
+        legacyAppliedWithoutAuditCount++;
+      }
+    }
+  }
+
+  const issues = [];
+
+  if (missingColumns.length > 0) {
+    issues.push(`missing columns: ${missingColumns.join(",")}`);
+  }
+
+  if (duplicateEventIds.length > 0) {
+    issues.push(
+      `duplicate event_id: ${Array.from(new Set(duplicateEventIds)).join(",")}`,
+    );
+  }
+
+  if (duplicateMessageIds.length > 0) {
+    issues.push(
+      `duplicate message_id: ${Array.from(new Set(duplicateMessageIds)).join(",")}`,
+    );
+  }
+
+  const result = {
+    ready: issues.length === 0,
+    eventCount: table.rows.length,
+    appliedCount,
+    legacyAppliedWithoutAuditCount,
+    duplicateEventIdCount: duplicateEventIds.length,
+    duplicateMessageIdCount: duplicateMessageIds.length,
+    missingColumns,
+    issues,
+  };
+
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
 }
 
 function testSbiInvestmentMailParser_() {
@@ -417,5 +671,30 @@ function testSbiInvestmentMailParser_() {
   if (!sell || sell.side !== "sell" || sell.quantity !== 100) {
     throw new Error("売却メール解析失敗");
   }
-  return { assertions: "PASS", buy: parsed, sell };
+
+  const fundPrice = resolveSbiEventUnitPrice_(
+    12345,
+    0,
+    12961,
+    10000,
+  );
+  const expectedFundPrice = 12961 / (12345 / 10000);
+  if (Math.abs(fundPrice.unitPrice - expectedFundPrice) > 0.01) {
+    throw new Error(
+      `投信の金額→基準価額換算失敗: ${fundPrice.unitPrice}`,
+    );
+  }
+
+  const stockPrice = resolveSbiEventUnitPrice_(100, 1250, 125000, 1);
+  if (stockPrice.unitPrice !== 1250 || stockPrice.source !== "event_price") {
+    throw new Error("株式単価解決失敗");
+  }
+
+  return {
+    assertions: "PASS",
+    buy: parsed,
+    sell,
+    fundPrice,
+    stockPrice,
+  };
 }

@@ -55,6 +55,7 @@ class HomeModel {
     required this.sideBusinessProfit,
 
     required this.moneyHealth,
+    required this.homeForecast,
 
     required this.recentTransactions,
 
@@ -153,6 +154,7 @@ class HomeModel {
   final int sideBusinessProfit;
 
   final Map<String, dynamic> moneyHealth;
+  final Map<String, dynamic> homeForecast;
 
   final List<Map<String, dynamic>> recentTransactions;
 
@@ -232,6 +234,9 @@ class HomeModel {
       sideBusinessProfit: _toInt(json['sideBusinessProfit']),
 
       moneyHealth: Map<String, dynamic>.from(json['moneyHealth'] as Map? ?? {}),
+      homeForecast: Map<String, dynamic>.from(
+        json['homeForecast'] as Map? ?? {},
+      ),
 
       recentTransactions: (json['recentTransactions'] as List? ?? [])
           .whereType<Map>()

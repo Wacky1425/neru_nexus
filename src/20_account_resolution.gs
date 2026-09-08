@@ -218,3 +218,139 @@ function resolveCanonicalAccountName_(rawName) {
   // マスタに無ければ元の名前を返す
   return target;
 }
+
+
+function buildAccountIdentityLookup_() {
+  const sheet = getRequiredSheet(SHEETS.ACCOUNTS);
+  const values = sheet.getDataRange().getValues();
+  const byId = new Map();
+  const byName = new Map();
+
+  if (values.length < 2) {
+    return { byId, byName };
+  }
+
+  const index = createHeaderIndex(values[0]);
+
+  assertRequiredColumns(
+    index,
+    ["account_id", "account_name"],
+    SHEETS.ACCOUNTS,
+  );
+
+  for (const row of values.slice(1)) {
+    const accountId = String(row[index["account_id"]] || "").trim();
+    const rawAccountName = String(row[index["account_name"]] || "").trim();
+
+    if (!accountId || !rawAccountName) continue;
+
+    const accountName = resolveCanonicalAccountName_(rawAccountName);
+
+    const account = {
+      accountId,
+      accountName,
+    };
+
+    if (byId.has(accountId)) {
+      throw new Error(`M_Accountsに重複account_idがあります: ${accountId}`);
+    }
+
+    if (byName.has(accountName)) {
+      throw new Error(`M_Accountsに重複account_nameがあります: ${accountName}`);
+    }
+
+    byId.set(accountId, account);
+    byName.set(accountName, account);
+  }
+
+  return { byId, byName };
+}
+
+function resolveAccountIdentity_(rawName, lookup) {
+  const accountName = resolveCanonicalAccountName_(rawName);
+
+  if (!accountName) {
+    return {
+      accountId: "",
+      accountName: "",
+      resolved: false,
+    };
+  }
+
+  const identityLookup = lookup || buildAccountIdentityLookup_();
+  const account = identityLookup.byName.get(accountName);
+
+  return {
+    accountId: account ? String(account.accountId || "").trim() : "",
+    accountName,
+    resolved: Boolean(account),
+  };
+}
+
+function validateRequestedAccountIdentity_(
+  requestedId,
+  rawName,
+  label,
+  options,
+) {
+  const settings = options || {};
+  const allowBlank = settings.allowBlank === true;
+  const lookup = settings.lookup || null;
+  const normalizedRequestedId = String(requestedId || "").trim();
+  const normalizedName = resolveCanonicalAccountName_(rawName);
+
+  if (!normalizedName) {
+    if (allowBlank) {
+      return {
+        accountId: "",
+        accountName: "",
+        resolved: false,
+      };
+    }
+
+    throw new Error(`${label || "口座"}は必須です`);
+  }
+
+  const identity = resolveAccountIdentity_(normalizedName, lookup);
+
+  if (!identity.resolved) {
+    throw new Error(
+      `${label || "口座"}「${normalizedName}」をM_Accountsから解決できません`,
+    );
+  }
+
+  if (normalizedRequestedId && normalizedRequestedId !== identity.accountId) {
+    throw new Error(`${label || "口座"}IDと口座名が一致しません`);
+  }
+
+  return identity;
+}
+
+
+function getTransactionAccountReference_(
+  row,
+  index,
+  nameColumn,
+  idColumn,
+  lookup,
+) {
+  const accountName = getString(row, index, nameColumn);
+  const accountId =
+    index[idColumn] === undefined ? "" : getString(row, index, idColumn);
+
+  const identityLookup = lookup || buildAccountIdentityLookup_();
+
+  if (accountId) {
+    const account = identityLookup.byId.get(accountId);
+
+    if (account) {
+      return {
+        accountId,
+        accountName: account.accountName,
+        resolved: true,
+      };
+    }
+  }
+
+  return resolveAccountIdentity_(accountName, identityLookup);
+}

@@ -172,4 +172,4 @@ These are not current release blockers, but should remain visible.
 
 # Recommended next action
 
-V1.2 is complete; receipt OCR was intentionally removed from scope. V1.3-1 SBI Securities Gmail integration is implemented and awaiting real-mail validation. Deploy GAS, run `runReleaseChecks()`, run Flutter tests/analyze, then open **投資ポートフォリオ → SBI証券通知** and scan the past 90 days. If real SBI buy/sell mail is parsed correctly, apply one event and verify the holding quantity. If the actual mail format differs, adjust only the parser while keeping the event/review/apply pipeline unchanged.
+V1.3-3 is implemented and awaiting live-data validation. Deploy GAS and Flutter, run release checks/tests/analyze, then open **配信・副業**. Confirm that the annual **確定申告の準備度** card and the remaining-task counts match the real transactions you expect to review. This score is only a Neru Nexus operational checklist and is not a legal/tax judgment. If validation passes, V1.3 is complete and the next phase is V1.4 forecasting / recommendations.

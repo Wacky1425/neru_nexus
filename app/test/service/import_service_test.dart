@@ -17,7 +17,8 @@ void main() {
   test('importCsv parses counts, settlement and timing', () async {
     ApiClient.clientFactoryForTesting = () => MockClient((request) async {
       final body = jsonDecode(request.body) as Map<String, dynamic>;
-      expect(body['action'], 'csv_import');
+      expect(body['route'], 'imports.csv');
+      expect(body['apiVersion'], '2');
       expect(body['fileName'], 'olive.csv');
       expect(body['dryRun'], isFalse);
       return http.Response.bytes(

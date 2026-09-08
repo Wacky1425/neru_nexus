@@ -1,9 +1,4 @@
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
-
-import '../../../core/constants/api_constants.dart';
 import '../../../core/network/api_client.dart';
 import '../model/settlement_status_model.dart';
 
@@ -47,68 +42,11 @@ class SettlementService {
   Future<SettlementStatusesResponseModel> fetchStatuses() async {
     final totalWatch = Stopwatch()..start();
 
-    final uri = Uri.parse(ApiConstants.baseUrl).replace(
-      queryParameters: {
-        'action': 'settlement_statuses',
-        'key': ApiConstants.apiKey,
-      },
+    final dataMap = await ApiClient.get(
+      action: 'settlement_statuses',
     );
 
-    final httpWatch = Stopwatch()..start();
-
-    final response = await http.get(uri);
-
-    httpWatch.stop();
-
-    if (response.statusCode != 200) {
-      throw Exception(
-        'カード照合状況の取得に失敗しました: '
-        '${response.statusCode}',
-      );
-    }
-
-    final decodeWatch = Stopwatch()..start();
-
-    final dynamic decodedValue;
-
-    try {
-      decodedValue = jsonDecode(response.body);
-    } on FormatException {
-      throw Exception('カード照合状況APIから不正なレスポンスが返されました');
-    }
-
-    decodeWatch.stop();
-
-    if (decodedValue is! Map) {
-      throw Exception('カード照合状況APIの形式が正しくありません');
-    }
-
-    final decoded = Map<String, dynamic>.from(decodedValue);
-
-    if (decoded['success'] != true) {
-      final error = decoded['error'];
-
-      if (error is Map) {
-        throw Exception(
-          error['message']?.toString() ?? 'カード照合状況APIでエラーが発生しました',
-        );
-      }
-
-      throw Exception(error?.toString() ?? 'カード照合状況APIでエラーが発生しました');
-    }
-
-    final data = decoded['data'];
-
-    if (data is! Map) {
-      throw Exception('カード照合状況APIのデータ形式が正しくありません');
-    }
-
-    final dataMap = Map<String, dynamic>.from(data);
-
-    // ==========================================================
-    // GAS側性能計測
-    // ==========================================================
-
+    // GAS-side timing is still preserved in the v2 payload.
     final performance = dataMap['performance'];
 
     if (performance is Map) {
@@ -117,7 +55,6 @@ class SettlementService {
 
       performance.forEach((key, value) {
         final milliseconds = num.tryParse(value.toString()) ?? 0;
-
         final seconds = milliseconds / 1000;
 
         debugPrint(
@@ -131,54 +68,25 @@ class SettlementService {
       debugPrint('');
     }
 
-    // ==========================================================
-    // Model変換
-    // ==========================================================
-
     final modelWatch = Stopwatch()..start();
-
     final result = SettlementStatusesResponseModel.fromJson(dataMap);
-
     modelWatch.stop();
     totalWatch.stop();
 
-    // ==========================================================
-    // Cache更新
-    // ==========================================================
-
     _cachedResult = result;
-
-    // ==========================================================
-    // Flutter側性能計測
-    // ==========================================================
 
     debugPrint('');
     debugPrint('========== Settlement Flutter Performance ======');
-
-    debugPrint(
-      'HTTP全体: '
-      '${httpWatch.elapsedMilliseconds}ms '
-      '(${(httpWatch.elapsedMilliseconds / 1000).toStringAsFixed(3)}秒)',
-    );
-
-    debugPrint(
-      'JSON decode: '
-      '${decodeWatch.elapsedMilliseconds}ms '
-      '(${(decodeWatch.elapsedMilliseconds / 1000).toStringAsFixed(3)}秒)',
-    );
-
     debugPrint(
       'Model変換: '
       '${modelWatch.elapsedMilliseconds}ms '
       '(${(modelWatch.elapsedMilliseconds / 1000).toStringAsFixed(3)}秒)',
     );
-
     debugPrint(
       'fetchStatuses全体: '
       '${totalWatch.elapsedMilliseconds}ms '
       '(${(totalWatch.elapsedMilliseconds / 1000).toStringAsFixed(3)}秒)',
     );
-
     debugPrint('================================================');
     debugPrint('');
 

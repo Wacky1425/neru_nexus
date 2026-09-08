@@ -80,7 +80,27 @@ class _SystemDiagnosticsPageState extends State<SystemDiagnosticsPage> {
                     color: data.integrityOk ? null : Theme.of(context).colorScheme.error,
                   ),
                   title: Text(data.integrityOk ? 'データ整合性: OK' : 'データ整合性: 要確認'),
-                  subtitle: Text('API v${data.apiVersion} / App API v${ApiConstants.apiVersion}'),
+                  subtitle: Text(
+                    'API v${data.apiVersion} / App API v${ApiConstants.apiVersion}'
+                    '\nBackend: ${data.backend.isEmpty ? 'unknown' : data.backend}'
+                    ' / schema ${data.backendSchemaVersion.isEmpty ? '-' : data.backendSchemaVersion}',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Card(
+                child: ListTile(
+                  leading: Icon(
+                    data.headerBasedWrites
+                        ? Icons.storage_outlined
+                        : Icons.warning_amber_outlined,
+                  ),
+                  title: const Text('Backend境界'),
+                  subtitle: Text(
+                    data.headerBasedWrites
+                        ? 'ヘッダー名ベースのRepository書込み: OK'
+                        : 'Repository書込み境界を確認してください',
+                  ),
                 ),
               ),
               const SizedBox(height: 12),

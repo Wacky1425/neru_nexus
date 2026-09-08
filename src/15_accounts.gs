@@ -966,6 +966,9 @@ function getAccountBalancesData_() {
       "account_name",
       "from_account",
       "to_account",
+      "account_id",
+      "from_account_id",
+      "to_account_id",
 
       // カード請求予定計算で使用
       "source_type",
@@ -988,6 +991,7 @@ function getAccountBalancesData_() {
   // ============================================================
 
   const billingSettingsMap = buildAccountBillingSettingsMap_();
+  const accountIdentityLookup = buildAccountIdentityLookup_();
 
   // ============================================================
   // 未照合カード明細を
@@ -1030,13 +1034,20 @@ function getAccountBalancesData_() {
     // カード口座
     // ----------------------------------------------------------
 
-    const cardAccount = resolveCanonicalAccountName_(
-      getString(row, transactionTable.index, "account_name"),
+    const cardAccountRef = getTransactionAccountReference_(
+      row,
+      transactionTable.index,
+      "account_name",
+      "account_id",
+      accountIdentityLookup,
     );
 
-    if (!cardAccount) {
+    if (!cardAccountRef.resolved) {
       continue;
     }
+
+    const cardAccount = cardAccountRef.accountName;
+    const cardAccountKey = cardAccountRef.accountId || cardAccount;
 
     // ----------------------------------------------------------
     // 既に照合済みの明細は未払請求から除外
@@ -1132,11 +1143,11 @@ function getAccountBalancesData_() {
     // カード × 請求月 で集計
     // ----------------------------------------------------------
 
-    if (!cardBillingMonthTotals.has(cardAccount)) {
-      cardBillingMonthTotals.set(cardAccount, new Map());
+    if (!cardBillingMonthTotals.has(cardAccountKey)) {
+      cardBillingMonthTotals.set(cardAccountKey, new Map());
     }
 
-    const monthMap = cardBillingMonthTotals.get(cardAccount);
+    const monthMap = cardBillingMonthTotals.get(cardAccountKey);
 
     const currentAmount = Number(monthMap.get(billingYearMonth) || 0);
 
@@ -1152,7 +1163,7 @@ function getAccountBalancesData_() {
 
   const cardBillingSummaryMap = new Map();
 
-  for (const [cardAccount, monthMap] of cardBillingMonthTotals.entries()) {
+  for (const [cardAccountKey, monthMap] of cardBillingMonthTotals.entries()) {
     const billingMonths = Array.from(monthMap.keys()).sort();
 
     if (billingMonths.length === 0) {
@@ -1163,7 +1174,7 @@ function getAccountBalancesData_() {
 
     const nextBillingAmount = Number(monthMap.get(nextBillingYearMonth) || 0);
 
-    cardBillingSummaryMap.set(cardAccount, {
+    cardBillingSummaryMap.set(cardAccountKey, {
       nextBillingYearMonth,
       nextBillingAmount,
     });
@@ -1179,6 +1190,7 @@ function getAccountBalancesData_() {
     const openingDate = String(account.openingBalanceDate || "").trim();
 
     const accountName = resolveCanonicalAccountName_(account.accountName);
+    const accountId = String(account.accountId || "").trim();
 
     const isAsset = account.isAsset === true;
 
@@ -1210,16 +1222,28 @@ function getAccountBalancesData_() {
 
       const amount = getNumber(row, transactionTable.index, "amount");
 
-      const rowAccount = resolveCanonicalAccountName_(
-        getString(row, transactionTable.index, "account_name"),
+      const rowAccountRef = getTransactionAccountReference_(
+        row,
+        transactionTable.index,
+        "account_name",
+        "account_id",
+        accountIdentityLookup,
       );
 
-      const fromAccount = resolveCanonicalAccountName_(
-        getString(row, transactionTable.index, "from_account"),
+      const fromAccountRef = getTransactionAccountReference_(
+        row,
+        transactionTable.index,
+        "from_account",
+        "from_account_id",
+        accountIdentityLookup,
       );
 
-      const toAccount = resolveCanonicalAccountName_(
-        getString(row, transactionTable.index, "to_account"),
+      const toAccountRef = getTransactionAccountReference_(
+        row,
+        transactionTable.index,
+        "to_account",
+        "to_account_id",
+        accountIdentityLookup,
       );
 
       // --------------------------------------------------------
@@ -1227,7 +1251,7 @@ function getAccountBalancesData_() {
       // --------------------------------------------------------
 
       if (type === "収入") {
-        if (rowAccount === accountName) {
+        if (rowAccountRef.accountId === accountId) {
           if (isLiability) {
             currentBalance -= amount;
           } else {
@@ -1243,7 +1267,7 @@ function getAccountBalancesData_() {
       // --------------------------------------------------------
 
       if (type === "支出") {
-        if (rowAccount === accountName) {
+        if (rowAccountRef.accountId === accountId) {
           if (isLiability) {
             currentBalance += amount;
           } else {
@@ -1259,7 +1283,7 @@ function getAccountBalancesData_() {
       // --------------------------------------------------------
 
       if (type === "移動" || type === "振替") {
-        if (fromAccount === accountName) {
+        if (fromAccountRef.accountId === accountId) {
           if (isLiability) {
             currentBalance += amount;
           } else {
@@ -1267,7 +1291,7 @@ function getAccountBalancesData_() {
           }
         }
 
-        if (toAccount === accountName) {
+        if (toAccountRef.accountId === accountId) {
           if (isLiability) {
             currentBalance -= amount;
           } else {
@@ -1281,7 +1305,7 @@ function getAccountBalancesData_() {
     // クレジットカード請求情報
     // ==========================================================
 
-    const billingSummary = cardBillingSummaryMap.get(accountName);
+    const billingSummary = cardBillingSummaryMap.get(accountId);
 
     const nextBillingYearMonth =
       isLiability && billingSummary ? billingSummary.nextBillingYearMonth : "";

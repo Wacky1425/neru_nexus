@@ -155,7 +155,20 @@ class _BusinessReportPageState extends State<BusinessReportPage> {
                 const SizedBox(height: 16),
                 _KpiGrid(report: report),
                 const SizedBox(height: 16),
+                _TaxReadinessCard(report: report),
+                const SizedBox(height: 16),
                 _EvidenceCard(report: report),
+                if (report.reviewItems.isNotEmpty ||
+                    report.classificationMissingItems.isNotEmpty ||
+                    report.expenseRatioReviewItems.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  const _SectionTitle(
+                    title: '確定申告までに確認',
+                    subtitle: '未確定・分類・経費率の残タスク',
+                  ),
+                  const SizedBox(height: 8),
+                  _BusinessIssueSummary(report: report),
+                ],
                 if (report.monthly.isNotEmpty) ...[
                   const SizedBox(height: 24),
                   _SectionTitle(
@@ -384,6 +397,100 @@ class _KpiCard extends StatelessWidget {
   }
 }
 
+
+class _TaxReadinessCard extends StatelessWidget {
+  const _TaxReadinessCard({required this.report});
+
+  final BusinessReportModel report;
+
+  @override
+  Widget build(BuildContext context) {
+    final readiness = report.taxReadiness;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '確定申告の準備度',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                Text(
+                  '${readiness.score}点',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            LinearProgressIndicator(
+              value: (readiness.score / 100).clamp(0, 1),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              readiness.ready
+                  ? 'この年の事業取引に未処理項目はありません'
+                  : '${readiness.issueCount}件の取引に確認項目があります',
+            ),
+            if (!readiness.ready) ...[
+              const SizedBox(height: 8),
+              Text(
+                '未確定 ${readiness.reviewCount}件 / '
+                '分類 ${readiness.classificationMissingCount}件 / '
+                '証憑 ${readiness.evidenceMissingCount}件 / '
+                '経費率 ${readiness.expenseRatioReviewCount}件',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BusinessIssueSummary extends StatelessWidget {
+  const _BusinessIssueSummary({required this.report});
+
+  final BusinessReportModel report;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Column(
+        children: [
+          if (report.reviewItems.isNotEmpty)
+            ListTile(
+              leading: const Icon(Icons.fact_check_outlined),
+              title: const Text('要確認の取引'),
+              trailing: Text('${report.reviewItems.length}件'),
+            ),
+          if (report.classificationMissingItems.isNotEmpty)
+            ListTile(
+              leading: const Icon(Icons.category_outlined),
+              title: const Text('分類が未確定'),
+              subtitle: const Text('「その他」「要確認」など'),
+              trailing: Text('${report.classificationMissingItems.length}件'),
+            ),
+          if (report.expenseRatioReviewItems.isNotEmpty)
+            ListTile(
+              leading: const Icon(Icons.percent),
+              title: const Text('経費率を確認'),
+              subtitle: const Text('経費扱いなのに経費率が0%'),
+              trailing: Text('${report.expenseRatioReviewItems.length}件'),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _EvidenceCard extends StatelessWidget {
   const _EvidenceCard({required this.report});
 
@@ -593,7 +700,8 @@ class _MonthlyListCard extends StatelessWidget {
         subtitle: Text(
           '売上 ${_yen(month.income)} / '
           '経費 ${_yen(month.deductibleExpense)}'
-          '${month.evidenceMissingCount > 0 ? ' / 証憑未登録 ${month.evidenceMissingCount}件' : ''}',
+          '${month.evidenceMissingCount > 0 ? ' / 証憑未登録 ${month.evidenceMissingCount}件' : ''}'
+          '${month.readinessIssueCount > 0 ? ' / 要確認 ${month.readinessIssueCount}件' : ''}',
         ),
         trailing: Text(
           _yen(month.profit),

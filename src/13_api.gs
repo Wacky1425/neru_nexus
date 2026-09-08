@@ -17,13 +17,29 @@ function isApiAuthorized_(requestKey) {
   return receivedKey === expectedKey;
 }
 
+function isApiAuthorizedForVersion_(apiVersion, payload) {
+  const version = String(apiVersion || "1").trim();
+  const data = payload || {};
+
+  if (version === "1") {
+    return isApiAuthorized_(data.key);
+  }
+
+  if (version === "2") {
+    return isV204AuthorizedRequest_(data.token);
+  }
+
+  return false;
+}
+
 function createJsonResponse_(data, status, requestId) {
   return ContentService.createTextOutput(
     JSON.stringify({
       success: status !== "error",
       status,
-      apiVersion: NERU_API_VERSION,
-      requestId: String(requestId || ""),
+      apiVersion: getApiResponseVersion_(),
+      serverVersion: NERU_API_VERSION,
+      requestId: String(requestId || getApiRequestId_() || ""),
       data,
     }),
   ).setMimeType(ContentService.MimeType.JSON);
@@ -34,8 +50,9 @@ function createJsonErrorResponse_(message, requestId) {
     JSON.stringify({
       success: false,
       status: "error",
-      apiVersion: NERU_API_VERSION,
-      requestId: String(requestId || ""),
+      apiVersion: getApiResponseVersion_(),
+      serverVersion: NERU_API_VERSION,
+      requestId: String(requestId || getApiRequestId_() || ""),
       error: {
         message: String(message || "不明なエラー"),
       },
@@ -44,10 +61,7 @@ function createJsonErrorResponse_(message, requestId) {
 }
 
 function assertCompatibleApiVersion_(clientVersion) {
-  const value = String(clientVersion || "").trim();
-  if (value && value !== NERU_API_VERSION) {
-    throw new Error(`APIバージョンが一致しません: client=${value}, server=${NERU_API_VERSION}`);
-  }
+  return resolveRequestedApiVersion_(clientVersion);
 }
 
 function doGet(e) {
@@ -55,13 +69,34 @@ function doGet(e) {
   let action = "";
   try {
     const parameters = e && e.parameter ? e.parameter : {};
-    assertCompatibleApiVersion_(parameters.apiVersion);
+    const apiVersion = assertCompatibleApiVersion_(parameters.apiVersion);
+    beginApiRequestContext_(apiVersion, requestId);
 
-    if (!isApiAuthorized_(parameters.key)) {
-      return createJsonErrorResponse_("認証に失敗しました");
+    action = resolveApiAction_("GET", parameters, apiVersion);
+
+    if (!isApiAuthorizedForVersion_(apiVersion, parameters)) {
+      return createJsonErrorResponse_("認証に失敗しました", requestId);
     }
 
-    action = String(parameters.action || "").trim();
+    if (action === "__v2_capabilities__") {
+      return createJsonResponse_(getApiV2Capabilities_(), "ok", requestId);
+    }
+
+    if (action === "__v2_auth_status__") {
+      return createJsonResponse_(
+        getV204AuthStatus_(parameters.token),
+        "ok",
+        requestId,
+      );
+    }
+
+    if (action === "__v2_backend_status__") {
+      return createJsonResponse_(
+        getBackendStatus_(),
+        "ok",
+        requestId,
+      );
+    }
 
     switch (action) {
       case "home":
@@ -79,7 +114,8 @@ function doGet(e) {
             service: "Neru Nexus API",
             running: true,
             generatedAt: new Date().toISOString(),
-            apiVersion: NERU_API_VERSION,
+            currentApiVersion: NERU_API_VERSION,
+            supportedApiVersions: [...NERU_API_SUPPORTED_VERSIONS],
           },
           "ok",
         );
@@ -177,6 +213,12 @@ function doGet(e) {
       case "investment_holdings":
         return createJsonResponse_(getInvestmentHoldingsData_(), "ok");
 
+      case "investment_plans":
+        return createJsonResponse_(
+          getInvestmentPlannerData_({ yearMonth: parameters.yearMonth }),
+          "ok",
+        );
+
       case "sbi_investment_events":
         return createJsonResponse_(
           getSbiInvestmentEventsData_({
@@ -204,7 +246,10 @@ function doGet(e) {
         return createJsonResponse_(getSystemDiagnostics_(), "ok", requestId);
 
       default:
-        return createJsonErrorResponse_(`未対応のactionです: ${action}`);
+        return createJsonErrorResponse_(
+          `未対応のactionです: ${action}`,
+          requestId,
+        );
     }
   } catch (error) {
     console.error(error);
@@ -225,15 +270,26 @@ function doPost(e) {
       e && e.postData && e.postData.contents ? e.postData.contents : "{}",
     );
 
-    assertCompatibleApiVersion_(data.apiVersion);
+    const apiVersion = assertCompatibleApiVersion_(data.apiVersion);
+    beginApiRequestContext_(apiVersion, requestId);
 
-    const key = String(data.key || "").trim();
+    action = resolveApiAction_("POST", data, apiVersion);
 
-    if (!isApiAuthorized_(key)) {
-      return createJsonErrorResponse_("認証に失敗しました");
+    if (apiVersion === "2" && action === "__v2_auth_pair__") {
+      return createJsonResponse_(pairV204Device_(data), "ok", requestId);
     }
 
-    action = String(data.action || "").trim();
+    if (!isApiAuthorizedForVersion_(apiVersion, data)) {
+      return createJsonErrorResponse_("認証に失敗しました", requestId);
+    }
+
+    if (apiVersion === "2" && action === "__v2_auth_revoke__") {
+      return createJsonResponse_(
+        revokeV204Device_(data.token),
+        "ok",
+        requestId,
+      );
+    }
 
     switch (action) {
       case "transaction_create":
@@ -338,6 +394,12 @@ function doPost(e) {
       case "investment_prices_refresh":
         return refreshInvestmentPricesFromApp_();
 
+      case "investment_plan_save":
+        return saveInvestmentPlanFromApp_(data);
+
+      case "investment_plan_deactivate":
+        return deactivateInvestmentPlanFromApp_(data);
+
       case "sbi_investment_scan":
         return scanSbiInvestmentGmailFromApp_(data);
 
@@ -360,7 +422,10 @@ function doPost(e) {
         return createJsonResponse_(runDataIntegrityCheck_(), "ok", requestId);
 
       default:
-        return createJsonErrorResponse_(`未対応のactionです: ${action}`);
+        return createJsonErrorResponse_(
+          `未対応のactionです: ${action}`,
+          requestId,
+        );
     }
   } catch (error) {
     console.error(error);

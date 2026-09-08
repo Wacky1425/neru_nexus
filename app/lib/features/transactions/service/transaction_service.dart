@@ -103,6 +103,8 @@ class TransactionService {
         'amount': transaction.amount,
         'majorCategory': transaction.majorCategory,
         'subCategory': transaction.subCategory,
+        'majorCategoryId': transaction.majorCategoryId,
+        'subCategoryId': transaction.subCategoryId,
         'title': transaction.title,
         'paymentMethod': transaction.paymentMethod,
         'status': transaction.status,
@@ -111,8 +113,11 @@ class TransactionService {
         'expenseRatio': transaction.expenseRatio,
         'evidenceUrl': transaction.evidenceUrl,
         'accountName': transaction.accountName,
+        'accountId': transaction.accountId,
         'fromAccount': transaction.fromAccount ?? '',
+        'fromAccountId': transaction.fromAccountId,
         'toAccount': transaction.toAccount ?? '',
+        'toAccountId': transaction.toAccountId,
       },
     );
 
@@ -146,9 +151,12 @@ class TransactionService {
         'amount': transaction.amount,
         'majorCategory': transaction.majorCategory,
         'subCategory': transaction.subCategory,
+        'majorCategoryId': transaction.majorCategoryId,
+        'subCategoryId': transaction.subCategoryId,
         'title': transaction.title,
         'paymentMethod': transaction.paymentMethod,
         'accountName': transaction.accountName ?? '',
+        'accountId': transaction.accountId,
         'status': transaction.status,
         'memo': transaction.memo,
         'purposeType': transaction.purposeType,
@@ -157,7 +165,9 @@ class TransactionService {
         'saveRule': saveRule,
         'merchant': merchant,
         'fromAccount': transaction.fromAccount ?? '',
+        'fromAccountId': transaction.fromAccountId,
         'toAccount': transaction.toAccount ?? '',
+        'toAccountId': transaction.toAccountId,
       },
     );
 

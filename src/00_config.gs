@@ -1,4 +1,5 @@
-const NERU_API_VERSION = "1";
+const NERU_API_VERSION = "2";
+const NERU_API_SUPPORTED_VERSIONS = Object.freeze(["1", "2"]);
 
 const SHEETS = Object.freeze({
   // ===== Master =====
@@ -20,6 +21,7 @@ const SHEETS = Object.freeze({
   ERROR_LOG: "T_ErrorLog",
   GMAIL_EVIDENCE_CANDIDATES: "T_GmailEvidenceCandidates",
   SBI_INVESTMENT_EVENTS: "T_SbiInvestmentEvents",
+  INVESTMENT_PLANS: "T_InvestmentPlans",
 
   // ===== Report =====
   MONTHLY_SUMMARY: "R_MonthlySummary",

@@ -1095,6 +1095,15 @@ function runRegressionTests() {
       name: "testSbiInvestmentMailParser_",
       fn: testSbiInvestmentMailParser_,
     },
+
+    {
+      name: "testInvestmentDashboardMetrics_",
+      fn: testInvestmentDashboardMetrics_,
+    },
+    {
+      name: "testInvestmentPlannerHelpers_",
+      fn: testInvestmentPlannerHelpers_,
+    },
     // ==========================================================
     // Core / Sheet / Loader
     // ==========================================================
@@ -1231,6 +1240,36 @@ function runRegressionTests() {
     {
       name: "testAssetSnapshotHelpers",
       fn: testAssetSnapshotHelpers,
+    },
+
+    {
+      name: "testHomeForecastHelpers_",
+      fn: testHomeForecastHelpers_,
+    },
+
+    {
+      name: "testCategoryIdentityResolver_",
+      fn: testCategoryIdentityResolver_,
+    },
+
+    {
+      name: "testAccountIdentityResolver_",
+      fn: testAccountIdentityResolver_,
+    },
+
+    {
+      name: "testApiV2Routing_",
+      fn: testApiV2Routing_,
+    },
+
+    {
+      name: "testV204AuthHelpers_",
+      fn: testV204AuthHelpers_,
+    },
+
+    {
+      name: "testBackendRepositoryMapping_",
+      fn: testBackendRepositoryMapping_,
     },
 
     {

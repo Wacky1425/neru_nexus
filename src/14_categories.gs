@@ -126,6 +126,46 @@ function getCategoriesData() {
   };
 }
 
+
+function buildCategoryLookup_() {
+  const data = getCategoriesData();
+  const byName = new Map();
+  const bySubId = new Map();
+
+  for (const item of data.items || []) {
+    const nameKey = [
+      String(item.type || "").trim(),
+      String(item.majorCategory || "").trim(),
+      String(item.subCategory || "").trim(),
+    ].join("|");
+
+    byName.set(nameKey, item);
+
+    const subId = String(item.subCategoryId || "").trim();
+    if (subId) bySubId.set(subId, item);
+  }
+
+  return { byName, bySubId };
+}
+
+function resolveCategoryIdentity_(type, majorCategory, subCategory) {
+  const key = [
+    String(type || "").trim(),
+    String(majorCategory || "").trim(),
+    String(subCategory || "").trim(),
+  ].join("|");
+
+  const item = buildCategoryLookup_().byName.get(key);
+
+  return {
+    majorCategoryId: item ? String(item.majorCategoryId || "") : "",
+    subCategoryId: item ? String(item.subCategoryId || "") : "",
+    majorCategory: String(majorCategory || "").trim(),
+    subCategory: String(subCategory || "").trim(),
+    resolved: Boolean(item),
+  };
+}
+
 function createCategoryFromApp_(data) {
   const type = String(data.type || "").trim();
 

@@ -832,6 +832,24 @@ function getHomeData() {
   const moneyHealth = calculateMoneyHealth_(availableMoney, moneyAllocation);
 
   // ============================================================
+  // 月末予測・提案
+  // ============================================================
+
+  const homeForecast = calculateHomeForecast_(
+    yearMonth,
+    projectedIncome,
+    fixedExpense,
+    Number(budgets["固定費予算"] || 0),
+    Number(recurringForecast.remainingTotal || 0),
+    variableExpense,
+    Number(budgets["変動費予算"] || 0),
+    protectedCash,
+    emergencyFund,
+    moneyAllocation,
+    recurringForecast.items || [],
+  );
+
+  // ============================================================
   // その他
   // ============================================================
 
@@ -947,6 +965,7 @@ function getHomeData() {
     sideBusinessExpense,
     sideBusinessProfit,
     moneyHealth,
+    homeForecast,
     recentTransactions,
 
     generatedAt: new Date().toISOString(),

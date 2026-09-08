@@ -12,6 +12,7 @@ import '../transactions/gmail_import_status_page.dart';
 import '../gmail_evidence/gmail_evidence_page.dart';
 import '../transactions/ignored_transactions_page.dart';
 import '../system/system_diagnostics_page.dart';
+import '../auth/device_auth_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -197,6 +198,18 @@ class SettingsPage extends StatelessWidget {
             },
           ),
 
+
+          ListTile(
+            leading: const Icon(Icons.phonelink_lock_outlined),
+            title: const Text('端末認証'),
+            subtitle: const Text('この端末の認証状態・有効期限・解除'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DeviceAuthPage()),
+              );
+            },
+          ),
 
           ListTile(
             leading: const Icon(Icons.health_and_safety_outlined),

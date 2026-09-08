@@ -1,0 +1,12 @@
+Phase 6 Flutter tests
+- TransactionModel
+- HomeModel
+- AnalyticsModel
+- ImportHistoryModel
+- AccountBalanceModel / AccountBalancesResult
+- BudgetModel
+- GoalModel
+- ApiClient (GET / POST redirect / API error)
+- TransactionService (filters / parsing / guards)
+- ImportService (guards / response parsing)
+- ApiClientにテスト専用clientFactory hookを追加。production挙動は変更なし。

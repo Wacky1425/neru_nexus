@@ -11,10 +11,15 @@ class InvestmentHoldingModel {
     required this.priceUnit,
     required this.averageCost,
     required this.currentPrice,
+    required this.previousClose,
+    required this.priceChange,
+    required this.priceChangeRate,
+    required this.dailyChangeValue,
     required this.marketValue,
     required this.costValue,
     required this.profitLoss,
     required this.profitLossRate,
+    required this.portfolioWeight,
     required this.priceUpdatedAt,
     required this.note,
   });
@@ -30,10 +35,15 @@ class InvestmentHoldingModel {
   final double priceUnit;
   final double averageCost;
   final double currentPrice;
+  final double previousClose;
+  final double priceChange;
+  final double priceChangeRate;
+  final int dailyChangeValue;
   final int marketValue;
   final int costValue;
   final int profitLoss;
   final double profitLossRate;
+  final double portfolioWeight;
   final String priceUpdatedAt;
   final String note;
 
@@ -52,10 +62,15 @@ class InvestmentHoldingModel {
           : _toDouble(json['priceUnit']),
       averageCost: _toDouble(json['averageCost']),
       currentPrice: _toDouble(json['currentPrice']),
+      previousClose: _toDouble(json['previousClose']),
+      priceChange: _toDouble(json['priceChange']),
+      priceChangeRate: _toDouble(json['priceChangeRate']),
+      dailyChangeValue: _toInt(json['dailyChangeValue']),
       marketValue: _toInt(json['marketValue']),
       costValue: _toInt(json['costValue']),
       profitLoss: _toInt(json['profitLoss']),
       profitLossRate: _toDouble(json['profitLossRate']),
+      portfolioWeight: _toDouble(json['portfolioWeight']),
       priceUpdatedAt: json['priceUpdatedAt']?.toString() ?? '',
       note: json['note']?.toString() ?? '',
     );
@@ -79,6 +94,11 @@ class InvestmentHoldingsResult {
     required this.totalCostValue,
     required this.totalProfitLoss,
     required this.totalProfitLossRate,
+    required this.totalDailyChange,
+    required this.totalDailyChangeRate,
+    required this.pricedHoldingCount,
+    required this.dailyChangeAvailableCount,
+    required this.latestPriceUpdatedAt,
   });
 
   final List<InvestmentHoldingModel> items;
@@ -86,6 +106,11 @@ class InvestmentHoldingsResult {
   final int totalCostValue;
   final int totalProfitLoss;
   final double totalProfitLossRate;
+  final int totalDailyChange;
+  final double totalDailyChangeRate;
+  final int pricedHoldingCount;
+  final int dailyChangeAvailableCount;
+  final String latestPriceUpdatedAt;
 
   factory InvestmentHoldingsResult.fromJson(Map<String, dynamic> json) {
     final rawItems = json['items'];
@@ -104,6 +129,14 @@ class InvestmentHoldingsResult {
       totalCostValue: _toInt(json['totalCostValue']),
       totalProfitLoss: _toInt(json['totalProfitLoss']),
       totalProfitLossRate: _toDouble(json['totalProfitLossRate']),
+      totalDailyChange: _toInt(json['totalDailyChange']),
+      totalDailyChangeRate: _toDouble(json['totalDailyChangeRate']),
+      pricedHoldingCount: _toInt(json['pricedHoldingCount']),
+      dailyChangeAvailableCount: _toInt(
+        json['dailyChangeAvailableCount'],
+      ),
+      latestPriceUpdatedAt:
+          json['latestPriceUpdatedAt']?.toString() ?? '',
     );
   }
 

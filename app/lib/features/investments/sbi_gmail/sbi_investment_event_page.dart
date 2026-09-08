@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../model/investment_holding_model.dart';
+import '../service/investment_holding_service.dart';
 import 'sbi_investment_event_model.dart';
 import 'sbi_investment_event_service.dart';
 
@@ -14,11 +16,13 @@ class SbiInvestmentEventPage extends StatefulWidget {
 
 class _SbiInvestmentEventPageState extends State<SbiInvestmentEventPage> {
   final _service = const SbiInvestmentEventService();
+  final _holdingService = const InvestmentHoldingService();
 
   bool _loading = true;
   bool _scanning = false;
   Object? _error;
   List<SbiInvestmentEventModel> _events = const [];
+  List<InvestmentHoldingModel> _holdings = const [];
 
   @override
   void initState() {
@@ -28,10 +32,16 @@ class _SbiInvestmentEventPageState extends State<SbiInvestmentEventPage> {
 
   Future<void> _reload() async {
     try {
-      final events = await _service.fetchEvents();
+      final results = await Future.wait([
+        _service.fetchEvents(),
+        _holdingService.fetchHoldings(),
+      ]);
+      final events = results[0] as List<SbiInvestmentEventModel>;
+      final holdingsResult = results[1] as InvestmentHoldingsResult;
       if (!mounted) return;
       setState(() {
         _events = events;
+        _holdings = holdingsResult.items;
         _loading = false;
         _error = null;
       });
@@ -71,8 +81,81 @@ class _SbiInvestmentEventPageState extends State<SbiInvestmentEventPage> {
     }
   }
 
-  Future<void> _apply(SbiInvestmentEventModel event) async {
-    if (!event.isMatched) return;
+  Future<InvestmentHoldingModel?> _chooseHolding(
+    SbiInvestmentEventModel event,
+  ) {
+    return showModalBottomSheet<InvestmentHoldingModel>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        final holdings = _holdings
+            .where((holding) => holding.holdingId.trim().isNotEmpty)
+            .toList();
+
+        return SafeArea(
+          child: SizedBox(
+            height: 480,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                  child: Text(
+                    '反映先を選択',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text(
+                    event.securityName.isNotEmpty
+                        ? event.securityName
+                        : event.symbol,
+                  ),
+                ),
+                const Divider(height: 24),
+                Expanded(
+                  child: holdings.isEmpty
+                      ? const Center(
+                          child: Text('登録済みの保有銘柄がありません'),
+                        )
+                      : ListView.builder(
+                          itemCount: holdings.length,
+                          itemBuilder: (context, index) {
+                            final holding = holdings[index];
+                            return ListTile(
+                              leading: const Icon(Icons.show_chart),
+                              title: Text(holding.name),
+                              subtitle: Text(
+                                [
+                                  if (holding.symbol.isNotEmpty)
+                                    holding.symbol,
+                                  holding.accountName,
+                                  '保有 ${_number(holding.quantity)}',
+                                ].where((value) => value.isNotEmpty).join(' ・ '),
+                              ),
+                              onTap: () =>
+                                  Navigator.pop(context, holding),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _apply(
+    SbiInvestmentEventModel event, {
+    InvestmentHoldingModel? selectedHolding,
+  }) async {
+    final holdingId = selectedHolding?.holdingId ?? event.holdingId;
+    final holdingName = selectedHolding?.name ?? event.holdingName;
+    if (holdingId.trim().isEmpty) return;
+
     final action = event.isBuy ? '買付' : '売却';
     final confirmed = await showDialog<bool>(
       context: context,
@@ -80,8 +163,8 @@ class _SbiInvestmentEventPageState extends State<SbiInvestmentEventPage> {
         title: Text('$actionを保有数量へ反映'),
         content: Text(
           '${event.securityName}\n'
-          '${_number(event.quantity)}${event.symbol.isEmpty ? '口/株' : ''}\n\n'
-          '反映先: ${event.holdingName}\n\n'
+          '${_number(event.quantity)}口/株\n\n'
+          '反映先: $holdingName\n\n'
           'このイベントを保有数量へ反映しますか？',
         ),
         actions: [
@@ -99,7 +182,7 @@ class _SbiInvestmentEventPageState extends State<SbiInvestmentEventPage> {
     if (confirmed != true) return;
 
     try {
-      await _service.apply(event);
+      await _service.apply(event, holdingId: holdingId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('保有数量へ反映しました')),
@@ -113,6 +196,12 @@ class _SbiInvestmentEventPageState extends State<SbiInvestmentEventPage> {
         ),
       );
     }
+  }
+
+  Future<void> _selectAndApply(SbiInvestmentEventModel event) async {
+    final holding = await _chooseHolding(event);
+    if (holding == null || !mounted) return;
+    await _apply(event, selectedHolding: holding);
   }
 
   Future<void> _ignore(SbiInvestmentEventModel event) async {
@@ -223,7 +312,10 @@ class _SbiInvestmentEventPageState extends State<SbiInvestmentEventPage> {
                                     ),
                                   ] else ...[
                                     const Divider(height: 20),
-                                    const Text('保有銘柄を自動特定できませんでした'),
+                                    const Text(
+                                      '保有銘柄を自動特定できませんでした。'
+                                      '登録済み銘柄から手動で反映先を選べます。',
+                                    ),
                                   ],
                                   const SizedBox(height: 8),
                                   Row(
@@ -233,13 +325,22 @@ class _SbiInvestmentEventPageState extends State<SbiInvestmentEventPage> {
                                         onPressed: () => _ignore(event),
                                         child: const Text('対象外'),
                                       ),
-                                      if (event.isMatched) ...[
-                                        const SizedBox(width: 8),
+                                      const SizedBox(width: 8),
+                                      if (event.isMatched)
                                         FilledButton(
                                           onPressed: () => _apply(event),
                                           child: const Text('保有へ反映'),
+                                        )
+                                      else
+                                        FilledButton.tonalIcon(
+                                          onPressed: _holdings.isEmpty
+                                              ? null
+                                              : () => _selectAndApply(event),
+                                          icon: const Icon(
+                                            Icons.link_outlined,
+                                          ),
+                                          label: const Text('反映先を選ぶ'),
                                         ),
-                                      ],
                                     ],
                                   ),
                                 ],

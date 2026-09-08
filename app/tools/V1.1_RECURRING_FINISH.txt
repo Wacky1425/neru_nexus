@@ -1,0 +1,21 @@
+Neru Nexus V1.1-4 サブスク管理仕上げ
+
+追加:
+- 過去の支払日から毎月の支払目安日を推定
+- 承認済み固定費/サブスクの月額見込・年間見込
+- 今月まだ発生していない定期支払いの件数/残額
+- 支払目安日を過ぎても未発生の項目を検出
+- 各定期支払いに支払目安日・年間見込を表示
+- Home既存の定期支払い予測との互換維持
+- Recurring model test追加
+- GAS recurring regression test強化
+
+T_RecurringCandidates は rebuild 時に expected_day / yearly_estimate 列まで自動更新されるため、
+手動のSpreadsheet migrationは不要。
+
+確認:
+1. GASデプロイ
+2. runReleaseChecks()
+3. flutter test
+4. flutter analyze
+5. 固定費・定期支払い画面を開く

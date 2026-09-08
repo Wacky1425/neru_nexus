@@ -8,6 +8,8 @@ class TransactionModel {
     required this.type,
     required this.majorCategory,
     required this.subCategory,
+    required this.majorCategoryId,
+    required this.subCategoryId,
     required this.status,
     required this.purposeType,
     required this.expenseRatio,
@@ -17,11 +19,14 @@ class TransactionModel {
     required this.intent,
     required this.paymentMethod,
     required this.accountName,
+    required this.accountId,
     required this.rawText,
     required this.settlementStatus,
     required this.settlementId,
     required this.fromAccount,
+    required this.fromAccountId,
     required this.toAccount,
+    required this.toAccountId,
     required this.importBatch,
     required this.note,
     required this.sourceId,
@@ -46,6 +51,11 @@ class TransactionModel {
 
   final String subCategory;
 
+  /// V2 stable IDs. Names remain during the compatibility period.
+  final String majorCategoryId;
+
+  final String subCategoryId;
+
   final String status;
 
   final String purposeType;
@@ -67,11 +77,18 @@ class TransactionModel {
 
   final String fromAccount;
 
+  final String fromAccountId;
+
   final String toAccount;
+
+  final String toAccountId;
 
   final String importBatch;
 
   final String accountName;
+
+  /// V2 stable account ID. Name remains during the compatibility period.
+  final String accountId;
 
   final String note;
 
@@ -144,6 +161,10 @@ class TransactionModel {
 
       subCategory: json['subCategory']?.toString() ?? '',
 
+      majorCategoryId: json['majorCategoryId']?.toString() ?? '',
+
+      subCategoryId: json['subCategoryId']?.toString() ?? '',
+
       status: json['status']?.toString() ?? '',
 
       purposeType: json['purposeType']?.toString() ?? '',
@@ -168,11 +189,17 @@ class TransactionModel {
 
       fromAccount: json['fromAccount']?.toString() ?? '',
 
+      fromAccountId: json['fromAccountId']?.toString() ?? '',
+
       toAccount: json['toAccount']?.toString() ?? '',
+
+      toAccountId: json['toAccountId']?.toString() ?? '',
 
       importBatch: json['importBatch']?.toString() ?? '',
 
       accountName: json['accountName']?.toString() ?? '',
+
+      accountId: json['accountId']?.toString() ?? '',
 
       note: json['note']?.toString() ?? '',
 

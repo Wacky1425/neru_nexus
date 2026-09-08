@@ -8,11 +8,14 @@ import 'package:http/testing.dart';
 void main() {
   tearDown(ApiClient.resetTestClientFactory);
 
-  test('GET decodes successful API envelope and sends action', () async {
+  test('GET decodes successful API envelope and sends v2 route', () async {
     ApiClient.clientFactoryForTesting = () => MockClient((request) async {
       expect(request.method, 'GET');
-      expect(request.url.queryParameters['action'], 'home');
-      expect(request.url.queryParameters['key'], isNotEmpty);
+      expect(request.url.queryParameters['route'], 'dashboard.home');
+      expect(request.url.queryParameters['apiVersion'], '2');
+      expect(request.url.queryParameters['action'], isNull);
+      expect(request.url.queryParameters['token'], 'test-device-token');
+      expect(request.url.queryParameters['key'], isNull);
       return http.Response.bytes(utf8.encode(jsonEncode({'success': true, 'data': {'value': 42}})), 200, headers: {'content-type': 'application/json; charset=utf-8'});
     });
 
@@ -27,7 +30,11 @@ void main() {
       if (call == 1) {
         expect(request.method, 'POST');
         final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body['action'], 'transaction_delete');
+        expect(body['route'], 'transactions.delete');
+        expect(body['apiVersion'], '2');
+        expect(body['action'], isNull);
+        expect(body['token'], 'test-device-token');
+        expect(body['key'], isNull);
         expect(body['id'], 't1');
         return http.Response('', 302, headers: {'location': 'https://example.test/result'});
       }
@@ -88,5 +95,39 @@ void main() {
       throwsA(isA<Exception>()),
     );
   });
+
+  test('public pairing POST sends no device token', () async {
+    ApiClient.clientFactoryForTesting = () => MockClient((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+
+      expect(body['route'], 'auth.pair');
+      expect(body['apiVersion'], '2');
+      expect(body['token'], isNull);
+      expect(body['pairingCode'], '12345678');
+
+      return http.Response.bytes(
+        utf8.encode(
+          jsonEncode({
+            'success': true,
+            'apiVersion': '2',
+            'data': {
+              'paired': true,
+              'token': 'new-token',
+            },
+          }),
+        ),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+    });
+
+    final data = await ApiClient.postPublic(
+      action: 'auth_pair',
+      body: {'pairingCode': '12345678'},
+    );
+
+    expect(data['paired'], isTrue);
+  });
+
 
 }

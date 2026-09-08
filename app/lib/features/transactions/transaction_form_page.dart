@@ -14,6 +14,8 @@ class TransactionFormResult {
     required this.amount,
     required this.majorCategory,
     required this.subCategory,
+    this.majorCategoryId = '',
+    this.subCategoryId = '',
     required this.title,
     required this.paymentMethod,
     required this.status,
@@ -22,8 +24,11 @@ class TransactionFormResult {
     required this.expenseRatio,
     required this.evidenceUrl,
     required this.accountName,
+    this.accountId = '',
     required this.fromAccount,
+    this.fromAccountId = '',
     required this.toAccount,
+    this.toAccountId = '',
   });
 
   final DateTime date;
@@ -31,6 +36,8 @@ class TransactionFormResult {
   final int amount;
   final String majorCategory;
   final String subCategory;
+  final String majorCategoryId;
+  final String subCategoryId;
   final String title;
   final String paymentMethod;
   final String status;
@@ -39,8 +46,11 @@ class TransactionFormResult {
   final double expenseRatio;
   final String evidenceUrl;
   final String? accountName;
+  final String accountId;
   final String? fromAccount;
+  final String fromAccountId;
   final String? toAccount;
+  final String toAccountId;
 }
 
 class TransactionFormPageResult {
@@ -286,31 +296,31 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
       return;
     }
 
+    final fromAccountId = tx.fromAccountId.trim();
     final fromAccountName = tx.fromAccount.trim();
 
+    final toAccountId = tx.toAccountId.trim();
     final toAccountName = tx.toAccount.trim();
 
-    if (fromAccountName.isNotEmpty) {
-      for (final account in _accounts) {
-        if (account.accountName == fromAccountName) {
-          _selectedFromAccountId = account.accountId;
-
-          _selectedFromAccountName = account.accountName;
-
-          break;
-        }
+    for (final account in _accounts) {
+      if ((fromAccountId.isNotEmpty && account.accountId == fromAccountId) ||
+          (fromAccountId.isEmpty &&
+              fromAccountName.isNotEmpty &&
+              account.accountName == fromAccountName)) {
+        _selectedFromAccountId = account.accountId;
+        _selectedFromAccountName = account.accountName;
+        break;
       }
     }
 
-    if (toAccountName.isNotEmpty) {
-      for (final account in _accounts) {
-        if (account.accountName == toAccountName) {
-          _selectedToAccountId = account.accountId;
-
-          _selectedToAccountName = account.accountName;
-
-          break;
-        }
+    for (final account in _accounts) {
+      if ((toAccountId.isNotEmpty && account.accountId == toAccountId) ||
+          (toAccountId.isEmpty &&
+              toAccountName.isNotEmpty &&
+              account.accountName == toAccountName)) {
+        _selectedToAccountId = account.accountId;
+        _selectedToAccountName = account.accountName;
+        break;
       }
     }
   }
@@ -376,11 +386,21 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
     }
 
     if (_accounts.isNotEmpty) {
+      final currentAccountId = transaction?.accountId.trim() ?? '';
       final currentAccountName = transaction?.accountName.trim() ?? '';
 
       AccountMaster? matchedAccount;
 
-      if (currentAccountName.isNotEmpty) {
+      if (currentAccountId.isNotEmpty) {
+        for (final account in _accounts) {
+          if (account.accountId == currentAccountId) {
+            matchedAccount = account;
+            break;
+          }
+        }
+      }
+
+      if (matchedAccount == null && currentAccountName.isNotEmpty) {
         for (final account in _accounts) {
           if (account.accountName == currentAccountName) {
             matchedAccount = account;
@@ -489,6 +509,27 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
     });
   }
 
+
+  CategoryMaster? get _selectedCategoryMaster {
+    final master = _master;
+    if (master == null) return null;
+
+    final type = switch (_selectedType) {
+      TransactionType.expense => '支出',
+      TransactionType.income => '収入',
+      TransactionType.transfer => '移動',
+    };
+
+    for (final category in master.categories) {
+      if (category.type == type &&
+          category.majorCategory == _selectedMajorCategory &&
+          category.subCategory == _selectedSubCategory) {
+        return category;
+      }
+    }
+    return null;
+  }
+
   Future<void> _saveTransaction() async {
     if (_isSaving) {
       return;
@@ -514,9 +555,12 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
       amount: amount,
       majorCategory: _selectedMajorCategory,
       subCategory: _selectedSubCategory,
+      majorCategoryId: _selectedCategoryMaster?.majorCategoryId ?? '',
+      subCategoryId: _selectedCategoryMaster?.subCategoryId ?? '',
       title: _titleController.text.trim(),
       paymentMethod: _selectedPaymentMethod,
       accountName: _selectedAccountName,
+      accountId: _selectedAccountId,
       status: _isConfirmed ? '確定' : '要確認',
       memo: _memoController.text.trim(),
       purposeType: _selectedType == TransactionType.income
@@ -531,10 +575,16 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
       fromAccount: _selectedType == TransactionType.transfer
           ? _selectedFromAccountName
           : null,
+      fromAccountId: _selectedType == TransactionType.transfer
+          ? _selectedFromAccountId
+          : '',
 
       toAccount: _selectedType == TransactionType.transfer
           ? _selectedToAccountName
           : null,
+      toAccountId: _selectedType == TransactionType.transfer
+          ? _selectedToAccountId
+          : '',
     );
 
     setState(() {

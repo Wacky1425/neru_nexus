@@ -1,0 +1,11 @@
+Neru Nexus Phase 2 Home Fix
+基準: flutter20260828_ReviewFix
+
+変更:
+- HomeModelにHome計算の入力値・予算継承情報を追加
+- 当月予算未設定時、HomeでもBudget画面と同じ直近月継承を反映
+- 資金配分カードに「前月等の予算を引き継いでいる」表示を追加
+- 生活防衛資金カードに、目的資金・カード支払予定・給料日までの生活費の控除内訳を追加
+
+注意:
+- この環境にFlutter/Dart SDKがないため flutter analyze / flutter test は未実行

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
-import 'features/app_shell.dart';
+import 'features/auth/auth_gate.dart';
 
 class NeruNexusApp extends StatelessWidget {
   const NeruNexusApp({super.key});
@@ -14,7 +14,7 @@ class NeruNexusApp extends StatelessWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
-      home: const AppShell(),
+      home: const AuthGate(),
     );
   }
 }

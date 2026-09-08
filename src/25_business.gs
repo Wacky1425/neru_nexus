@@ -18,6 +18,7 @@ function businessTransactionToObject_(row, index) {
     majorCategory: getString(row, index, "major_category"),
     subCategory: getString(row, index, "sub_category"),
     purposeType: getString(row, index, "purpose_type"),
+    status: getString(row, index, "status"),
     expenseRatio: ratio,
     expenseAmount,
     note: getString(row, index, "note"),
@@ -52,6 +53,18 @@ function getBusinessReportData_(options) {
       monthly: [],
       categories: [],
       evidenceMissingItems: [],
+      reviewItems: [],
+      classificationMissingItems: [],
+      expenseRatioReviewItems: [],
+      taxReadiness: {
+        score: 100,
+        ready: true,
+        issueCount: 0,
+        reviewCount: 0,
+        classificationMissingCount: 0,
+        evidenceMissingCount: 0,
+        expenseRatioReviewCount: 0,
+      },
       items: [],
     };
   }
@@ -61,7 +74,7 @@ function getBusinessReportData_(options) {
     [
       "id", "transaction_date", "type", "merchant", "item_name", "amount",
       "major_category", "sub_category", "purpose_type", "expense_ratio",
-      "expense_amount", "note", "evidence_url", "wallet", "account_name",
+      "expense_amount", "note", "evidence_url", "wallet", "account_name", "status",
     ],
     SHEETS.TRANSACTIONS,
   );
@@ -101,6 +114,11 @@ function getBusinessReportData_(options) {
       profit: 0,
       evidenceAttachedCount: 0,
       evidenceMissingCount: 0,
+      reviewCount: 0,
+      classificationMissingCount: 0,
+      expenseRatioReviewCount: 0,
+      readinessIssueCount: 0,
+      readinessScore: 100,
     };
 
     if (type === "収入") {
@@ -134,6 +152,42 @@ function getBusinessReportData_(options) {
       }
     }
 
+    const classificationMissing =
+      !tx.majorCategory ||
+      !tx.subCategory ||
+      tx.majorCategory === "その他" ||
+      tx.subCategory === "要確認" ||
+      tx.subCategory === "その他";
+    const needsReview = tx.status === "要確認";
+    const expenseRatioReview =
+      tx.type === "支出" &&
+      tx.purposeType === "経費" &&
+      !(tx.expenseRatio > 0);
+
+    tx.classificationMissing = classificationMissing;
+    tx.needsReview = needsReview;
+    tx.expenseRatioNeedsReview = expenseRatioReview;
+
+    if (needsReview) month.reviewCount += 1;
+    if (classificationMissing) month.classificationMissingCount += 1;
+    if (expenseRatioReview) month.expenseRatioReviewCount += 1;
+
+    month.readinessIssueCount =
+      month.evidenceMissingCount +
+      month.reviewCount +
+      month.classificationMissingCount +
+      month.expenseRatioReviewCount;
+    month.readinessScore = Math.max(
+      0,
+      Math.round(
+        100 -
+          (month.evidenceMissingCount * 20 +
+            month.reviewCount * 25 +
+            month.classificationMissingCount * 20 +
+            month.expenseRatioReviewCount * 20),
+      ),
+    );
+
     month.profit = month.income - month.deductibleExpense;
     monthlyMap.set(dateMonth, month);
     items.push(tx);
@@ -153,8 +207,38 @@ function getBusinessReportData_(options) {
   const profitMargin = income > 0 ? profit / income : 0;
   const expenseItems = items.filter((item) => item.type === "支出");
   const evidenceMissingItems = expenseItems.filter((item) => !item.evidenceUrl);
+  const reviewItems = items.filter((item) => item.needsReview);
+  const classificationMissingItems = items.filter(
+    (item) => item.classificationMissing,
+  );
+  const expenseRatioReviewItems = expenseItems.filter(
+    (item) => item.expenseRatioNeedsReview,
+  );
   const evidenceCoverageRate =
     expenseItems.length > 0 ? evidenceAttachedCount / expenseItems.length : 1;
+
+  const issueIds = new Set();
+  [
+    ...evidenceMissingItems,
+    ...reviewItems,
+    ...classificationMissingItems,
+    ...expenseRatioReviewItems,
+  ].forEach((item) => issueIds.add(item.id));
+
+  const taxReadinessPenalty =
+    evidenceMissingItems.length * 20 +
+    reviewItems.length * 25 +
+    classificationMissingItems.length * 20 +
+    expenseRatioReviewItems.length * 20;
+  const taxReadiness = {
+    score: Math.max(0, Math.round(100 - taxReadinessPenalty)),
+    ready: issueIds.size === 0,
+    issueCount: issueIds.size,
+    reviewCount: reviewItems.length,
+    classificationMissingCount: classificationMissingItems.length,
+    evidenceMissingCount: evidenceMissingItems.length,
+    expenseRatioReviewCount: expenseRatioReviewItems.length,
+  };
 
   let bestMonth = null;
   let worstMonth = null;
@@ -182,6 +266,10 @@ function getBusinessReportData_(options) {
     monthly,
     categories,
     evidenceMissingItems,
+    reviewItems,
+    classificationMissingItems,
+    expenseRatioReviewItems,
+    taxReadiness,
     items,
   };
 }
@@ -269,6 +357,13 @@ function testGetBusinessReportData() {
   }
   if (report.evidenceMissingItems.length !== report.evidenceMissingCount) {
     throw new Error("証憑不足一覧と件数が一致しません");
+  }
+  if (
+    report.taxReadiness.score < 0 ||
+    report.taxReadiness.score > 100 ||
+    report.taxReadiness.issueCount < 0
+  ) {
+    throw new Error("税務準備度が不正です");
   }
   Logger.log(JSON.stringify({
     assertions: "PASS",
