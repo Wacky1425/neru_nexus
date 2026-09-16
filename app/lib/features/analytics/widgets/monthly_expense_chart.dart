@@ -52,7 +52,7 @@ class MonthlyExpenseChart extends StatelessWidget {
 
     final minY = minimumValue >= 0 ? 0.0 : -_calculateMaxY(minimumValue.abs());
 
-    final interval = maxY / 4;
+    final interval = (maxY - minY) / 4;
 
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -120,7 +120,7 @@ class MonthlyExpenseChart extends StatelessWidget {
                     leftTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
-                        reservedSize: 52,
+                        reservedSize: 62,
                         interval: interval,
                         getTitlesWidget: (value, meta) {
                           return SideTitleWidget(
@@ -304,7 +304,7 @@ class MonthlyExpenseChart extends StatelessWidget {
   }
 
   static String _formatCompactYen(double amount) {
-    if (amount >= 10000) {
+    if (amount.abs() >= 10000) {
       final value = amount / 10000;
 
       if (value == value.roundToDouble()) {

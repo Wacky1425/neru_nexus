@@ -439,3 +439,187 @@ function ensureV202KnownAccountMasters_() {
 
   return addedAccounts;
 }
+
+// ============================================================
+// R6 account identity cleanup diagnostics.
+// Public entry point intentionally has NO trailing underscore.
+// Read-only: does not mutate sheets.
+// ============================================================
+function diagnoseR6AccountIdentityCleanup() {
+  const verification = verifyV202AccountIds();
+  const accountSheet = getRequiredSheet(SHEETS.ACCOUNTS);
+  const values = accountSheet.getDataRange().getValues();
+  const index = createHeaderIndex(values[0] || []);
+
+  assertRequiredColumns(
+    index,
+    ["account_id", "account_name", "active", "opening_balance", "opening_balance_date"],
+    SHEETS.ACCOUNTS,
+  );
+
+  const normalizeLoose = (value) => String(value || "")
+    .normalize("NFKC")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+
+  const accountRows = values.slice(1).map((row, i) => ({
+    rowNumber: i + 2,
+    accountId: String(row[index["account_id"]] || "").trim(),
+    accountName: String(row[index["account_name"]] || "").trim(),
+    canonicalName: resolveCanonicalAccountName_(row[index["account_name"]]),
+    active: row[index["active"]],
+    openingBalance: row[index["opening_balance"]],
+    openingBalanceDate: row[index["opening_balance_date"]],
+  }));
+
+  const aeonCandidates = accountRows.filter((item) =>
+    normalizeLoose(item.accountName) === "AEON PAY" ||
+    normalizeLoose(item.canonicalName) === "AEON PAY"
+  );
+
+  const issueNames = new Set(
+    (verification.issues || [])
+      .map((issue) => String(issue.accountName || "").trim())
+      .filter(Boolean),
+  );
+
+  const relatedMasters = accountRows.filter((item) =>
+    issueNames.has(item.accountName) || issueNames.has(item.canonicalName)
+  );
+
+  const result = {
+    verification,
+    aeonCandidates,
+    relatedMasters,
+    recommendation:
+      "AEON PAY候補の基準残高・利用状況を確認してから正規ID acc_aeon_pay へ統合し、残りの未解決参照を補完します。",
+  };
+
+  Logger.log("=== R6 口座ID整理診断 ===");
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+// ============================================================
+// R6 account identity cleanup.
+// Public entry point intentionally has NO trailing underscore.
+// Canonical AEON Pay master is the user-configured row with the real
+// opening balance. The migration-created duplicate is archived.
+// ============================================================
+function repairR6AccountIdentityCleanup() {
+  const CANONICAL_AEON_ID = "acc_0989d14070cd41d5";
+  const DUPLICATE_AEON_ID = "acc_aeon_pay";
+  const CANONICAL_AEON_NAME = "AEON Pay";
+  const DOCOMO_ID = "acc_0ca650ccd34e42e4";
+  const DOCOMO_NAME = "ドコモSMTBネット銀行";
+
+  // 1) Make AEON PAY resolve to the user-configured canonical account.
+  const aliasSheet = getRequiredSheet(SHEETS.ACCOUNT_ALIAS);
+  const aliasValues = aliasSheet.getDataRange().getValues();
+  const aliasIndex = createHeaderIndex(aliasValues[0] || []);
+  assertRequiredColumns(aliasIndex, ["raw_account_name", "canonical_account_name"], SHEETS.ACCOUNT_ALIAS);
+  let aliasChanged = false;
+  let aliasFound = false;
+  for (let i = 1; i < aliasValues.length; i++) {
+    const raw = String(aliasValues[i][aliasIndex["raw_account_name"]] || "").normalize("NFKC").trim().toUpperCase();
+    if (raw !== "AEON PAY") continue;
+    aliasFound = true;
+    if (String(aliasValues[i][aliasIndex["canonical_account_name"]] || "").trim() !== CANONICAL_AEON_NAME) {
+      aliasSheet.getRange(i + 1, aliasIndex["canonical_account_name"] + 1).setValue(CANONICAL_AEON_NAME);
+      aliasChanged = true;
+    }
+  }
+  if (!aliasFound) {
+    const row = new Array(aliasValues[0].length).fill("");
+    row[aliasIndex["raw_account_name"]] = "AEON PAY";
+    row[aliasIndex["canonical_account_name"]] = CANONICAL_AEON_NAME;
+    aliasSheet.appendRow(row);
+    aliasChanged = true;
+  }
+  accountAliasCache_ = null;
+
+  // 2) Archive the migration-created duplicate master. Keep the row for audit/history.
+  const accountSheet = getRequiredSheet(SHEETS.ACCOUNTS);
+  const accountValues = accountSheet.getDataRange().getValues();
+  const accountIndex = createHeaderIndex(accountValues[0] || []);
+  assertRequiredColumns(accountIndex, ["account_id", "account_name", "active", "note"], SHEETS.ACCOUNTS);
+  let archivedDuplicate = false;
+  let canonicalExists = false;
+  let docomoExists = false;
+  for (let i = 1; i < accountValues.length; i++) {
+    const id = String(accountValues[i][accountIndex["account_id"]] || "").trim();
+    if (id === CANONICAL_AEON_ID) canonicalExists = true;
+    if (id === DOCOMO_ID) docomoExists = true;
+    if (id === DUPLICATE_AEON_ID) {
+      accountSheet.getRange(i + 1, accountIndex["account_name"] + 1).setValue("AEON PAY (旧・統合済み)");
+      accountSheet.getRange(i + 1, accountIndex["active"] + 1).setValue(0);
+      const oldNote = String(accountValues[i][accountIndex["note"]] || "").trim();
+      const marker = "R6: AEON Payへ統合済み";
+      accountSheet.getRange(i + 1, accountIndex["note"] + 1).setValue(oldNote.includes(marker) ? oldNote : [oldNote, marker].filter(Boolean).join(" / "));
+      archivedDuplicate = true;
+    }
+  }
+  if (!canonicalExists) throw new Error("正規AEON Pay口座が見つかりません: " + CANONICAL_AEON_ID);
+  if (!docomoExists) throw new Error("ドコモSMTBネット銀行口座が見つかりません: " + DOCOMO_ID);
+  clearTableCache(SHEETS.ACCOUNTS);
+  clearAccountBalanceCache_();
+
+  // 3) Normalize every transaction reference to canonical names + IDs.
+  const txSheet = getRequiredSheet(SHEETS.TRANSACTIONS);
+  const txValues = txSheet.getDataRange().getValues();
+  const txIndex = createHeaderIndex(txValues[0] || []);
+  assertRequiredColumns(txIndex, ["account_name", "account_id", "from_account", "from_account_id", "to_account", "to_account_id"], SHEETS.TRANSACTIONS);
+  let transactionRowsUpdated = 0;
+  for (let i = 1; i < txValues.length; i++) {
+    const row = txValues[i];
+    let changed = false;
+    const mappings = [
+      ["account_name", "account_id"],
+      ["from_account", "from_account_id"],
+      ["to_account", "to_account_id"],
+    ];
+    for (const [nameCol, idCol] of mappings) {
+      const rawName = String(row[txIndex[nameCol]] || "").trim();
+      const rawId = String(row[txIndex[idCol]] || "").trim();
+      const upper = rawName.normalize("NFKC").toUpperCase();
+      if (rawId === DUPLICATE_AEON_ID || upper === "AEON PAY") {
+        if (row[txIndex[nameCol]] !== CANONICAL_AEON_NAME || row[txIndex[idCol]] !== CANONICAL_AEON_ID) {
+          row[txIndex[nameCol]] = CANONICAL_AEON_NAME;
+          row[txIndex[idCol]] = CANONICAL_AEON_ID;
+          changed = true;
+        }
+      } else if (rawName === DOCOMO_NAME && !rawId) {
+        row[txIndex[idCol]] = DOCOMO_ID;
+        changed = true;
+      }
+    }
+    if (changed) transactionRowsUpdated++;
+  }
+  if (txValues.length > 1) txSheet.getRange(2, 1, txValues.length - 1, txValues[0].length).setValues(txValues.slice(1));
+  clearTableCache(SHEETS.TRANSACTIONS);
+
+  // 4) Remove only the duplicate AEON reconciliation record; canonical record remains.
+  const recSheet = SS.getSheetByName(SHEETS.BALANCE_RECONCILIATION);
+  let removedDuplicateReconciliationRows = 0;
+  if (recSheet && recSheet.getLastRow() >= 2) {
+    const recValues = recSheet.getDataRange().getValues();
+    const recIndex = createHeaderIndex(recValues[0] || []);
+    if (recIndex["account_id"] !== undefined) {
+      for (let i = recValues.length - 1; i >= 1; i--) {
+        if (String(recValues[i][recIndex["account_id"]] || "").trim() === DUPLICATE_AEON_ID) {
+          recSheet.deleteRow(i + 1);
+          removedDuplicateReconciliationRows++;
+        }
+      }
+      clearTableCache(SHEETS.BALANCE_RECONCILIATION);
+    }
+  }
+
+  clearAccountBalanceCache_();
+  const verification = verifyV202AccountIds();
+  const result = { aliasChanged, archivedDuplicate, transactionRowsUpdated, removedDuplicateReconciliationRows, verification };
+  Logger.log("=== R6 口座ID整理 修復結果 ===");
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}

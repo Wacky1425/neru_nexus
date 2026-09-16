@@ -18,6 +18,7 @@ const SHEETS = Object.freeze({
   TRANSACTIONS: "T_Transactions",
   RECURRING_CANDIDATES: "T_RecurringCandidates",
   IMPORT_HISTORY: "T_ImportHistory",
+  BALANCE_RECONCILIATION: "T_BalanceReconciliation",
   ERROR_LOG: "T_ErrorLog",
   GMAIL_EVIDENCE_CANDIDATES: "T_GmailEvidenceCandidates",
   SBI_INVESTMENT_EVENTS: "T_SbiInvestmentEvents",

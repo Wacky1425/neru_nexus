@@ -15,6 +15,10 @@ class ImportHistoryModel {
     required this.ignoredCount,
     required this.billingYearMonths,
     required this.status,
+    required this.fileHash,
+    required this.duplicateStatus,
+    required this.existingCount,
+    required this.newCount,
   });
 
   final String importBatch;
@@ -37,6 +41,10 @@ class ImportHistoryModel {
   final List<String> billingYearMonths;
 
   final String status;
+  final String fileHash;
+  final String duplicateStatus;
+  final int existingCount;
+  final int newCount;
 
   factory ImportHistoryModel.fromJson(Map<String, dynamic> json) {
     return ImportHistoryModel(
@@ -58,6 +66,10 @@ class ImportHistoryModel {
           .where((value) => value.isNotEmpty)
           .toList(),
       status: json['status']?.toString() ?? '',
+      fileHash: json['fileHash']?.toString() ?? '',
+      duplicateStatus: json['duplicateStatus']?.toString() ?? '',
+      existingCount: _toInt(json['existingCount']),
+      newCount: _toInt(json['newCount']),
     );
   }
 

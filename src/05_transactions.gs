@@ -167,11 +167,18 @@ function buildDuplicateKey(tx) {
 
   const amount = Number(tx.amount || 0);
 
-  const merchant = normalizeMerchant(
-    String(tx.merchant || "")
-      .normalize("NFKC")
-      .trim(),
-  );
+  let merchantText = String(tx.merchant || "")
+    .normalize("NFKC")
+    .trim();
+
+  // PayPay CSVの世代/取込経路によって、同じ加盟店でも
+  // merchantが「支払い 店名」と「店名」に揺れることがある。
+  // duplicate keyでは取引種別プレフィックスを除去して同一視する。
+  if (sourceType === "CSV_PayPay") {
+    merchantText = merchantText.replace(/^(?:支払い|支払)\s*/u, "");
+  }
+
+  const merchant = normalizeMerchant(merchantText);
 
   return [sourceType, accountName, transactionDate, amount, merchant].join("|");
 }
@@ -389,6 +396,7 @@ function addTransactions(transactions, options = {}) {
   }
 
   const skipDuplicateCheck = options.skipDuplicateCheck === true;
+  const dryRun = options.dryRun === true;
 
   // DBに既に何件存在するか
   const existingCounts = skipDuplicateCheck
@@ -534,7 +542,7 @@ function addTransactions(transactions, options = {}) {
     rows.push(buildTransactionRow(tx, id, createdAt, yearMonth, duplicateKey));
   }
 
-  const addedCount = appendTransactionRows(rows);
+  const addedCount = dryRun ? rows.length : appendTransactionRows(rows);
 
   return {
     addedCount,
@@ -866,6 +874,39 @@ function createTransactionFromApp_(data) {
   );
 }
 
+
+/**
+ * R5 optimistic-concurrency token for a transaction row.
+ * The token is derived from the persisted row, so changes made by another
+ * device/import path are detected without adding a new spreadsheet column.
+ */
+function transactionRevisionR5_(row) {
+  const normalized = (row || []).map((value) => {
+    if (value instanceof Date) return value.toISOString();
+    if (value === null || value === undefined) return "";
+    return value;
+  });
+  const bytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    JSON.stringify(normalized),
+    Utilities.Charset.UTF_8,
+  );
+  return bytes.map((b) => (b + 256).toString(16).slice(-2)).join("");
+}
+
+function assertTransactionRevisionR5_(row, requestedRevision) {
+  const requested = String(requestedRevision || "").trim();
+  // Backward compatibility for clients/caches created before R5 conflict
+  // tokens existed. Once a transaction is fetched again, the token is sent.
+  if (!requested) return;
+  const current = transactionRevisionR5_(row);
+  if (current !== requested) {
+    throw new Error(
+      "同期競合: この取引は別の端末またはサーバー側で変更されています。最新データを確認してから再編集してください",
+    );
+  }
+}
+
 function updateTransactionFromApp_(data) {
   const id = String(data.id || "").trim();
 
@@ -949,6 +990,8 @@ function updateTransactionFromApp_(data) {
   if (!found) {
     throw new Error("更新対象の取引が見つかりません");
   }
+
+  assertTransactionRevisionR5_(found.row, data.baseRevision);
 
   assertRequiredColumns(
     found.index,
@@ -1370,6 +1413,8 @@ function updateTransactionFromApp_(data) {
 
         sourceStatus: updatedTransaction.source_status || "",
 
+        revision: transactionRevisionR5_(updatedRow),
+
         sourceReceivedAt: updatedTransaction.source_received_at || "",
       },
     },
@@ -1389,6 +1434,8 @@ function deleteTransactionFromApp_(data) {
   if (!found) {
     throw new Error("削除対象が見つかりません");
   }
+
+  assertTransactionRevisionR5_(found.row, data.baseRevision);
 
   assertRequiredColumns(
     found.index,
@@ -1612,6 +1659,8 @@ function getTransactionsData(options) {
 
   const items = filteredRows.slice(offset, offset + limit).map((row) => ({
     id: getString(row, table.index, "id"),
+
+    revision: transactionRevisionR5_(row),
 
     transactionDate: formatApiDate_(row[table.index["transaction_date"]]),
 

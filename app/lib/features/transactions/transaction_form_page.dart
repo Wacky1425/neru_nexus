@@ -615,6 +615,7 @@ class _TransactionFormPageState extends State<TransactionFormPage> {
           transaction: result,
           saveRule: widget.fromReview && _saveRule,
           merchant: initialTransaction.merchant.trim(),
+          baseRevision: initialTransaction.revision,
         );
 
         if (!mounted) {

@@ -8,302 +8,117 @@ function reconcileOliveEarlyRepayments_(rawAccountName) {
   const cardAccount = resolveCanonicalAccountName_(rawAccountName);
 
   if (!cardAccount) {
-    return {
-      matched: false,
-      reason: "invalid_card_account",
-      matchedCount: 0,
-      matches: [],
-    };
+    return { matched: false, reason: "invalid_card_account", matchedCount: 0, matches: [] };
+  }
+
+  // Olive CSV の「○月○日全額繰上返済」はカード会社の正式明細に載る
+  // 確定情報として扱う。銀行側に同日・同額の別取引が存在することは要求しない。
+  // これにより、繰上返済済み明細を先に settlement 済みにし、残った明細だけを
+  // 通常の口座引落照合へ回せる。複数回の繰上返済にも返済日単位で対応する。
+  if (cardAccount !== "三井住友カードOlive") {
+    return { matched: false, reason: "not_olive_account", cardAccount, matchedCount: 0, matches: [] };
   }
 
   const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
-
   const values = sheet.getDataRange().getValues();
-
   if (values.length < 2) {
-    return {
-      matched: false,
-      reason: "no_transactions",
-      matchedCount: 0,
-      matches: [],
-    };
+    return { matched: false, reason: "no_transactions", cardAccount, matchedCount: 0, matches: [] };
   }
 
   const index = createHeaderIndex(values[0]);
+  assertRequiredColumns(index, [
+    "id", "transaction_date", "source_type", "account_name", "amount", "note",
+    "settlement_status", "settlement_id"
+  ], SHEETS.TRANSACTIONS);
 
-  assertRequiredColumns(
-    index,
-    [
-      "id",
-      "transaction_date",
-      "type",
-      "source_type",
-      "account_name",
-      "amount",
-      "note",
-      "sub_category",
-      "to_account",
-      "settlement_status",
-      "settlement_id",
-    ],
-    SHEETS.TRANSACTIONS,
-  );
-
-  // ============================================================
-  // ① 繰上返済マーク付きカード明細を
-  //    返済日ごとにグループ化
-  //
-  // key:
-  //   yyyy-MM-dd
-  // ============================================================
-
-  const repaymentGroups = new Map();
+  const groups = new Map();
 
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
+    if (String(row[index["source_type"]] || "").trim() !== "CSV_クレカ") continue;
+    if (resolveCanonicalAccountName_(row[index["account_name"]]) !== cardAccount) continue;
 
-    const sourceType = String(row[index["source_type"]] || "").trim();
+    const note = String(row[index["note"]] || "").normalize("NFKC").trim();
+    const m = note.match(/(\d{1,2})月(\d{1,2})日全額繰上返済/);
+    if (!m) continue;
 
-    if (sourceType !== "CSV_クレカ") {
-      continue;
-    }
-
-    const rowAccount = resolveCanonicalAccountName_(row[index["account_name"]]);
-
-    if (rowAccount !== cardAccount) {
-      continue;
-    }
-
-    // 既に照合済みなら触らない
-    const settlementStatus = String(
-      row[index["settlement_status"]] || "",
-    ).trim();
-
-    if (
-      settlementStatus === "matched" ||
-      settlementStatus === "manual_matched"
-    ) {
-      continue;
-    }
-
-    const note = String(row[index["note"]] || "")
-      .normalize("NFKC")
-      .trim();
-
-    const repaymentMatch = note.match(/(\d{1,2})月(\d{1,2})日全額繰上返済/);
-
-    if (!repaymentMatch) {
-      continue;
-    }
-
-    const transactionDate = normalizeSettlementDate_(
-      row[index["transaction_date"]],
-    );
-
-    if (!transactionDate) {
-      continue;
-    }
-
-    const repaymentDate = resolveEarlyRepaymentDate_(
-      transactionDate,
-      Number(repaymentMatch[1]),
-      Number(repaymentMatch[2]),
-    );
-
-    if (!repaymentDate) {
-      continue;
-    }
+    const transactionDate = normalizeSettlementDate_(row[index["transaction_date"]]);
+    if (!transactionDate) continue;
+    const repaymentDate = resolveEarlyRepaymentDate_(transactionDate, Number(m[1]), Number(m[2]));
+    if (!repaymentDate) continue;
 
     const amount = Number(row[index["amount"]] || 0);
+    if (amount <= 0) continue;
 
-    if (amount <= 0) {
-      continue;
+    if (!groups.has(repaymentDate)) {
+      groups.set(repaymentDate, { repaymentDate, amount: 0, details: [] });
     }
-
-    if (!repaymentGroups.has(repaymentDate)) {
-      repaymentGroups.set(repaymentDate, {
-        repaymentDate,
-        amount: 0,
-        details: [],
-      });
-    }
-
-    const group = repaymentGroups.get(repaymentDate);
-
+    const group = groups.get(repaymentDate);
     group.amount += amount;
-
     group.details.push({
       sheetIndex: i,
-
       transactionId: String(row[index["id"]] || "").trim(),
-
-      transactionDate,
-
       amount,
+      status: String(row[index["settlement_status"]] || "").trim(),
+      settlementId: String(row[index["settlement_id"]] || "").trim()
     });
   }
 
-  if (repaymentGroups.size === 0) {
-    return {
-      matched: false,
-      reason: "no_early_repayment_details",
-      matchedCount: 0,
-      matches: [],
-    };
+  if (groups.size === 0) {
+    return { matched: false, reason: "no_early_repayment_details", cardAccount, matchedCount: 0, matches: [] };
   }
-
-  // ============================================================
-  // ② 対応する銀行側クレカ引落を探す
-  // ============================================================
-
-  const matchedResults = [];
 
   let changed = false;
+  const results = [];
 
-  for (const group of repaymentGroups.values()) {
-    let bankRowIndex = -1;
+  for (const group of groups.values()) {
+    // 同じ返済日の既存IDがあれば再利用。なければ返済日ベースの安定IDを使う。
+    const existingIds = Array.from(new Set(group.details
+      .map(d => d.settlementId)
+      .filter(Boolean)));
+    const settlementId = existingIds.length === 1
+      ? existingIds[0]
+      : "early_repayment_olive_" + group.repaymentDate.replace(/-/g, "");
 
-    let bankTransactionId = "";
-
-    // ----------------------------------------------------------
-    // 同日・同額・同カードの銀行移動を検索
-    // ----------------------------------------------------------
-
-    for (let i = 1; i < values.length; i++) {
-      const row = values[i];
-
-      const type = String(row[index["type"]] || "").trim();
-
-      if (type !== "移動") {
-        continue;
-      }
-
-      const subCategory = String(row[index["sub_category"]] || "").trim();
-
-      if (subCategory !== "クレカ引落") {
-        continue;
-      }
-
-      const settlementStatus = String(
-        row[index["settlement_status"]] || "",
-      ).trim();
-
-      if (
-        settlementStatus === "matched" ||
-        settlementStatus === "manual_matched"
-      ) {
-        continue;
-      }
-
-      const date = normalizeSettlementDate_(row[index["transaction_date"]]);
-
-      if (date !== group.repaymentDate) {
-        continue;
-      }
-
-      const amount = Number(row[index["amount"]] || 0);
-
-      if (amount !== group.amount) {
-        continue;
-      }
-
-      // --------------------------------------------------------
-      // カード口座確認
-      // --------------------------------------------------------
-
-      let toAccount = resolveCanonicalAccountName_(row[index["to_account"]]);
-
-      /*
-       * 古い取引等でto_accountが空なら、
-       * 銀行取引本文から既存ロジックでカードを特定。
-       */
-      if (!toAccount) {
-        toAccount = resolveAccountFromAliases_([
-          row[index["account_name"]],
-          row[index["note"]],
-        ]);
-
-        /*
-         * 上記だけで取れないケースに備えて、
-         * Transactionsにmerchant/item_nameが存在するなら
-         * 後段で補完できるようにする。
-         */
-      }
-
-      if (toAccount !== cardAccount) {
-        continue;
-      }
-
-      bankRowIndex = i;
-
-      bankTransactionId = String(row[index["id"]] || "").trim();
-
-      break;
-    }
-
-    // ----------------------------------------------------------
-    // 銀行側がまだ無ければ何もしない
-    //
-    // カードCSVだけ先に入ることもあるので正常。
-    // ----------------------------------------------------------
-
-    if (bankRowIndex === -1) {
-      continue;
-    }
-
-    // ==========================================================
-    // ③ 完全一致 → settlement確定
-    // ==========================================================
-
-    const settlementId = "settlement_" + Utilities.getUuid();
-
-    values[bankRowIndex][index["settlement_status"]] = "matched";
-
-    values[bankRowIndex][index["settlement_id"]] = settlementId;
+    let newlyMatchedCount = 0;
+    let alreadyMatchedCount = 0;
+    let conflictCount = 0;
 
     for (const detail of group.details) {
-      values[detail.sheetIndex][index["settlement_status"]] = "matched";
+      const alreadyMatched = detail.status === "matched" || detail.status === "manual_matched" || Boolean(detail.settlementId);
+      if (alreadyMatched) {
+        alreadyMatchedCount++;
+        // 別 settlement に確定済みの明細は上書きしない。
+        if (detail.settlementId && existingIds.length > 1 && detail.settlementId !== settlementId) conflictCount++;
+        continue;
+      }
 
+      values[detail.sheetIndex][index["settlement_status"]] = "matched";
       values[detail.sheetIndex][index["settlement_id"]] = settlementId;
+      newlyMatchedCount++;
+      changed = true;
     }
 
-    changed = true;
-
-    matchedResults.push({
+    results.push({
       settlementId,
-
       repaymentDate: group.repaymentDate,
-
-      settlementTransactionId: bankTransactionId,
-
       settlementAmount: group.amount,
-
-      detailTotal: group.amount,
-
       detailCount: group.details.length,
-
-      detailTransactionIds: group.details
-        .map((detail) => detail.transactionId)
-        .filter(Boolean),
+      newlyMatchedCount,
+      alreadyMatchedCount,
+      conflictCount,
+      detailTransactionIds: group.details.map(d => d.transactionId).filter(Boolean)
     });
   }
 
-  // ============================================================
-  // ④ 一括保存
-  // ============================================================
-
-  if (changed) {
-    writeSettlementTransactionValues_(sheet, values);
-  }
+  if (changed) writeSettlementTransactionValues_(sheet, values);
 
   return {
-    matched: matchedResults.length > 0,
-
+    matched: results.some(r => r.newlyMatchedCount > 0),
     cardAccount,
-
-    matchedCount: matchedResults.length,
-
-    matches: matchedResults,
+    matchedCount: results.reduce((s, r) => s + r.newlyMatchedCount, 0),
+    groupCount: results.length,
+    matches: results
   };
 }
 

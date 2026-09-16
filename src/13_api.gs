@@ -164,17 +164,27 @@ function doGet(e) {
       case "account_balances":
         return createJsonResponse_(getAccountBalancesData(), "ok");
 
+      case "balance_reconciliation":
+        return createJsonResponse_(getR2BalanceReconciliationData_(), "ok");
+
       case "review_transactions":
         return createJsonResponse_(
           getReviewTransactionsData({
             limit: parameters.limit,
             offset: parameters.offset,
+            queueMode: parameters.queueMode,
           }),
           "ok",
         );
 
       case "review_count":
         return createJsonResponse_(getReviewTransactionCount(), "ok");
+
+      case "reconciliation_history":
+        return createJsonResponse_(
+          getRecentReconciliationHistoryData_({ limit: parameters.limit }),
+          "ok",
+        );
 
       case "settlement_candidates":
         return createJsonResponse_(
@@ -245,6 +255,9 @@ function doGet(e) {
       case "system_diagnostics":
         return createJsonResponse_(getSystemDiagnostics_(), "ok", requestId);
 
+      case "r6_full_reconciliation":
+        return createJsonResponse_(getR6FullReconciliationData_(), "ok", requestId);
+
       default:
         return createJsonErrorResponse_(
           `未対応のactionです: ${action}`,
@@ -307,6 +320,9 @@ function doPost(e) {
       case "transaction_restore_ignored":
         return restoreIgnoredTransactionFromApp_(data);
 
+      case "csv_import_preview":
+        return previewCsvImportFromApp_(data);
+
       case "csv_import":
         return importCsvFromApp_(data);
 
@@ -333,6 +349,9 @@ function doPost(e) {
 
       case "update_account_opening_balance":
         return updateAccountOpeningBalanceFromApp_(data);
+
+      case "balance_reconciliation_save":
+        return saveR2BalanceReconciliationFromApp_(data);
 
       case "account_create":
         return createAccountFromApp_(data);

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'model/account_balance_model.dart';
 import 'service/account_balance_service.dart';
 import 'asset_trend_page.dart';
+import 'balance_reconciliation_page.dart';
+import '../reconciliation/full_reconciliation_page.dart';
 
 import '../investments/investment_holdings_page.dart';
 import '../settlement/settlement_status_page.dart';
@@ -203,6 +205,26 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
     );
   }
 
+  Future<void> _openBalanceReconciliation() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const BalanceReconciliationPage()),
+    );
+
+    if (!mounted) return;
+    AccountBalanceService.clearCache();
+    await _load();
+  }
+
+  Future<void> _openFullReconciliation() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const FullReconciliationPage()),
+    );
+
+    if (!mounted) return;
+    AccountBalanceService.clearCache();
+    await _load();
+  }
+
   Future<void> _openInvestmentHoldings() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(builder: (_) => const InvestmentHoldingsPage()),
@@ -322,6 +344,28 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
                     subtitle: const Text('純資産・現金・投資の変化を見る'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: _openAssetTrend,
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.fact_check_outlined),
+                    title: const Text('残高照合'),
+                    subtitle: const Text('口座ごとの基準残高と現在の実残高を突き合わせる'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _openBalanceReconciliation,
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.verified_outlined),
+                    title: const Text('全データ突合'),
+                    subtitle: const Text('実運用開始前に残高・要確認・取込・資金移動をまとめて監査'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _openFullReconciliation,
                   ),
                 ),
 

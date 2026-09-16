@@ -1101,7 +1101,7 @@ class _TransactionTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
-                '速報',
+                transaction.isAwaitingFormalDetail ? '明細待ち' : '速報',
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
@@ -1228,6 +1228,7 @@ class _TransactionTile extends StatelessWidget {
                   try {
                     await const TransactionService().deleteTransaction(
                       id: transaction.id,
+                      baseRevision: transaction.revision,
                     );
 
                     if (!context.mounted) {

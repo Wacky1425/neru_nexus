@@ -63,11 +63,20 @@ function getInvestmentPlanTable_() {
 }
 
 function normalizeInvestmentPlanYearMonth_(value) {
-  const text = String(value || "").trim();
-  if (!/^\d{4}-\d{2}$/.test(text)) {
-    throw new Error("yearMonthはyyyy-MM形式で指定してください");
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, "Asia/Tokyo", "yyyy-MM");
   }
-  return text;
+  const text = String(value || "").trim();
+  if (/^\d{4}-\d{2}$/.test(text)) return text;
+  // Sheets may auto-convert a yyyy-MM value into the first day of that month.
+  // Accept date-like values here so plan loading remains stable regardless of cell formatting.
+  if (text) {
+    const parsed = new Date(text);
+    if (!isNaN(parsed.getTime())) {
+      return Utilities.formatDate(parsed, "Asia/Tokyo", "yyyy-MM");
+    }
+  }
+  throw new Error("yearMonthはyyyy-MM形式で指定してください");
 }
 
 function normalizeInvestmentPlanNisaType_(value) {
@@ -88,7 +97,7 @@ function investmentPlanRowToObject_(row, index) {
   const updated = row[index.updated_at];
   return {
     planId: getString(row, index, "plan_id"),
-    yearMonth: getString(row, index, "year_month"),
+    yearMonth: normalizeInvestmentPlanYearMonth_(row[index.year_month]),
     holdingId: getString(row, index, "holding_id"),
     plannedAmount: Math.max(0, Math.round(getNumber(row, index, "planned_amount"))),
     nisaType: getString(row, index, "nisa_type") || "taxable",
@@ -198,7 +207,12 @@ function buildInvestmentPlannerSummary_(
   const actualTotal = Math.max(0, Number(actuals?.totalActual || 0));
 
   return {
+    // recommendedAmount is discretionary capacity calculated from household cash flow.
+    // A user-saved investment plan is a commitment/schedule and must not disappear
+    // merely because discretionary capacity is currently zero.
     recommendedAmount: safeRecommended,
+    discretionaryCapacity: safeRecommended,
+    scheduledInvestmentTotal: Math.round(plannedTotal),
     plannedTotal: Math.round(plannedTotal),
     actualTotal: Math.round(actualTotal),
     remainingPlanned: Math.max(0, Math.round(plannedTotal - actualTotal)),
@@ -207,6 +221,12 @@ function buildInvestmentPlannerSummary_(
       Math.round(safeRecommended - actualTotal),
     ),
     plannedOverRecommended: Math.max(
+      0,
+      Math.round(plannedTotal - safeRecommended),
+    ),
+    // Informational only: a scheduled plan may exceed discretionary capacity.
+    // This is not treated as an integrity error.
+    scheduledAboveDiscretionary: Math.max(
       0,
       Math.round(plannedTotal - safeRecommended),
     ),
@@ -246,11 +266,17 @@ function getInvestmentPlannerData_(options = {}) {
   const holdingMap = getActiveInvestmentHoldingMap_();
   const plans = loadInvestmentPlans_(yearMonth, false);
   const events = getAllSbiInvestmentEventsForPlanner_();
-  const actuals = calculateAppliedInvestmentActuals_(
+  const eventActuals = calculateAppliedInvestmentActuals_(
     yearMonth,
     events,
     holdingMap,
   );
+  const baselineActuals = typeof getV2145BaselinePlannerActuals_ === "function"
+    ? getV2145BaselinePlannerActuals_(yearMonth, holdingMap)
+    : { byHolding: {}, totalActual: 0, eventCount: 0, baselineActualCount: 0 };
+  const actuals = typeof mergeV2145PlannerActuals_ === "function"
+    ? mergeV2145PlannerActuals_(eventActuals, baselineActuals)
+    : eventActuals;
 
   let recommendedAmount = 0;
   let baseNisa = 0;
@@ -314,6 +340,7 @@ function getInvestmentPlannerData_(options = {}) {
     allocationMessage,
     ...summary,
     actualEventCount: actuals.eventCount,
+    baselineActualCount: Math.max(0, Number(actuals.baselineActualCount || 0)),
   };
 }
 

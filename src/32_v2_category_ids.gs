@@ -86,6 +86,98 @@ function migrateV201CategoryIds() {
   return result;
 }
 
+function repairV201CategoryIdMismatches() {
+  const sheet = getRequiredSheet(SHEETS.TRANSACTIONS);
+  const lastColumn = sheet.getLastColumn();
+  const headers = sheet
+    .getRange(1, 1, 1, lastColumn)
+    .getValues()[0]
+    .map((value) => String(value || "").trim());
+  const index = createHeaderIndex(headers);
+
+  assertRequiredColumns(
+    index,
+    [
+      "type",
+      "major_category",
+      "sub_category",
+      "major_category_id",
+      "sub_category_id",
+    ],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    const result = {
+      scannedCount: 0,
+      repairedCount: 0,
+      unresolvedByNameCount: 0,
+      verification: verifyV201CategoryIds(),
+    };
+    Logger.log(JSON.stringify(result, null, 2));
+    return result;
+  }
+
+  const values = sheet
+    .getRange(2, 1, lastRow - 1, headers.length)
+    .getValues();
+  const lookup = buildCategoryLookup_();
+  let repairedCount = 0;
+  let unresolvedByNameCount = 0;
+  const unresolvedSamples = [];
+
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    const type = String(row[index["type"]] || "").trim();
+    const majorCategory = String(row[index["major_category"]] || "").trim();
+    const subCategory = String(row[index["sub_category"]] || "").trim();
+    const key = [type, majorCategory, subCategory].join("|");
+    const category = lookup.byName.get(key);
+
+    if (!category) {
+      unresolvedByNameCount++;
+      if (unresolvedSamples.length < 10) {
+        unresolvedSamples.push({
+          row: i + 2,
+          type,
+          majorCategory,
+          subCategory,
+        });
+      }
+      continue;
+    }
+
+    const expectedMajorId = String(category.majorCategoryId || "").trim();
+    const expectedSubId = String(category.subCategoryId || "").trim();
+    const currentMajorId = String(row[index["major_category_id"]] || "").trim();
+    const currentSubId = String(row[index["sub_category_id"]] || "").trim();
+
+    if (currentMajorId !== expectedMajorId || currentSubId !== expectedSubId) {
+      row[index["major_category_id"]] = expectedMajorId;
+      row[index["sub_category_id"]] = expectedSubId;
+      repairedCount++;
+    }
+  }
+
+  if (repairedCount > 0) {
+    sheet
+      .getRange(2, 1, values.length, headers.length)
+      .setValues(values);
+    clearTableCache(SHEETS.TRANSACTIONS);
+  }
+
+  const result = {
+    scannedCount: values.length,
+    repairedCount,
+    unresolvedByNameCount,
+    unresolvedSamples,
+    verification: verifyV201CategoryIds(),
+  };
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
 function verifyV201CategoryIds() {
   const table = loadTransactions();
   const missingColumns = ["major_category_id", "sub_category_id"].filter(

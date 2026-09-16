@@ -154,16 +154,130 @@ function getBudgetSettings(yearMonth) {
   const effective = getEffectiveBudgetsForMonth_(yearMonth);
   const budgets = effective.budgets;
 
+  const salaryPlanned = Number(budgets["給与予定"] || 0);
+  const sideIncomePlanned = Number(budgets["副業予定"] || 0);
+  const nisaTarget = Number(budgets["NISA積立"] || 0);
+  const fixedExpenseBudget = Number(budgets["固定費予算"] || 0);
+  const variableExpenseBudget = Number(budgets["変動費予算"] || 0);
+  const freeSpendingTarget = Number(budgets["自由費上限"] || 0);
+  const savingsTarget = Number(budgets["追加貯金目標"] || 0);
+
+  // V2.2-3: 設定値だけでなく、今月の消化ペースも同じ画面で判断できるようにする。
+  let actualExpense = 0;
+  let projectedExpense = 0;
+  let elapsedDays = 0;
+  let daysInMonth = 0;
+
+  try {
+    const analytics = getAnalyticsData(effective.yearMonth);
+    actualExpense = Number(analytics.totalExpense || 0);
+    projectedExpense = Number(analytics.projectedMonthEndExpense || actualExpense);
+    elapsedDays = Number(analytics.elapsedDays || 0);
+    daysInMonth = Number(analytics.daysInMonth || 0);
+  } catch (error) {
+    console.warn(`budget pace unavailable: ${error}`);
+  }
+
+  const totalIncomePlanned = salaryPlanned + sideIncomePlanned;
+  const livingBudget = fixedExpenseBudget + variableExpenseBudget;
+  const plannedFreeCash = totalIncomePlanned - livingBudget - nisaTarget;
+  const budgetRemaining = livingBudget - actualExpense;
+
+  // V2.2-3.2: 月次予算を、目的資金・生活防衛資金・投資・自由費まで
+  // ひとつの計画として読めるようにする。Home と同じ資金配分ロジックを再利用し、
+  // 現在月以外では「現在残高」に依存する配分を無理に推測しない。
+  let goalRequired = 0;
+  let goalAllocation = 0;
+  let goalShortage = 0;
+  let emergencyCashAllocation = 0;
+  let emergencyTargetAmount = 0;
+  let emergencyProtectedCash = 0;
+  let emergencyShortage = 0;
+  let emergencyCoveredMonths = 0;
+  let emergencyTargetMonths = 0;
+  let emergencyStage = "";
+  let goalFundingDetails = [];
+
+  try {
+    const now = new Date();
+    const currentYearMonth = Utilities.formatDate(
+      now,
+      Session.getScriptTimeZone(),
+      "yyyy-MM",
+    );
+
+    if (effective.yearMonth === currentYearMonth) {
+      const home = getHomeData();
+      const emergency = home.emergencyFund || {};
+
+      goalRequired = Number(home.goalRequired || 0);
+      goalAllocation = Number(home.goalAllocation || 0);
+      goalShortage = Number(home.goalShortage || 0);
+      emergencyCashAllocation = Number(home.emergencyCashAllocation || 0);
+      emergencyTargetAmount = Number(emergency.targetAmount || 0);
+      emergencyProtectedCash = Number(home.protectedCash || 0);
+      emergencyShortage = Number(emergency.shortage || 0);
+      emergencyCoveredMonths = Number(emergency.coveredMonths || 0);
+      emergencyTargetMonths = Number(emergency.targetMonths || 0);
+      emergencyStage = String(emergency.stage || "");
+      goalFundingDetails = home.goalFundingDetails || [];
+    }
+  } catch (error) {
+    console.warn(`integrated budget plan unavailable: ${error}`);
+  }
+
+  // 予定収入から生活費・NISA・今月必要なGoal・防衛資金積増しを引いた残り。
+  // 「追加投資余力」とは別物で、趣味・経験などに残せる計画上の自由費目安。
+  const discretionaryCapacity = Math.max(
+    0,
+    plannedFreeCash - goalRequired - emergencyCashAllocation - savingsTarget,
+  );
+  const discretionaryBudget = freeSpendingTarget > 0
+    ? Math.min(freeSpendingTarget, discretionaryCapacity)
+    : discretionaryCapacity;
+  const unassignedCash = Math.max(0, discretionaryCapacity - discretionaryBudget);
+  const committedPlan =
+    livingBudget + nisaTarget + goalRequired + emergencyCashAllocation +
+    savingsTarget + freeSpendingTarget;
+  const planShortage = Math.max(0, committedPlan - totalIncomePlanned);
+
   return {
     yearMonth: effective.yearMonth,
     inherited: effective.inherited,
     inheritedFrom: effective.inheritedFrom,
-
-    salaryPlanned: Number(budgets["給与予定"] || 0),
-    sideIncomePlanned: Number(budgets["副業予定"] || 0),
-    nisaTarget: Number(budgets["NISA積立"] || 0),
-    fixedExpenseBudget: Number(budgets["固定費予算"] || 0),
-    variableExpenseBudget: Number(budgets["変動費予算"] || 0),
+    salaryPlanned,
+    sideIncomePlanned,
+    nisaTarget,
+    fixedExpenseBudget,
+    variableExpenseBudget,
+    freeSpendingTarget,
+    savingsTarget,
+    totalIncomePlanned,
+    livingBudget,
+    plannedFreeCash,
+    actualExpense,
+    projectedExpense,
+    budgetRemaining,
+    budgetUsageRate: livingBudget > 0 ? actualExpense / livingBudget : 0,
+    projectedUsageRate: livingBudget > 0 ? projectedExpense / livingBudget : 0,
+    elapsedDays,
+    daysInMonth,
+    goalRequired,
+    goalAllocation,
+    goalShortage,
+    goalFundingDetails,
+    emergencyCashAllocation,
+    emergencyTargetAmount,
+    emergencyProtectedCash,
+    emergencyShortage,
+    emergencyCoveredMonths,
+    emergencyTargetMonths,
+    emergencyStage,
+    discretionaryBudget,
+    discretionaryCapacity,
+    unassignedCash,
+    committedPlan,
+    planShortage,
   };
 }
 
@@ -180,6 +294,8 @@ function updateBudgetSettingsFromApp_(data) {
     NISA積立: Number(data.nisaTarget || 0),
     固定費予算: Number(data.fixedExpenseBudget || 0),
     変動費予算: Number(data.variableExpenseBudget || 0),
+    自由費上限: Number(data.freeSpendingTarget || 0),
+    追加貯金目標: Number(data.savingsTarget || 0),
   };
 
   const table = loadBudgetTable_();

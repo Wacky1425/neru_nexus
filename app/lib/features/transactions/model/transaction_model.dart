@@ -33,6 +33,7 @@ class TransactionModel {
     required this.sourceType,
     required this.sourceStatus,
     required this.sourceReceivedAt,
+    this.revision = '',
   });
 
   final String id;
@@ -100,6 +101,9 @@ class TransactionModel {
 
   final String sourceReceivedAt;
 
+  /// Server-side optimistic concurrency token used by R5 offline sync.
+  final String revision;
+
   bool get isImported {
     final value = sourceType.trim();
 
@@ -114,6 +118,21 @@ class TransactionModel {
 
   bool get isPreliminaryEdited =>
       sourceStatus.trim().toLowerCase() == 'preliminary_edited';
+
+  /// R6.1: 速報だけでは加盟店を特定できず、正式明細を待つ取引。
+  bool get isAwaitingFormalDetail {
+    if (!isPreliminary || sourceType.trim() != 'Gmail_Olive') {
+      return false;
+    }
+    final normalizedMerchant = merchant
+        .trim()
+        .toUpperCase()
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll('・', '')
+        .replaceAll('･', '');
+    return normalizedMerchant == 'VISA加盟店' ||
+        normalizedMerchant == 'ＶＩＳＡ加盟店';
+  }
 
   bool get isConfirmedSource =>
       sourceStatus.trim().toLowerCase() == 'confirmed';
@@ -210,6 +229,7 @@ class TransactionModel {
       sourceStatus: json['sourceStatus']?.toString() ?? '',
 
       sourceReceivedAt: json['sourceReceivedAt']?.toString() ?? '',
+      revision: json['revision']?.toString() ?? '',
     );
   }
 }

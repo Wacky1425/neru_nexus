@@ -4,28 +4,73 @@
 // Import History
 // ============================================================
 
-function addImportHistory_(data) {
+const R1_IMPORT_HISTORY_COLUMNS = Object.freeze([
+  "import_batch", "imported_at", "csv_type", "config_name", "account_name",
+  "file_name", "target_year_month", "period_start", "period_end", "row_count",
+  "added_count", "skipped_count", "ignored_count", "status", "billing_year_months",
+  "file_hash", "duplicate_status", "existing_count", "new_count"
+]);
+
+function ensureR1ImportHistoryColumns_() {
   const sheet = getRequiredSheet(SHEETS.IMPORT_HISTORY);
+  const lastColumn = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0]
+    .map((value) => String(value || "").trim());
+  const existing = new Set(headers.filter(Boolean));
+  let nextColumn = headers.length + 1;
+  for (const name of R1_IMPORT_HISTORY_COLUMNS) {
+    if (!existing.has(name)) {
+      sheet.getRange(1, nextColumn++).setValue(name);
+    }
+  }
+  clearTableCache(SHEETS.IMPORT_HISTORY);
+  return sheet;
+}
 
-  const row = [
-    String(data.importBatch || ""),
-    data.importedAt || new Date(),
-    String(data.csvType || ""),
-    String(data.configName || ""),
-    String(data.accountName || ""),
-    String(data.fileName || ""),
-    String(data.targetYearMonth || ""),
-    String(data.periodStart || ""),
-    String(data.periodEnd || ""),
-    Number(data.rowCount || 0),
-    Number(data.addedCount || 0),
-    Number(data.skippedCount || 0),
-    Number(data.ignoredCount || 0),
-    String(data.status || "completed"),
-    String((data.billingYearMonths || []).join(",")),
-  ];
-
+function addImportHistory_(data) {
+  const sheet = ensureR1ImportHistoryColumns_();
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map((value) => String(value || "").trim());
+  const record = {
+    import_batch: String(data.importBatch || ""), imported_at: data.importedAt || new Date(),
+    csv_type: String(data.csvType || ""), config_name: String(data.configName || ""),
+    account_name: String(data.accountName || ""), file_name: String(data.fileName || ""),
+    target_year_month: String(data.targetYearMonth || ""), period_start: String(data.periodStart || ""),
+    period_end: String(data.periodEnd || ""), row_count: Number(data.rowCount || 0),
+    added_count: Number(data.addedCount || 0), skipped_count: Number(data.skippedCount || 0),
+    ignored_count: Number(data.ignoredCount || 0), status: String(data.status || "completed"),
+    billing_year_months: String((data.billingYearMonths || []).join(",")),
+    file_hash: String(data.fileHash || ""), duplicate_status: String(data.duplicateStatus || ""),
+    existing_count: Number(data.existingCount || 0), new_count: Number(data.newCount || 0),
+  };
+  const row = headers.map((header) => Object.prototype.hasOwnProperty.call(record, header) ? record[header] : "");
   sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+  clearTableCache(SHEETS.IMPORT_HISTORY);
+}
+
+function sha256HexText_(text) {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(text || ""), Utilities.Charset.UTF_8);
+  return bytes.map((b) => (b < 0 ? b + 256 : b).toString(16).padStart(2, "0")).join("");
+}
+
+function findImportHistoryByHash_(fileHash) {
+  const hash = String(fileHash || "").trim();
+  if (!hash) return [];
+  return loadObjects(SHEETS.IMPORT_HISTORY).filter((row) => String(row.file_hash || "").trim() === hash);
+}
+
+function migrateR1ImportAudit() {
+  const sheet = ensureR1ImportHistoryColumns_();
+  return { ok: true, sheet: sheet.getName(), columns: R1_IMPORT_HISTORY_COLUMNS.length };
+}
+
+function verifyR1ImportAudit() {
+  const sheet = ensureR1ImportHistoryColumns_();
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map((v) => String(v || "").trim());
+  const missing = R1_IMPORT_HISTORY_COLUMNS.filter((name) => !headers.includes(name));
+  if (missing.length) throw new Error("R1 ImportHistory列不足: " + missing.join(", "));
+  if (typeof previewCsvImportFromApp_ !== "function") throw new Error("previewCsvImportFromApp_ がありません");
+  return { ok: true, columns: R1_IMPORT_HISTORY_COLUMNS.length };
 }
 
 function getImportPeriod_(rows, config) {
@@ -184,6 +229,11 @@ function getImportHistoryData_(options = {}) {
       })(),
 
       status: String(row.status || "").trim(),
+
+      fileHash: String(row.file_hash || "").trim(),
+      duplicateStatus: String(row.duplicate_status || "").trim(),
+      existingCount: Number(row.existing_count || 0),
+      newCount: Number(row.new_count || 0),
     }))
     .sort((a, b) => b.importedAt.localeCompare(a.importedAt))
     .slice(0, limit);

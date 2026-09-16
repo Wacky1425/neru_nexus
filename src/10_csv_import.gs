@@ -727,6 +727,31 @@ function normalizeCsvRowByHeader(row, config, metadata = {}) {
 // FlutterアプリからのCSV取込 API
 // ============================================================
 
+function previewCsvImportFromApp_(data) {
+  const csvText = String(data.csvText || "");
+  if (!csvText.trim()) throw new Error("csvTextは必須です");
+  const fileName = String(data.fileName || "").trim();
+  const fileHash = sha256HexText_(csvText);
+  const parsed = readCsvRowsFromText_(csvText);
+  if (parsed.csvType === "unknown") {
+    return createJsonResponse_({ status: "unknown_csv", csvType: "unknown", fileName, fileHash }, "ok");
+  }
+  const configName = getConfigNameByCsvType(parsed.csvType);
+  const config = getImportConfig(configName);
+  const result = importParsedCsvRows_(parsed, { dryRun: true });
+  const period = getImportPeriod_(parsed.rows, config);
+  const billingYearMonths = getImportBillingYearMonths_(parsed.rows, config);
+  const sameFileImports = findImportHistoryByHash_(fileHash);
+  const duplicateStatus = result.addedCount === 0 ? "fully_duplicate" : (result.skippedCount > 0 ? "partial_duplicate" : "new");
+  return createJsonResponse_({
+    status: "preview", csvType: parsed.csvType, configName, accountName: config.account_name || "",
+    fileName, fileHash, rowCount: parsed.rows.length, newCount: result.addedCount, existingCount: result.skippedCount,
+    ignoredCount: result.ignoredCount || 0, duplicateStatus, alreadyImportedSameFile: sameFileImports.length > 0,
+    previousImportCount: sameFileImports.length, targetYearMonth: period.targetYearMonth, periodStart: period.periodStart,
+    periodEnd: period.periodEnd, billingYearMonths,
+  }, "ok");
+}
+
 function importCsvFromApp_(data) {
   const csvText = String(data.csvText || "");
 
@@ -735,6 +760,7 @@ function importCsvFromApp_(data) {
   }
 
   const fileName = String(data.fileName || "").trim();
+  const fileHash = sha256HexText_(csvText);
 
   const parsed = readCsvRowsFromText_(csvText);
 
@@ -844,6 +870,10 @@ function importCsvFromApp_(data) {
     skippedCount: result.skippedCount,
     ignoredCount: result.ignoredCount || 0,
     status: "completed",
+    fileHash,
+    duplicateStatus: result.addedCount === 0 ? "fully_duplicate" : (result.skippedCount > 0 ? "partial_duplicate" : "new"),
+    existingCount: result.skippedCount,
+    newCount: result.addedCount,
   });
 
   Logger.log(
@@ -1057,7 +1087,7 @@ function readCsvRowsFromText_(csvText) {
 // CSV取込メイン処理
 // ============================================================
 
-function importParsedCsvRows_(parsed) {
+function importParsedCsvRows_(parsed, options = {}) {
   const startedAt = Date.now();
 
   // ============================================================
@@ -1149,9 +1179,20 @@ function importParsedCsvRows_(parsed) {
   // Transactionsへ正式CSVを追加
   // ============================================================
 
-  const result = addTransactions(transactions);
+  const result = addTransactions(transactions, { dryRun: options.dryRun === true });
 
   const addFinishedAt = Date.now();
+
+  if (options.dryRun === true) {
+    return {
+      ...result, importBatch, ignoredCount,
+      debugTiming: {
+        configNameMs: configNameFinishedAt - startedAt, configMs: configFinishedAt - configNameFinishedAt,
+        rulesMs: rulesFinishedAt - configFinishedAt, normalizeMs: normalizeFinishedAt - rulesFinishedAt,
+        addTransactionsMs: addFinishedAt - normalizeFinishedAt, totalMs: addFinishedAt - startedAt,
+      },
+    };
+  }
 
   // ============================================================
   // Gmail速報 → 正式CSV確定

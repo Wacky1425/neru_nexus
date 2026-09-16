@@ -857,6 +857,17 @@ function getHomeData() {
   const sideBusinessExpense = Number(monthly?.businessExpense || 0);
   const sideBusinessProfit = Number(monthly?.businessProfit || 0);
   const recentTransactions = getHomeRecentTransactions_();
+  const reviewCountResult = getReviewTransactionCount();
+  const reviewCount = Number((reviewCountResult && reviewCountResult.count) || 0);
+  // V2.2-4.1: Homeだけで「自分が判断する件数」と「自動照合待ち」を区別する。
+  let formalWaitCount = 0;
+  try {
+    formalWaitCount = Number(getReviewTransactionsData({ queueMode: "formal_wait", limit: 1, offset: 0 }).total || 0);
+  } catch (error) {
+    console.warn(`home formal wait count unavailable: ${error}`);
+  }
+  const savingsTarget = Number(budgets["追加貯金目標"] || 0);
+  const freeSpendingTarget = Number(budgets["自由費上限"] || 0);
 
   return {
     yearMonth,
@@ -966,6 +977,10 @@ function getHomeData() {
     sideBusinessProfit,
     moneyHealth,
     homeForecast,
+    reviewCount,
+    formalWaitCount,
+    savingsTarget,
+    freeSpendingTarget,
     recentTransactions,
 
     generatedAt: new Date().toISOString(),

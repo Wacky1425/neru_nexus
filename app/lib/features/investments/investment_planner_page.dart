@@ -122,7 +122,7 @@ class _InvestmentPlannerPageState extends State<InvestmentPlannerPage> {
                           controller: amountController,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: '今月の予定額',
+                            labelText: 'この月の積立・投資予定額',
                             prefixText: '¥',
                           ),
                           validator: (value) {
@@ -258,12 +258,12 @@ class _InvestmentPlannerPageState extends State<InvestmentPlannerPage> {
     final result = _result;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Investment Planner'),
+        title: const Text('投資プランナー'),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: result == null ? null : () => _editPlan(),
         icon: const Icon(Icons.add),
-        label: const Text('予定を追加'),
+        label: const Text('月別予定を設定'),
       ),
       body: RefreshIndicator(
         onRefresh: _load,
@@ -302,12 +302,32 @@ class _InvestmentPlannerPageState extends State<InvestmentPlannerPage> {
               _PlannerSummaryCard(result: result),
               const SizedBox(height: 16),
               if (result.items.isEmpty)
-                const Card(
+                Card(
                   child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'この月の投資予定はまだありません。\n「予定を追加」から銘柄ごとの金額を決められます。',
-                      textAlign: TextAlign.center,
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.edit_calendar_outlined, size: 36),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'この月の積立・投資予定はまだありません。\n銘柄ごとに月別の予定額を設定できます。',
+                          textAlign: TextAlign.center,
+                        ),
+                        if (result.actualTotal > 0) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            '購入実績 ${_yen(result.actualTotal)} は取得済みです。予定を登録すると銘柄ごとの進捗と残額を追跡できます。',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                        const SizedBox(height: 14),
+                        FilledButton.icon(
+                          onPressed: () => _editPlan(),
+                          icon: const Icon(Icons.add),
+                          label: const Text('この月の予定を設定'),
+                        ),
+                      ],
                     ),
                   ),
                 )
@@ -372,7 +392,7 @@ class _PlannerSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final recommended = result.recommendedAmount;
+    final recommended = result.discretionaryCapacity;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -380,7 +400,7 @@ class _PlannerSummaryCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '今月投資に回せる目安',
+              '今月の追加投資余力',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 6),
@@ -393,7 +413,7 @@ class _PlannerSummaryCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '家計・目的資金・生活防衛資金を反映したNeru Nexusの資金配分目安',
+              '家計から追加で投資してよい目安。登録済みの積立予定とは別に管理します。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const Divider(height: 28),
@@ -401,13 +421,13 @@ class _PlannerSummaryCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _SummaryValue(
-                    label: '予定',
-                    value: _yen(result.plannedTotal),
+                    label: '積立・投資予定',
+                    value: _yen(result.scheduledInvestmentTotal),
                   ),
                 ),
                 Expanded(
                   child: _SummaryValue(
-                    label: 'SBI実績',
+                    label: '購入実績',
                     value: _yen(result.actualTotal),
                   ),
                 ),
@@ -419,6 +439,13 @@ class _PlannerSummaryCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (result.actualTotal > 0 && result.scheduledInvestmentTotal == result.actualTotal) ...[
+              const SizedBox(height: 10),
+              Text(
+                'この月は予定額まで購入済みです。追加予定がなければ変更不要です。',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
             const SizedBox(height: 14),
             LinearProgressIndicator(
               value: recommended > 0
@@ -427,8 +454,8 @@ class _PlannerSummaryCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '目安に対する残り余力 ${_yen(result.remainingCapacity)}'
-              ' ・ SBI約定反映 ${result.actualEventCount}件',
+              '追加余力の残り ${_yen(result.remainingCapacity)}'
+              ' ・ 約定メール反映 ${result.actualEventCount}件',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             if (result.plannedOverRecommended > 0) ...[
@@ -446,6 +473,13 @@ class _PlannerSummaryCard extends StatelessWidget {
               Text(
                 '基本NISA ${_yen(result.baseNisa)}'
                 ' ・ 追加余地 ${_yen(result.additionalNisa)}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+            if (result.allocationMessage.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                result.allocationMessage,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -554,7 +588,7 @@ class _PlanCard extends StatelessWidget {
               ],
               const SizedBox(height: 8),
               Text(
-                'SBI証券の反映済み買付通知を自動集計。売却は投資額に含めません。',
+                '購入実績は基準日時点の実績と、基準日より後の反映済み買付通知を集計します。売却は投資額に含めません。',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],

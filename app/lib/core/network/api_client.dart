@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
 import '../auth/auth_session.dart';
 import '../constants/api_constants.dart';
 import 'api_routes.dart';
+import '../offline/offline_sync_store.dart';
 
 class ApiClient {
   const ApiClient._();
@@ -15,6 +18,10 @@ class ApiClient {
   /// Test hooks. Production leaves these null.
   static http.Client Function()? clientFactoryForTesting;
   static String? authTokenForTesting;
+
+  /// True when unit tests inject a transport-only HTTP client.
+  /// Platform-backed offline persistence must not run in this mode.
+  static bool get isTransportTest => clientFactoryForTesting != null;
 
   static http.Client _createClient() {
     return clientFactoryForTesting?.call() ?? http.Client();
@@ -73,7 +80,7 @@ class ApiClient {
       return inFlight;
     }
 
-    final future = _performGet(uri);
+    final future = _performGetWithCache(uri, requestKey);
     _inFlightGets[requestKey] = future;
 
     void clearInFlight() {
@@ -90,6 +97,55 @@ class ApiClient {
     );
 
     return future;
+  }
+
+  static Future<Map<String, dynamic>> _performGetWithCache(Uri uri, String requestKey) async {
+    // Unit tests inject an HTTP client and intentionally do not initialize a
+    // Flutter platform binding. Keep persistence out of that transport-only
+    // test path; production still uses the full offline cache/sync flow.
+    if (clientFactoryForTesting != null) {
+      return _performGet(uri);
+    }
+
+    try {
+      final data = await _performGet(uri);
+      await OfflineSyncStore.cacheGet(requestKey, data);
+      await flushOfflineQueue();
+      return data;
+    } catch (error) {
+      final cached = await OfflineSyncStore.readCachedGet(requestKey);
+      if (cached != null) return {...cached, '_offlineCache': true};
+      rethrow;
+    }
+  }
+
+  static bool _isQueueableAction(String action) => const {
+    'transaction_create',
+    'transaction_update',
+    'transaction_delete',
+    'transaction_ignore',
+    'transaction_manual_confirm',
+    'transaction_restore_ignored',
+  }.contains(action);
+
+  static Future<void> flushOfflineQueue() {
+    return OfflineSyncStore.flush((action, body) async {
+      try {
+        final token = await _resolveAuthToken();
+        final data = await _performPost(action: action, body: {'token': token, ...body});
+        if (data['queued'] == true) throw const SocketException('同期を再試行します');
+      } catch (error) {
+        final isTransportFailure = error is http.ClientException ||
+            error is SocketException ||
+            error is TimeoutException;
+        if (isTransportFailure) rethrow;
+        // Server validation/business-rule errors require user action. Mark
+        // only this mutation and continue syncing later valid mutations.
+        throw SyncNeedsAttentionException(
+          error.toString().replaceFirst('Exception: ', ''),
+        );
+      }
+    });
   }
 
   static Future<Map<String, dynamic>> _performGet(Uri uri) async {
@@ -109,13 +165,22 @@ class ApiClient {
   }) async {
     final token = await _resolveAuthToken();
 
-    return _performPost(
-      action: action,
-      body: {
-        'token': token,
-        ...?body,
-      },
-    );
+    final authenticatedBody = <String, dynamic>{'token': token, ...?body};
+    try {
+      final data = await _performPost(action: action, body: authenticatedBody);
+      if (clientFactoryForTesting == null) {
+        await flushOfflineQueue();
+      }
+      return data;
+    } catch (error) {
+      final isTransportFailure = error is http.ClientException ||
+          error is SocketException ||
+          error is TimeoutException;
+      if (!_isQueueableAction(action) || !isTransportFailure) rethrow;
+      final queueBody = <String, dynamic>{...?body};
+      await OfflineSyncStore.enqueue(action, queueBody);
+      return <String, dynamic>{'queued': true, 'offline': true};
+    }
   }
 
   static Future<Map<String, dynamic>> postPublic({

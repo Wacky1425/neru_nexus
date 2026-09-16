@@ -87,6 +87,8 @@ class InvestmentPlannerResult {
     required this.items,
     required this.holdings,
     required this.recommendedAmount,
+    required this.discretionaryCapacity,
+    required this.scheduledInvestmentTotal,
     required this.plannedTotal,
     required this.actualTotal,
     required this.remainingPlanned,
@@ -103,6 +105,8 @@ class InvestmentPlannerResult {
   final List<InvestmentPlanItem> items;
   final List<InvestmentPlanHoldingOption> holdings;
   final int recommendedAmount;
+  final int discretionaryCapacity;
+  final int scheduledInvestmentTotal;
   final int plannedTotal;
   final int actualTotal;
   final int remainingPlanned;
@@ -136,6 +140,12 @@ class InvestmentPlannerResult {
               .toList()
           : const [],
       recommendedAmount: InvestmentPlanItem._toInt(json['recommendedAmount']),
+      discretionaryCapacity: InvestmentPlanItem._toInt(
+        json['discretionaryCapacity'] ?? json['recommendedAmount'],
+      ),
+      scheduledInvestmentTotal: InvestmentPlanItem._toInt(
+        json['scheduledInvestmentTotal'] ?? json['plannedTotal'],
+      ),
       plannedTotal: InvestmentPlanItem._toInt(json['plannedTotal']),
       actualTotal: InvestmentPlanItem._toInt(json['actualTotal']),
       remainingPlanned: InvestmentPlanItem._toInt(json['remainingPlanned']),

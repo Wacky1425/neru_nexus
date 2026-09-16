@@ -56,6 +56,10 @@ class HomeModel {
 
     required this.moneyHealth,
     required this.homeForecast,
+    required this.reviewCount,
+    required this.formalWaitCount,
+    required this.savingsTarget,
+    required this.freeSpendingTarget,
 
     required this.recentTransactions,
 
@@ -155,6 +159,10 @@ class HomeModel {
 
   final Map<String, dynamic> moneyHealth;
   final Map<String, dynamic> homeForecast;
+  final int reviewCount;
+  final int formalWaitCount;
+  final int savingsTarget;
+  final int freeSpendingTarget;
 
   final List<Map<String, dynamic>> recentTransactions;
 
@@ -237,6 +245,10 @@ class HomeModel {
       homeForecast: Map<String, dynamic>.from(
         json['homeForecast'] as Map? ?? {},
       ),
+      reviewCount: _toInt(json['reviewCount']),
+      formalWaitCount: _toInt(json['formalWaitCount']),
+      savingsTarget: _toInt(json['savingsTarget']),
+      freeSpendingTarget: _toInt(json['freeSpendingTarget']),
 
       recentTransactions: (json['recentTransactions'] as List? ?? [])
           .whereType<Map>()

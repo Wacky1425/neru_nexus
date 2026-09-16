@@ -374,6 +374,7 @@ function getReviewTransactionsData(options) {
 
   const requestedLimit = Number(settings.limit || 100);
   const requestedOffset = Number(settings.offset || 0);
+  const queueMode = String(settings.queueMode || "user_review").trim();
 
   const limit = Math.min(Math.max(requestedLimit, 1), 200);
   const offset = Math.max(requestedOffset, 0);
@@ -429,6 +430,18 @@ function getReviewTransactionsData(options) {
 
     const status = getString(row, table.index, "status");
     const settlementStatus = getString(row, table.index, "settlement_status");
+
+    const awaitingFormal = isAwaitingFormalDetailRow_(row, table.index);
+
+    // V2.2-2: 日常運用キューを「ユーザー判断」と「正式明細待ち」に分離する。
+    // 正式明細待ちはユーザーが分類する対象ではないため、別タブで可視化する。
+    if (queueMode === "formal_wait") {
+      return awaitingFormal;
+    }
+
+    if (awaitingFormal) {
+      return false;
+    }
 
     // Gmail速報であること自体は「要確認」の理由にしない。
     // ユーザー判断が必要な分類状態か、照合確認が必要な取引だけ表示する。
@@ -553,6 +566,10 @@ function getReviewTransactionCount() {
     const status = getString(row, table.index, "status");
     const settlementStatus = getString(row, table.index, "settlement_status");
 
+    if (isAwaitingFormalDetailRow_(row, table.index)) {
+      continue;
+    }
+
     if (status === "要確認" || settlementStatus === "review") {
       count++;
     }
@@ -563,3 +580,53 @@ function getReviewTransactionCount() {
   };
 }
 
+
+/**
+ * V2.2-2.2: 速報 -> 正式明細の自動照合履歴をアプリ向けに返す。
+ * 読み取り専用。matched/ignored の速報と settlement_id の正式取引を結び付ける。
+ */
+function getRecentReconciliationHistoryData_(options) {
+  const opts = options || {};
+  const limit = Math.min(Math.max(Number(opts.limit || 10), 1), 50);
+  const table = loadTransactions();
+  if (!table.rows.length) return { items: [], total: 0, limit };
+
+  assertRequiredColumns(
+    table.index,
+    ["id", "transaction_date", "merchant", "amount", "settlement_status", "settlement_id", "source_type", "source_status", "source_received_at"],
+    SHEETS.TRANSACTIONS,
+  );
+
+  const byId = {};
+  table.rows.forEach((row) => {
+    const id = getString(row, table.index, "id");
+    if (id) byId[id] = row;
+  });
+
+  const items = [];
+  table.rows.forEach((row) => {
+    const settlementStatus = getString(row, table.index, "settlement_status").toLowerCase();
+    const sourceStatus = getString(row, table.index, "source_status").toLowerCase();
+    const settlementId = getString(row, table.index, "settlement_id");
+    const sourceType = getString(row, table.index, "source_type");
+    if (settlementStatus !== "matched" || sourceStatus !== "ignored" || !settlementId || !sourceType.startsWith("Gmail_")) return;
+
+    const formal = byId[settlementId];
+    if (!formal) return;
+    items.push({
+      preliminaryId: getString(row, table.index, "id"),
+      preliminaryDate: formatApiDate_(row[table.index["transaction_date"]]),
+      preliminaryMerchant: getString(row, table.index, "merchant"),
+      amount: getNumber(row, table.index, "amount"),
+      sourceType,
+      receivedAt: formatApiDateTime_(row[table.index["source_received_at"]]),
+      formalId: settlementId,
+      formalDate: formatApiDate_(formal[table.index["transaction_date"]]),
+      formalMerchant: getString(formal, table.index, "merchant"),
+      formalSourceType: getString(formal, table.index, "source_type"),
+    });
+  });
+
+  items.sort((a, b) => String(b.receivedAt || b.preliminaryDate).localeCompare(String(a.receivedAt || a.preliminaryDate)));
+  return { items: items.slice(0, limit), total: items.length, limit };
+}

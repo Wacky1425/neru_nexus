@@ -62,13 +62,26 @@ class _AuthGateState extends State<AuthGate> {
         return;
       }
 
-      await _service.status();
-
+      // A saved device token is sufficient to enter the local-first app.
+      // Do not make app startup depend on the network: status verification is
+      // attempted after the shell is visible and normal API calls can fall
+      // back to the local SQLite snapshots.
+      AuthSession.authenticated.value = true;
       if (!mounted) return;
       setState(() {
         _authenticated = true;
         _loading = false;
       });
+
+      // Best-effort server validation. Failure here means offline/weak network,
+      // not "forget this already-paired device". A server-declared invalid
+      // token is still surfaced by authenticated API calls later.
+      _service.status().catchError((_) => DeviceAuthStatus(
+            paired: true,
+            deviceId: AuthSession.deviceId,
+            deviceName: AuthSession.deviceName,
+            expiresAt: AuthSession.expiresAt,
+          ));
     } catch (error) {
       if (!mounted) return;
       setState(() {

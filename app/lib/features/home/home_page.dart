@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/refresh/app_refresh_controller.dart';
 import 'model/home_model.dart';
 import 'service/home_service.dart';
-import 'widgets/health_card.dart';
 import 'widgets/money_card.dart';
 import 'widgets/recent_transaction_card.dart';
 import '../goals/goal_management_page.dart';
 import '../budget/budget_settings_page.dart';
 import '../recurring/recurring_management_page.dart';
 import '../business/business_report_page.dart';
+import '../notifications/notification_center_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -33,12 +34,17 @@ class _HomePageState extends State<HomePage> {
   late Future<HomeModel> _homeFuture;
   Future<void>? _reloadFuture;
   bool _needsRefresh = false;
+  bool _notifyReview = true;
+  bool _notifyBudget = true;
+  bool _notifyCash = true;
+  bool _notifyFormal = true;
 
   @override
   void initState() {
     super.initState();
 
     _homeFuture = _homeService.fetchHome();
+    _loadNotificationSettings();
 
     AppRefreshController.dataVersion.addListener(_handleAppRefresh);
     AppRefreshController.activeTabIndex.addListener(_handleActiveTabChanged);
@@ -146,6 +152,32 @@ class _HomePageState extends State<HomePage> {
     return '${parts[0]}年$month月';
   }
 
+
+  Future<void> _loadNotificationSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _notifyReview = prefs.getBool('notification_review_enabled') ?? true;
+      _notifyBudget = prefs.getBool('notification_budget_enabled') ?? true;
+      _notifyCash = prefs.getBool('notification_cash_enabled') ?? true;
+      _notifyFormal = prefs.getBool('notification_formal_wait_enabled') ?? true;
+    });
+  }
+
+  int _noticeCount(HomeModel home) {
+    var count = 0;
+    if (_notifyReview && home.reviewCount > 0) count++;
+    if (_notifyFormal && home.formalWaitCount > 0) count++;
+    final projected = home.homeForecast['projectedExpense'];
+    final projectedExpense = projected is num ? projected.toInt() : int.tryParse('$projected') ?? 0;
+    final budget = home.fixedExpenseBudget + home.variableExpenseBudget;
+    if (_notifyBudget && budget > 0 && projectedExpense > budget) count++;
+    final covered = home.emergencyFund['coveredMonths'];
+    final coveredMonths = covered is num ? covered.toDouble() : double.tryParse('$covered') ?? 0;
+    if (_notifyCash && coveredMonths < 1) count++;
+    return count;
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<HomeModel>(
@@ -166,10 +198,6 @@ class _HomePageState extends State<HomePage> {
           return const Center(child: Text('Homeデータがありません'));
         }
 
-        final healthTitle = home.moneyHealth['title']?.toString() ?? '状態不明';
-
-        final healthMessage = home.moneyHealth['message']?.toString() ?? '';
-
         return RefreshIndicator(
           onRefresh: _reload,
           child: ListView(
@@ -184,7 +212,18 @@ class _HomePageState extends State<HomePage> {
               // ============================================================
               // Header
               // ============================================================
-              _HomeHeader(yearMonth: _formatYearMonth(home.yearMonth)),
+              _HomeHeader(
+                yearMonth: _formatYearMonth(home.yearMonth),
+                noticeCount: _noticeCount(home),
+                onOpenNotifications: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => NotificationCenterPage(initialHome: home),
+                    ),
+                  );
+                  await _loadNotificationSettings();
+                },
+              ),
 
               const SizedBox(height: 24),
 
@@ -212,25 +251,11 @@ class _HomePageState extends State<HomePage> {
 
               const SizedBox(height: 12),
 
-              _ForecastRecommendationCard(
-                forecast: home.homeForecast,
+              _TodayOverviewCard(
+                home: home,
                 formatMoney: _formatMoney,
-              ),
-
-              const SizedBox(height: 24),
-
-              // ============================================================
-              // 今月の余剰
-              // ============================================================
-              _SectionLabel(title: '資産形成', icon: Icons.auto_graph_outlined),
-
-              const SizedBox(height: 12),
-
-              MoneyCard(
-                title: '今月の余剰見込み',
-                amount: _formatMoney(home.monthlySurplus),
-                subAmount: home.allocationMessage,
-                icon: Icons.savings_outlined,
+                onOpenTransactions: widget.onOpenTransactions,
+                onOpenAssets: widget.onOpenAssets,
               ),
 
               const SizedBox(height: 12),
@@ -243,7 +268,33 @@ class _HomePageState extends State<HomePage> {
                     ),
                   );
                 },
-                child: _AllocationCard(home: home, formatMoney: _formatMoney),
+                child: _MonthlyPlanSnapshotCard(
+                  home: home,
+                  formatMoney: _formatMoney,
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // ============================================================
+              // 資産形成
+              // ============================================================
+              _SectionLabel(title: '資産形成', icon: Icons.auto_graph_outlined),
+
+              const SizedBox(height: 12),
+
+              _TappableCard(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const BudgetSettingsPage(),
+                    ),
+                  );
+                },
+                child: _AssetFormationSummaryCard(
+                  home: home,
+                  formatMoney: _formatMoney,
+                ),
               ),
 
               const SizedBox(height: 24),
@@ -379,20 +430,6 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 24),
 
               // ============================================================
-              // Money Health
-              // ============================================================
-              _SectionLabel(
-                title: 'Money Health',
-                icon: Icons.health_and_safety_outlined,
-              ),
-
-              const SizedBox(height: 12),
-
-              HealthCard(title: healthTitle, message: healthMessage),
-
-              const SizedBox(height: 24),
-
-              // ============================================================
               // 最近の取引
               // ============================================================
               _SectionLabel(title: '最近の取引', icon: Icons.receipt_long_outlined),
@@ -418,28 +455,46 @@ class _HomePageState extends State<HomePage> {
 // ============================================================================
 
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({required this.yearMonth});
+  const _HomeHeader({
+    required this.yearMonth,
+    required this.noticeCount,
+    required this.onOpenNotifications,
+  });
 
   final String yearMonth;
+  final int noticeCount;
+  final VoidCallback onOpenNotifications;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'おかえり、ネル',
-          style: Theme.of(
-            context,
-          ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'おかえり、ネル',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                yearMonth,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
         ),
-
-        const SizedBox(height: 4),
-
-        Text(
-          yearMonth,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
+        IconButton(
+          tooltip: '通知・自動チェック',
+          onPressed: onOpenNotifications,
+          icon: Badge(
+            isLabelVisible: noticeCount > 0,
+            label: Text('$noticeCount'),
+            child: const Icon(Icons.notifications_outlined),
           ),
         ),
       ],
@@ -476,47 +531,150 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
+class _TodayOverviewCard extends StatelessWidget {
+  const _TodayOverviewCard({
+    required this.home,
+    required this.formatMoney,
+    this.onOpenTransactions,
+    this.onOpenAssets,
+  });
+
+  final HomeModel home;
+  final String Function(int) formatMoney;
+  final VoidCallback? onOpenTransactions;
+  final VoidCallback? onOpenAssets;
+
+  @override
+  Widget build(BuildContext context) {
+    final forecastBalance = _int(home.homeForecast['projectedBalance']);
+    final isTight = home.availableMoney < 0 || forecastBalance < 0;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '今日の判断',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 14),
+            _HomeDecisionRow(
+              icon: isTight
+                  ? Icons.warning_amber_rounded
+                  : Icons.check_circle_outline,
+              title: isTight ? '今月は支出ペースに注意' : '今月の生活費は計画内',
+              subtitle: '月末収支見込 ${formatMoney(forecastBalance)}',
+            ),
+            const Divider(height: 28),
+            InkWell(
+              onTap: home.reviewCount > 0 ? onOpenTransactions : null,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: _HomeDecisionRow(
+                  icon: home.reviewCount > 0
+                      ? Icons.notification_important_outlined
+                      : Icons.task_alt_outlined,
+                  title: home.reviewCount > 0
+                      ? '要確認が ${home.reviewCount}件あります'
+                      : '要確認はありません',
+                  subtitle: home.reviewCount > 0
+                      ? home.formalWaitCount > 0
+                          ? '正式明細待ち ${home.formalWaitCount}件は自動照合待ち'
+                          : 'タップして取引を確認'
+                      : home.formalWaitCount > 0
+                          ? '正式明細待ち ${home.formalWaitCount}件（自動照合待ち）'
+                          : '取引データは整理済み',
+                ),
+              ),
+            ),
+            const Divider(height: 28),
+            InkWell(
+              onTap: onOpenAssets,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: _HomeDecisionRow(
+                  icon: Icons.account_balance_outlined,
+                  title: '純資産 ${formatMoney(home.netAssets)}',
+                  subtitle:
+                      '資産 ${formatMoney(home.totalAssets)} / 負債 ${formatMoney(home.totalLiabilities)}',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  int _int(dynamic value) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+}
+
+class _HomeDecisionRow extends StatelessWidget {
+  const _HomeDecisionRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 22),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 // ============================================================================
 // おすすめ配分
 // ============================================================================
 
 
-class _ForecastRecommendationCard extends StatelessWidget {
-  const _ForecastRecommendationCard({
-    required this.forecast,
+class _MonthlyPlanSnapshotCard extends StatelessWidget {
+  const _MonthlyPlanSnapshotCard({
+    required this.home,
     required this.formatMoney,
   });
 
-  final Map<String, dynamic> forecast;
+  final HomeModel home;
   final String Function(int) formatMoney;
-
-  int _int(String key) {
-    final value = forecast[key];
-    if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
-  List<Map<String, dynamic>> _maps(String key) {
-    return (forecast[key] as List? ?? const [])
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-  }
 
   @override
   Widget build(BuildContext context) {
-    if (forecast.isEmpty) return const SizedBox.shrink();
-
-    final projectedExpense = _int('projectedExpense');
-    final projectedBalance = _int('projectedBalance');
-    final variableProjected = _int('variableProjected');
-    final safeDailySpend = _int('safeDailySpend');
-    final remainingDays = _int('remainingDays');
-    final safeRemainingSpend = _int('safeRemainingSpend');
-    final remainingVariableBudget = _int('remainingVariableBudget');
-    final cardPayments = _int('upcomingCardPayments');
-    final alerts = _maps('alerts');
-    final recommendations = _maps('recommendations');
+    final livingBudget = home.fixedExpenseBudget + home.variableExpenseBudget;
+    final actualExpense = home.fixedExpenseActual + home.variableExpenseActual;
+    final usageRate = livingBudget > 0 ? actualExpense / livingBudget : 0.0;
 
     return Card(
       child: Padding(
@@ -526,11 +684,11 @@ class _ForecastRecommendationCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.auto_awesome_outlined),
+                const Icon(Icons.flag_outlined),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    '月末予測とおすすめ',
+                    '今月の計画',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
@@ -538,72 +696,58 @@ class _ForecastRecommendationCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             _MoneyRow(
-              label: '月末支出見込',
-              value: formatMoney(projectedExpense),
+              label: '生活費',
+              value: livingBudget > 0
+                  ? '${formatMoney(actualExpense)} / ${formatMoney(livingBudget)}'
+                  : formatMoney(actualExpense),
+              emphasize: livingBudget > 0 && actualExpense > livingBudget,
             ),
-            const SizedBox(height: 8),
-            _MoneyRow(
-              label: '月末収支見込',
-              value: formatMoney(projectedBalance),
-              emphasize: projectedBalance < 0,
-            ),
-            const SizedBox(height: 8),
-            _MoneyRow(
-              label: '変動費ペース',
-              value: formatMoney(variableProjected),
-            ),
-            if (remainingDays > 0) ...[
+            if (livingBudget > 0) ...[
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: usageRate.clamp(0.0, 1.0),
+                  minHeight: 7,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            _MoneyRow(label: 'NISA予定', value: formatMoney(home.baseNisa)),
+            if (home.homeForecast.isNotEmpty) ...[
               const SizedBox(height: 8),
               _MoneyRow(
-                label: '残りの安全な1日目安',
-                value: formatMoney(safeDailySpend),
-              ),
-              if (safeRemainingSpend < remainingVariableBudget)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    '現金残高も考慮して上限を調整しています',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                label: '月末支出見込',
+                value: formatMoney(
+                  (home.homeForecast['projectedExpense'] as num?)?.toInt() ?? 0,
                 ),
+              ),
             ],
-            if (cardPayments > 0) ...[
+            if (home.savingsTarget > 0) ...[
               const SizedBox(height: 8),
               _MoneyRow(
-                label: 'カード支払見込',
-                value: formatMoney(cardPayments),
+                label: '追加貯金目標',
+                value: formatMoney(home.savingsTarget),
               ),
             ],
-            if (alerts.isNotEmpty) ...[
-              const Divider(height: 28),
-              for (final alert in alerts) ...[
-                _InfoBox(
-                  icon: alert['severity'] == 'high'
-                      ? Icons.warning_amber_rounded
-                      : Icons.info_outline,
-                  text:
-                      '${alert['title'] ?? ''}\n${alert['message'] ?? ''}',
-                ),
-                const SizedBox(height: 8),
-              ],
-            ],
-            if (recommendations.isNotEmpty) ...[
-              const Divider(height: 24),
-              Text(
-                'おすすめ',
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
+            if (home.freeSpendingTarget > 0) ...[
               const SizedBox(height: 8),
-              for (final item in recommendations.take(3))
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    '・${item['message'] ?? item['title'] ?? ''}',
-                  ),
-                ),
+              _MoneyRow(
+                label: '自由費上限',
+                value: formatMoney(home.freeSpendingTarget),
+              ),
             ],
+            const SizedBox(height: 10),
+            Text(
+              home.budgetInherited && home.budgetInheritedFrom.isNotEmpty
+                  ? '${home.budgetInheritedFrom} の予算を引き継いでいます'
+                  : 'タップして今月の予算・目標を調整',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
           ],
         ),
       ),
@@ -611,21 +755,14 @@ class _ForecastRecommendationCard extends StatelessWidget {
   }
 }
 
-class _AllocationCard extends StatelessWidget {
-  const _AllocationCard({required this.home, required this.formatMoney});
+class _AssetFormationSummaryCard extends StatelessWidget {
+  const _AssetFormationSummaryCard({
+    required this.home,
+    required this.formatMoney,
+  });
 
   final HomeModel home;
-
   final String Function(int) formatMoney;
-
-  String _formatYearMonthLabel(String yearMonth) {
-    final parts = yearMonth.split('-');
-    if (parts.length != 2) {
-      return yearMonth;
-    }
-    final month = int.tryParse(parts[1]);
-    return month == null ? yearMonth : '${parts[0]}年$month月';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -635,82 +772,31 @@ class _AllocationCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Icon(Icons.pie_chart_outline),
-
-                const SizedBox(width: 10),
-
-                Expanded(
-                  child: Text(
-                    '今月のお金の行き先',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
+            _MoneyRow(
+              label: '今月の余剰見込み',
+              value: formatMoney(home.monthlySurplus),
+              emphasize: home.monthlySurplus < 0,
             ),
-
-            const SizedBox(height: 20),
-
-            _AllocationRow(
-              icon: Icons.flag_outlined,
-              label: '目的資金',
-              value: formatMoney(home.goalAllocation),
-            ),
-
             const SizedBox(height: 14),
-
-            _AllocationRow(
-              icon: Icons.shield_outlined,
+            _MoneyRow(label: '目的資金', value: formatMoney(home.goalAllocation)),
+            const SizedBox(height: 8),
+            _MoneyRow(
               label: '生活防衛資金',
               value: formatMoney(home.emergencyCashAllocation),
             ),
-
-            const SizedBox(height: 14),
-
-            _AllocationRow(
-              icon: Icons.show_chart,
-              label: 'NISA',
-              value: formatMoney(home.totalNisa),
-              subtitle: home.additionalNisa > 0
-                  ? '基本 ${formatMoney(home.baseNisa)}'
-                        ' + 追加 ${formatMoney(home.additionalNisa)}'
-                  : '基本 ${formatMoney(home.baseNisa)}',
-            ),
-
+            const SizedBox(height: 8),
+            _MoneyRow(label: 'NISA', value: formatMoney(home.totalNisa)),
             if (home.unallocatedCash > 0) ...[
-              const SizedBox(height: 14),
-
-              _AllocationRow(
-                icon: Icons.savings_outlined,
-                label: '未配分',
-                value: formatMoney(home.unallocatedCash),
-              ),
+              const SizedBox(height: 8),
+              _MoneyRow(label: '未配分', value: formatMoney(home.unallocatedCash)),
             ],
-
-            if (home.budgetInherited && home.budgetInheritedFrom.isNotEmpty) ...[
-              const SizedBox(height: 18),
-
-              _InfoBox(
-                icon: Icons.history_rounded,
-                text:
-                    '${_formatYearMonthLabel(home.budgetInheritedFrom)}の予算設定を引き継いで計算しています。',
-              ),
-            ],
-
-            if (home.goalShortage > 0) ...[
-              const SizedBox(height: 18),
-
-              _InfoBox(
-                icon: Icons.warning_amber_outlined,
-                text:
-                    '目的資金の必要ペースに '
-                    '${formatMoney(home.goalShortage)} '
-                    '不足しています。',
-              ),
-            ],
+            const SizedBox(height: 10),
+            Text(
+              'タップして予算・目標を調整',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
           ],
         ),
       ),

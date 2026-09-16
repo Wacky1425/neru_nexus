@@ -13,6 +13,7 @@ import '../gmail_evidence/gmail_evidence_page.dart';
 import '../transactions/ignored_transactions_page.dart';
 import '../system/system_diagnostics_page.dart';
 import '../auth/device_auth_page.dart';
+import '../notifications/notification_center_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -231,6 +232,18 @@ class SettingsPage extends StatelessWidget {
               'アプリ',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             ),
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.notifications_outlined),
+            title: const Text('通知・自動チェック'),
+            subtitle: const Text('要判断・予算・生活防衛資金などの通知条件'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const NotificationCenterPage()),
+              );
+            },
           ),
 
           const ListTile(

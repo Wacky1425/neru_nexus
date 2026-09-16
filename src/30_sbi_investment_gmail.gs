@@ -48,9 +48,9 @@ function parseSbiInvestmentMailText_(subject, body, fallbackDate) {
   const lower = text.toLowerCase();
 
   let side = "";
-  if (/(買付|買い|購入|buy)/i.test(text)) side = "buy";
-  if (/(売却|売り|sell)/i.test(text)) side = "sell";
-  if (!side || !/(約定|取引成立|買付|売却|purchase|trade)/i.test(text)) {
+  if (/(買付|買い|現物買|買注文|購入|buy)/i.test(text)) side = "buy";
+  if (/(売却|売り|現物売|売注文|sell)/i.test(text)) side = "sell";
+  if (!side || !/(約定|取引成立|買付|売却|現物買|現物売|purchase|trade)/i.test(text)) {
     return null;
   }
 
@@ -132,7 +132,7 @@ function findHoldingForSbiEvent_(event) {
     const normalizedName = normalizeHoldingMatchText_(name);
 
     let score = 0;
-    if (eventSymbol && symbol && eventSymbol === symbol) score = 1;
+    if (eventSymbol && symbol && ((typeof normalizeSbiEventSymbolForHolding_ === "function" && normalizeSbiEventSymbolForHolding_(eventSymbol, symbol)) || eventSymbol === symbol)) score = 1;
     else if (eventName && normalizedName && eventName === normalizedName) score = 0.95;
     else if (
       eventName &&
@@ -211,6 +211,12 @@ function scanSbiInvestmentGmail_(options = {}) {
       if (!messageId || existingIds.has(messageId)) continue;
 
       const event = buildSbiInvestmentEventFromMessage_(message, thread);
+      // V2.1-4.3: the initial snapshot is authoritative through the baseline
+      // date. Never create historical events that could later double-count it.
+      if (event && typeof isPostInvestmentBaselineTradeDate_ === "function" &&
+          !isPostInvestmentBaselineTradeDate_(event.trade_date)) {
+        continue;
+      }
       if (event) rows.push(event);
     }
   }

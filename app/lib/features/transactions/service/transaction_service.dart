@@ -1,4 +1,5 @@
 import '../../../core/network/api_client.dart';
+import '../../../core/offline/offline_sync_store.dart';
 import '../../../core/refresh/app_refresh_controller.dart';
 import '../model/gmail_import_status_model.dart';
 import '../model/transaction_model.dart';
@@ -79,8 +80,17 @@ class TransactionService {
       queryParameters: parameters,
     );
 
+    final rawItems = data['items'];
+    if (rawItems is! List) throw Exception('取引一覧APIのitems形式が正しくありません');
+    final maps = rawItems.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    // Transport-only unit tests inject ApiClient.clientFactoryForTesting and do
+    // not initialize Flutter platform bindings. Offline overlays are a device
+    // persistence concern, so keep them out of that test path.
+    final overlaid = ApiClient.isTransportTest
+        ? maps
+        : await OfflineSyncStore.applyTransactionOverlays(maps);
     return TransactionPageResult(
-      items: _parseTransactions(data['items'], errorLabel: '取引一覧'),
+      items: overlaid.map(TransactionModel.fromJson).toList(),
       total: _toInt(data['total']),
       limit: _toInt(data['limit']),
       offset: _toInt(data['offset']),
@@ -121,9 +131,15 @@ class TransactionService {
       },
     );
 
-    if (_toInt(data['addedCount']) <= 0) {
-      throw Exception('取引が登録されませんでした');
+    if (data['queued'] == true) {
+      final created = _offlineTransaction(
+        id: 'offline-${DateTime.now().microsecondsSinceEpoch}',
+        transaction: transaction,
+      );
+      AppRefreshController.refreshAccountBalances();
+      return created;
     }
+    if (_toInt(data['addedCount']) <= 0) throw Exception('取引が登録されませんでした');
 
     final created = _parseTransaction(data['transaction'], '登録後の取引');
     AppRefreshController.refreshAccountBalances();
@@ -135,6 +151,7 @@ class TransactionService {
     required TransactionFormResult transaction,
     bool saveRule = false,
     String merchant = '',
+    String baseRevision = '',
   }) async {
     if (id.trim().isEmpty) throw Exception('更新対象の取引IDがありません');
 
@@ -164,6 +181,7 @@ class TransactionService {
         'evidenceUrl': transaction.evidenceUrl,
         'saveRule': saveRule,
         'merchant': merchant,
+        'baseRevision': baseRevision,
         'fromAccount': transaction.fromAccount ?? '',
         'fromAccountId': transaction.fromAccountId,
         'toAccount': transaction.toAccount ?? '',
@@ -171,6 +189,11 @@ class TransactionService {
       },
     );
 
+    if (data['queued'] == true) {
+      final updated = _offlineTransaction(id: id, transaction: transaction, merchant: merchant);
+      AppRefreshController.refreshAccountBalances();
+      return updated;
+    }
     if (data['updated'] != true) throw Exception('取引が更新されませんでした');
 
     final updated = _parseTransaction(data['transaction'], '更新後の取引');
@@ -178,13 +201,14 @@ class TransactionService {
     return updated;
   }
 
-  Future<void> deleteTransaction({required String id}) async {
+  Future<void> deleteTransaction({required String id, String baseRevision = ''}) async {
     final data = await _postIdAction(
       id: id,
       emptyIdMessage: '削除対象の取引IDがありません',
       action: 'transaction_delete',
+      extraBody: {'baseRevision': baseRevision},
     );
-    if (data['deleted'] != true) throw Exception('取引が削除されませんでした');
+    if (data['deleted'] != true && data['queued'] != true) throw Exception('取引が削除されませんでした');
     AppRefreshController.refreshAccountBalances();
   }
 
@@ -194,7 +218,7 @@ class TransactionService {
       emptyIdMessage: '除外対象の取引IDがありません',
       action: 'transaction_ignore',
     );
-    if (data['ignored'] != true) throw Exception('取引が除外されませんでした');
+    if (data['ignored'] != true && data['queued'] != true) throw Exception('取引が除外されませんでした');
     AppRefreshController.refreshAccountBalances();
   }
 
@@ -256,7 +280,7 @@ class TransactionService {
       emptyIdMessage: '確定対象の取引IDがありません',
       action: 'transaction_manual_confirm',
     );
-    if (data['confirmed'] != true) throw Exception('取引が手動確定されませんでした');
+    if (data['confirmed'] != true && data['queued'] != true) throw Exception('取引が手動確定されませんでした');
     AppRefreshController.refreshAccountBalances();
   }
 
@@ -266,7 +290,7 @@ class TransactionService {
       emptyIdMessage: '復元対象の取引IDがありません',
       action: 'transaction_restore_ignored',
     );
-    if (data['restored'] != true) throw Exception('取引が復元されませんでした');
+    if (data['restored'] != true && data['queued'] != true) throw Exception('取引が復元されませんでした');
     AppRefreshController.refreshAccountBalances();
   }
 
@@ -279,10 +303,11 @@ class TransactionService {
     required String id,
     required String emptyIdMessage,
     required String action,
+    Map<String, dynamic> extraBody = const {},
   }) {
     final trimmedId = id.trim();
     if (trimmedId.isEmpty) throw Exception(emptyIdMessage);
-    return ApiClient.post(action: action, body: {'id': trimmedId});
+    return ApiClient.post(action: action, body: {'id': trimmedId, ...extraBody});
   }
 
   static TransactionModel _parseTransaction(dynamic value, String label) {
@@ -299,6 +324,44 @@ class TransactionService {
       if (item is! Map) throw Exception('$errorLabelデータの形式が正しくありません');
       return TransactionModel.fromJson(Map<String, dynamic>.from(item));
     }).toList();
+  }
+
+  static TransactionModel _offlineTransaction({
+    required String id,
+    required TransactionFormResult transaction,
+    String merchant = '',
+  }) {
+    return TransactionModel.fromJson({
+      'id': id,
+      'transactionDate': _formatDate(transaction.date),
+      'merchant': merchant,
+      'itemName': transaction.title,
+      'amount': transaction.amount,
+      'type': switch (transaction.type) {
+        TransactionType.expense => '支出',
+        TransactionType.income => '収入',
+        TransactionType.transfer => '移動',
+      },
+      'majorCategory': transaction.majorCategory,
+      'subCategory': transaction.subCategory,
+      'majorCategoryId': transaction.majorCategoryId,
+      'subCategoryId': transaction.subCategoryId,
+      'status': transaction.status,
+      'purposeType': transaction.purposeType,
+      'expenseRatio': transaction.expenseRatio,
+      'expenseAmount': transaction.type == TransactionType.expense ? transaction.amount : 0,
+      'evidenceUrl': transaction.evidenceUrl,
+      'paymentMethod': transaction.paymentMethod,
+      'accountName': transaction.accountName ?? '',
+      'accountId': transaction.accountId,
+      'fromAccount': transaction.fromAccount ?? '',
+      'fromAccountId': transaction.fromAccountId,
+      'toAccount': transaction.toAccount ?? '',
+      'toAccountId': transaction.toAccountId,
+      'note': transaction.memo,
+      'sourceType': 'Neru Nexus App',
+      'sourceStatus': 'offline_pending',
+    });
   }
 
   static String _formatDate(DateTime date) {

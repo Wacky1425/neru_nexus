@@ -197,3 +197,70 @@ class ImportService {
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 }
+
+class CsvImportPreview {
+  const CsvImportPreview({
+    required this.csvType,
+    required this.accountName,
+    required this.fileHash,
+    required this.rowCount,
+    required this.newCount,
+    required this.existingCount,
+    required this.ignoredCount,
+    required this.duplicateStatus,
+    required this.alreadyImportedSameFile,
+    required this.previousImportCount,
+    required this.targetYearMonth,
+    required this.periodStart,
+    required this.periodEnd,
+  });
+
+  final String csvType;
+  final String accountName;
+  final String fileHash;
+  final int rowCount;
+  final int newCount;
+  final int existingCount;
+  final int ignoredCount;
+  final String duplicateStatus;
+  final bool alreadyImportedSameFile;
+  final int previousImportCount;
+  final String targetYearMonth;
+  final String periodStart;
+  final String periodEnd;
+
+  bool get isFullyDuplicate => duplicateStatus == 'fully_duplicate' || newCount == 0;
+
+  factory CsvImportPreview.fromJson(Map<String, dynamic> json) {
+    int asInt(dynamic value) => value is num ? value.toInt() : int.tryParse(value?.toString() ?? '') ?? 0;
+    return CsvImportPreview(
+      csvType: json['csvType']?.toString() ?? 'unknown',
+      accountName: json['accountName']?.toString() ?? '',
+      fileHash: json['fileHash']?.toString() ?? '',
+      rowCount: asInt(json['rowCount']),
+      newCount: asInt(json['newCount']),
+      existingCount: asInt(json['existingCount']),
+      ignoredCount: asInt(json['ignoredCount']),
+      duplicateStatus: json['duplicateStatus']?.toString() ?? '',
+      alreadyImportedSameFile: json['alreadyImportedSameFile'] == true,
+      previousImportCount: asInt(json['previousImportCount']),
+      targetYearMonth: json['targetYearMonth']?.toString() ?? '',
+      periodStart: json['periodStart']?.toString() ?? '',
+      periodEnd: json['periodEnd']?.toString() ?? '',
+    );
+  }
+}
+
+extension ImportServiceR1Preview on ImportService {
+  Future<CsvImportPreview> previewCsv({required String csvText, required String fileName}) async {
+    if (csvText.trim().isEmpty) throw Exception('CSVが空です');
+    final data = await ApiClient.post(
+      action: 'csv_import_preview',
+      body: {'csvText': csvText, 'fileName': fileName},
+    );
+    if ((data['csvType']?.toString() ?? '') == 'unknown') {
+      throw Exception('対応していないCSV形式です');
+    }
+    return CsvImportPreview.fromJson(data);
+  }
+}

@@ -9,6 +9,14 @@ void main() {
       'accounts.balances',
     );
     expect(
+      ApiRoutes.fromLegacyAction('balance_reconciliation'),
+      'accounts.balanceReconciliation',
+    );
+    expect(
+      ApiRoutes.fromLegacyAction('balance_reconciliation_save'),
+      'accounts.balanceReconciliation.save',
+    );
+    expect(
       ApiRoutes.fromLegacyAction('transaction_create'),
       'transactions.create',
     );

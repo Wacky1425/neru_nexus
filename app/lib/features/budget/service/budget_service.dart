@@ -20,6 +20,8 @@ class BudgetService {
     required int nisaTarget,
     required int fixedExpenseBudget,
     required int variableExpenseBudget,
+    required int freeSpendingTarget,
+    required int savingsTarget,
   }) async {
     final data = await ApiClient.post(
       action: 'budget_settings_update',
@@ -30,6 +32,8 @@ class BudgetService {
         'nisaTarget': nisaTarget,
         'fixedExpenseBudget': fixedExpenseBudget,
         'variableExpenseBudget': variableExpenseBudget,
+        'freeSpendingTarget': freeSpendingTarget,
+        'savingsTarget': savingsTarget,
       },
     );
 

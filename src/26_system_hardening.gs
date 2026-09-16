@@ -349,6 +349,26 @@ function runReleaseChecks() {
     );
   }
 
+  const r1ImportAuditVerification = verifyR1ImportAudit();
+
+  const r2BalanceReconciliationVerification = verifyR2BalanceReconciliation();
+  if (!r2BalanceReconciliationVerification.ready) {
+    throw new Error(
+      "R2残高照合検証に失敗しました: " +
+        JSON.stringify(r2BalanceReconciliationVerification),
+    );
+  }
+
+  const r3TransferInvestmentVerification = verifyR3TransferInvestmentNormalization();
+  if (!r3TransferInvestmentVerification.ready) {
+    throw new Error(
+      "R3資金移動・投資正規化検証に失敗しました: " +
+        JSON.stringify(r3TransferInvestmentVerification),
+    );
+  }
+
+  const r6Verification = verifyR6FullReconciliation();
+
   const regression = runRegressionTests();
   const integrity = runDataIntegrityCheck_();
   if (!integrity.ok) {
@@ -368,6 +388,10 @@ function runReleaseChecks() {
     sbiInvestmentVerification,
     investmentDashboardVerification,
     investmentPlannerVerification,
+    r1ImportAuditVerification,
+    r2BalanceReconciliationVerification,
+    r6Verification,
+    r3TransferInvestmentVerification,
     regression,
     integrity,
     backupTrigger,

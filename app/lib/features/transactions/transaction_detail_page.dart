@@ -202,14 +202,17 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Gmail速報',
+                            transaction.isAwaitingFormalDetail ? '正式明細待ち' : 'Gmail速報',
                             style: Theme.of(context).textTheme.titleSmall
                                 ?.copyWith(fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'カード・銀行から届いた通知をもとに登録した速報です。'
-                            '正式なCSV明細ではまだ確定していません。',
+                            transaction.isAwaitingFormalDetail
+                                ? '速報では加盟店名を特定できないため、正式CSVとの自動照合を待っています。'
+                                  '基本的に手動で分類する必要はありません。'
+                                : 'カード・銀行から届いた通知をもとに登録した速報です。'
+                                  '正式なCSV明細ではまだ確定していません。',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                           if (transaction.sourceReceivedAt.trim().isNotEmpty) ...[
@@ -273,7 +276,12 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
             _Item(title: '証憑URL', value: transaction.evidenceUrl),
 
           if (transaction.isPreliminary)
-            const _Item(title: 'データ状態', value: '速報（CSV未確定）'),
+            _Item(
+              title: 'データ状態',
+              value: transaction.isAwaitingFormalDetail
+                  ? '明細待ち（自動照合予定）'
+                  : '速報（CSV未確定）',
+            ),
 
           if (transaction.isConfirmedSource)
             const _Item(title: 'データ状態', value: '正式'),
@@ -678,7 +686,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
     }
 
     try {
-      await const TransactionService().deleteTransaction(id: transaction.id);
+      await const TransactionService().deleteTransaction(id: transaction.id, baseRevision: transaction.revision);
 
       if (!context.mounted) {
         return;

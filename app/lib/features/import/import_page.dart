@@ -22,6 +22,8 @@ class _ImportPageState extends State<ImportPage> {
   Uint8List? _selectedFileBytes;
 
   bool _isImporting = false;
+  bool _isPreviewing = false;
+  CsvImportPreview? _preview;
 
   int? _addedCount;
   int? _skippedCount;
@@ -124,7 +126,10 @@ class _ImportPageState extends State<ImportPage> {
         _importBatch = null;
         _debugTiming = null;
         _errorMessage = null;
+        _preview = null;
       });
+
+      await _previewSelectedCsv();
     } catch (error) {
       if (!mounted) {
         return;
@@ -136,6 +141,22 @@ class _ImportPageState extends State<ImportPage> {
 
         _errorMessage = error.toString().replaceFirst('Exception: ', '');
       });
+    }
+  }
+
+  Future<void> _previewSelectedCsv() async {
+    if (_selectedFileName == null || _selectedFileBytes == null) return;
+    setState(() { _isPreviewing = true; _preview = null; _errorMessage = null; });
+    try {
+      final csvText = _decodeCsv(_selectedFileBytes!);
+      final preview = await _importService.previewCsv(csvText: csvText, fileName: _selectedFileName!);
+      if (!mounted) return;
+      setState(() { _preview = preview; });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() { _errorMessage = error.toString().replaceFirst('Exception: ', ''); });
+    } finally {
+      if (mounted) setState(() { _isPreviewing = false; });
     }
   }
 
@@ -171,7 +192,10 @@ class _ImportPageState extends State<ImportPage> {
   Future<void> _importCsv() async {
     if (_selectedFileName == null ||
         _selectedFileBytes == null ||
-        _isImporting) {
+        _isImporting ||
+        _isPreviewing ||
+        _preview == null ||
+        (_preview?.isFullyDuplicate ?? false)) {
       return;
     }
 
@@ -208,6 +232,7 @@ class _ImportPageState extends State<ImportPage> {
         // 取込成功後は選択中CSVを解除
         _selectedFileName = null;
         _selectedFileBytes = null;
+        _preview = null;
       });
 
       AppRefreshController.refreshAll();
@@ -377,8 +402,53 @@ class _ImportPageState extends State<ImportPage> {
 
             const SizedBox(height: 16),
 
+            if (_isPreviewing) ...[
+              const LinearProgressIndicator(),
+              const SizedBox(height: 12),
+              const Text('既存データと照合しています…'),
+              const SizedBox(height: 16),
+            ],
+
+            if (_preview != null) ...[
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('取込前チェック', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      _ResultRow(label: '口座 / カード', value: _preview!.accountName.isEmpty ? '-' : _preview!.accountName),
+                      const SizedBox(height: 8),
+                      _ResultRow(label: '対象期間', value: _preview!.periodStart.isEmpty ? '-' : '${_preview!.periodStart} ～ ${_preview!.periodEnd}'),
+                      const SizedBox(height: 8),
+                      _ResultRow(label: 'CSV明細', value: '${_preview!.rowCount}件'),
+                      const SizedBox(height: 8),
+                      _ResultRow(label: '新規', value: '${_preview!.newCount}件'),
+                      const SizedBox(height: 8),
+                      _ResultRow(label: '既存', value: '${_preview!.existingCount}件'),
+                      const SizedBox(height: 12),
+                      Text(
+                        _preview!.isFullyDuplicate
+                            ? 'このCSVの取引はすべて登録済みです。再取込は不要です。'
+                            : _preview!.existingCount > 0
+                                ? '既存${_preview!.existingCount}件は追加せず、新規${_preview!.newCount}件だけ取り込みます。'
+                                : '未取込のCSVです。${_preview!.newCount}件を追加できます。',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: _preview!.isFullyDuplicate ? Theme.of(context).colorScheme.primary : null),
+                      ),
+                      if (_preview!.alreadyImportedSameFile) ...[
+                        const SizedBox(height: 8),
+                        Text('同一ファイルの取込履歴: ${_preview!.previousImportCount}回'),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
             FilledButton.icon(
-              onPressed: _selectedFileName == null || _isImporting
+              onPressed: _selectedFileName == null || _isImporting || _isPreviewing || _preview == null || (_preview?.isFullyDuplicate ?? false)
                   ? null
                   : _importCsv,
               icon: _isImporting
@@ -388,7 +458,7 @@ class _ImportPageState extends State<ImportPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.download_done_outlined),
-              label: Text(_isImporting ? '取込中...' : '取り込む'),
+              label: Text(_isPreviewing ? '確認中...' : (_preview?.isFullyDuplicate ?? false) ? '再取込不要' : (_isImporting ? '取込中...' : '新規分を取り込む')),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(52),
               ),
@@ -416,9 +486,9 @@ class _ImportPageState extends State<ImportPage> {
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton.icon(
-                            onPressed: _isImporting ? null : _importCsv,
+                            onPressed: _isImporting || _isPreviewing ? null : _previewSelectedCsv,
                             icon: const Icon(Icons.replay_outlined),
-                            label: const Text('同じCSVを再実行'),
+                            label: const Text('取込前チェックを再実行'),
                           ),
                         ),
                     ],
