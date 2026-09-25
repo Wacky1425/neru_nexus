@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_layout.dart';
+
 import 'model/analytics_model.dart';
 import 'service/analytics_service.dart';
 import 'widgets/expense_pie_chart.dart';
@@ -39,7 +41,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       return;
     }
 
-    if (AppRefreshController.activeTabIndex.value != 3) {
+    if (AppRefreshController.activeTabIndex.value != 4) {
       _needsRefresh = true;
       return;
     }
@@ -48,7 +50,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   void _handleActiveTabChanged() {
-    if (!mounted || AppRefreshController.activeTabIndex.value != 3) {
+    if (!mounted || AppRefreshController.activeTabIndex.value != 4) {
       return;
     }
 
@@ -168,19 +170,14 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             onRefresh: _reload,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
               children: [
                 if (snapshot.connectionState == ConnectionState.waiting) ...[
                   const LinearProgressIndicator(minHeight: 2),
                   const SizedBox(height: 12),
                 ],
 
-                Text(
-                  'Analytics',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-
-                const SizedBox(height: 4),
+                const AppPageTitle('分析'),
 
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -761,12 +758,12 @@ class _PreviousMonthComparisonCard extends StatelessWidget {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
-            const Icon(Icons.compare_arrows_rounded),
+            const Icon(Icons.compare_arrows_rounded, size: 20),
 
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
 
             Expanded(
               child: Column(

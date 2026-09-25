@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_layout.dart';
+
 import 'model/transaction_model.dart';
 import 'service/transaction_service.dart';
 import 'transaction_form_page.dart';
@@ -7,6 +9,7 @@ import 'transaction_detail_page.dart';
 import '../../core/refresh/app_refresh_controller.dart';
 import '../review/review_page.dart';
 import '../review/service/review_service.dart';
+import '../import/import_page.dart';
 
 class TransactionsPage extends StatefulWidget {
   const TransactionsPage({super.key});
@@ -363,61 +366,9 @@ class _TransactionsPageState extends State<TransactionsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('取引'),
-        actions: [
-          FutureBuilder<int>(
-            future: _reviewCountFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: Center(
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                );
-              }
-
-              if (snapshot.hasError) {
-                return IconButton(
-                  tooltip: '要確認件数の取得に失敗しました',
-                  onPressed: () {
-                    setState(() {
-                      _reviewCountFuture = _reviewService.fetchReviewCount();
-                    });
-                  },
-                  icon: const Icon(Icons.warning_amber_rounded),
-                );
-              }
-
-              final count = snapshot.data ?? 0;
-
-              return IconButton(
-                tooltip: '要確認 $count件',
-                onPressed: () async {
-                  final changed = await Navigator.of(context).push<bool>(
-                    MaterialPageRoute(builder: (_) => const ReviewPage()),
-                  );
-
-                  if (changed == true && mounted) {
-                    await _reload();
-                  }
-                },
-                icon: Badge(
-                  isLabelVisible: count > 0,
-                  label: Text(count > 99 ? '99+' : count.toString()),
-                  child: const Icon(Icons.warning_amber_rounded),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-      body: FutureBuilder<List<TransactionModel>>(
+      body: SafeArea(
+        bottom: false,
+        child: FutureBuilder<List<TransactionModel>>(
         future: _transactionsFuture ?? _fetchTransactions(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
@@ -449,67 +400,109 @@ class _TransactionsPageState extends State<TransactionsPage> {
             onRefresh: _reload,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
               children: [
+                AppPageTitle(
+                  '取引',
+                  actions: [
+                    IconButton(
+                      tooltip: '明細を取り込む',
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const ImportPage()),
+                      ),
+                      icon: const Icon(Icons.upload_file_outlined),
+                    ),
+                    FutureBuilder<int>(
+                      future: _reviewCountFuture,
+                      builder: (context, reviewSnapshot) {
+                        final count = reviewSnapshot.data ?? 0;
+                        return IconButton(
+                          tooltip: reviewSnapshot.hasError ? '要確認件数の取得に失敗しました' : '要確認 $count件',
+                          onPressed: () async {
+                            if (reviewSnapshot.hasError) {
+                              setState(() => _reviewCountFuture = _reviewService.fetchReviewCount());
+                              return;
+                            }
+                            final changed = await Navigator.of(context).push<bool>(
+                              MaterialPageRoute(builder: (_) => const ReviewPage()),
+                            );
+                            if (changed == true && mounted) await _reload();
+                          },
+                          icon: Badge(
+                            isLabelVisible: count > 0,
+                            label: Text(count > 99 ? '99+' : count.toString()),
+                            child: reviewSnapshot.connectionState == ConnectionState.waiting
+                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                                : const Icon(Icons.warning_amber_rounded),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
                 if (snapshot.connectionState == ConnectionState.waiting) ...[
                   const LinearProgressIndicator(minHeight: 2),
                   const SizedBox(height: 10),
                 ],
 
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        textInputAction: TextInputAction.search,
-                        decoration: InputDecoration(
-                          labelText: '取引を検索',
-                          hintText: '店名・内容・カテゴリなど',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _searchController.text.isEmpty
-                              ? null
-                              : IconButton(
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    _searchKeyword = '';
-
-                                    setState(() {});
-
-                                    _reload();
-                                  },
-                                  icon: const Icon(Icons.clear),
-                                ),
-                          border: const OutlineInputBorder(),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _searchController,
+                            textInputAction: TextInputAction.search,
+                            decoration: InputDecoration(
+                              labelText: '取引を検索',
+                              hintText: '店名・内容・カテゴリなど',
+                              prefixIcon: const Icon(Icons.search),
+                              suffixIcon: _searchController.text.isEmpty
+                                  ? null
+                                  : IconButton(
+                                      onPressed: () {
+                                        _searchController.clear();
+                                        _searchKeyword = '';
+                                        setState(() {});
+                                        _reload();
+                                      },
+                                      icon: const Icon(Icons.clear),
+                                    ),
+                              border: const OutlineInputBorder(),
+                            ),
+                            onChanged: (value) {
+                              _searchKeyword = value;
+                              setState(() {});
+                            },
+                            onSubmitted: (_) {
+                              FocusScope.of(context).unfocus();
+                              _reload();
+                            },
+                          ),
                         ),
-                        onChanged: (value) {
-                          _searchKeyword = value;
-
-                          setState(() {});
-                        },
-                        onSubmitted: (_) {
-                          FocusScope.of(context).unfocus();
-                          _reload();
-                        },
-                      ),
-                    ),
-
-                    const SizedBox(width: 8),
-
-                    SizedBox(
-                      height: 56,
-                      child: FilledButton(
-                        onPressed: () {
-                          _searchKeyword = _searchController.text.trim();
-
-                          FocusScope.of(context).unfocus();
-
-                          _reload();
-                        },
-                        child: const Text('検索'),
-                      ),
-                    ),
-                  ],
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          height: 56,
+                          width: constraints.maxWidth < 400 ? 80 : 104,
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            onPressed: () {
+                              _searchKeyword = _searchController.text.trim();
+                              FocusScope.of(context).unfocus();
+                              _reload();
+                            },
+                            child: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('検索'),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
 
                 const SizedBox(height: 12),
@@ -518,6 +511,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                         initialValue: yearMonths.contains(_selectedYearMonth)
                             ? _selectedYearMonth
                             : null,
@@ -552,6 +546,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
 
                     Expanded(
                       child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                         initialValue:
                             majorCategories.contains(_selectedMajorCategory)
                             ? _selectedMajorCategory
@@ -568,7 +563,11 @@ class _TransactionsPageState extends State<TransactionsPage> {
                           ...majorCategories.map(
                             (category) => DropdownMenuItem<String>(
                               value: category,
-                              child: Text(category),
+                              child: Text(
+                                category,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           ),
                         ],
@@ -645,6 +644,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
             ),
           );
         },
+      ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openTransactionForm,

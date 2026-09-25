@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_layout.dart';
+
 import 'model/account_balance_model.dart';
 import 'service/account_balance_service.dart';
 import 'asset_trend_page.dart';
@@ -141,7 +143,7 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
       return;
     }
 
-    if (AppRefreshController.activeTabIndex.value != 4) {
+    if (AppRefreshController.activeTabIndex.value != 3) {
       _needsRefresh = true;
       return;
     }
@@ -150,7 +152,7 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
   }
 
   void _handleActiveTabChanged() {
-    if (!mounted || AppRefreshController.activeTabIndex.value != 4) {
+    if (!mounted || AppRefreshController.activeTabIndex.value != 3) {
       return;
     }
 
@@ -288,8 +290,9 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
     final result = _result;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('資産')),
-      body: Builder(
+      body: SafeArea(
+        bottom: false,
+        child: Builder(
         builder: (context) {
           if (_initialLoading && result == null) {
             return const Center(child: CircularProgressIndicator());
@@ -327,8 +330,9 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
             onRefresh: _reload,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
               children: [
+                const AppPageTitle('資産'),
                 if (_loading) const LinearProgressIndicator(),
 
                 if (_loading) const SizedBox(height: 12),
@@ -447,6 +451,7 @@ class _AccountBalancePageState extends State<AccountBalancePage> {
             ),
           );
         },
+      ),
       ),
     );
   }
@@ -636,8 +641,12 @@ class _AccountCard extends StatelessWidget {
   Widget _buildAssetCard(BuildContext context) {
     return Card(
       child: ListTile(
+        dense: true,
+        minVerticalPadding: 8,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
         leading: const CircleAvatar(
-          child: Icon(Icons.account_balance_wallet_outlined),
+          radius: 20,
+          child: Icon(Icons.account_balance_wallet_outlined, size: 20),
         ),
         title: Text(account.accountName),
         subtitle: const Text('資産'),

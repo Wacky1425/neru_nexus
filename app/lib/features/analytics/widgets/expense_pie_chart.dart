@@ -37,7 +37,7 @@ class _ExpensePieChartState extends State<ExpensePieChart> {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             const Text(
@@ -45,13 +45,13 @@ class _ExpensePieChartState extends State<ExpensePieChart> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
 
             SizedBox(
-              height: 220,
+              height: 176,
               child: PieChart(
                 PieChartData(
-                  centerSpaceRadius: 45,
+                  centerSpaceRadius: 38,
                   sectionsSpace: 2,
                   sections: List.generate(widget.categories.length, (index) {
                     final amount =
@@ -66,7 +66,7 @@ class _ExpensePieChartState extends State<ExpensePieChart> {
                     return PieChartSectionData(
                       value: amount,
                       title: title,
-                      radius: touchedIndex == index ? 85 : 70,
+                      radius: touchedIndex == index ? 68 : 58,
                       titleStyle: TextStyle(
                         fontSize: touchedIndex == index ? 18 : 12,
                         fontWeight: FontWeight.bold,
@@ -87,7 +87,7 @@ class _ExpensePieChartState extends State<ExpensePieChart> {
               ),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
 
             ...List.generate(widget.categories.length, (index) {
               final category = widget.categories[index];
@@ -110,7 +110,7 @@ class _ExpensePieChartState extends State<ExpensePieChart> {
                     duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
-                      vertical: 10,
+                      vertical: 6,
                     ),
                     decoration: BoxDecoration(
                       color: isSelected

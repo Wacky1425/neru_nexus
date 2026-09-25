@@ -26,7 +26,7 @@ class AppTheme {
         margin: EdgeInsets.zero,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(22),
         ),
       ),
 
@@ -101,7 +101,7 @@ class AppTheme {
         color: const Color(0xFF1C1C24),
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(22),
         ),
       ),
 
@@ -110,6 +110,18 @@ class AppTheme {
         elevation: 0,
         backgroundColor: const Color(0xFF1A1A22),
         indicatorColor: colorScheme.primaryContainer,
+        labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
+          fontSize: 12,
+          fontWeight: states.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500,
+        )),
+      ),
+      textTheme: const TextTheme(
+        headlineLarge: TextStyle(fontSize: 34, fontWeight: FontWeight.w800),
+        headlineMedium: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+        titleLarge: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+        titleMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        bodyLarge: TextStyle(fontSize: 16),
+        bodyMedium: TextStyle(fontSize: 14),
       ),
     );
   }

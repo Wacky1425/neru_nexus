@@ -6,23 +6,23 @@ import 'model/home_model.dart';
 import 'service/home_service.dart';
 import 'widgets/money_card.dart';
 import 'widgets/recent_transaction_card.dart';
-import '../goals/goal_management_page.dart';
-import '../budget/budget_settings_page.dart';
-import '../recurring/recurring_management_page.dart';
-import '../business/business_report_page.dart';
 import '../notifications/notification_center_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
     this.onOpenTransactions,
+    this.onOpenHousehold,
     this.onOpenAnalytics,
     this.onOpenAssets,
+    this.onOpenSettings,
   });
 
   final VoidCallback? onOpenTransactions;
+  final VoidCallback? onOpenHousehold;
   final VoidCallback? onOpenAnalytics;
   final VoidCallback? onOpenAssets;
+  final VoidCallback? onOpenSettings;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -198,11 +198,13 @@ class _HomePageState extends State<HomePage> {
           return const Center(child: Text('Homeデータがありません'));
         }
 
-        return RefreshIndicator(
+        return SafeArea(
+          bottom: false,
+          child: RefreshIndicator(
           onRefresh: _reload,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
             children: [
               if (snapshot.connectionState == ConnectionState.waiting) ...[
                 const LinearProgressIndicator(minHeight: 2),
@@ -215,6 +217,7 @@ class _HomePageState extends State<HomePage> {
               _HomeHeader(
                 yearMonth: _formatYearMonth(home.yearMonth),
                 noticeCount: _noticeCount(home),
+                onOpenSettings: widget.onOpenSettings,
                 onOpenNotifications: () async {
                   await Navigator.of(context).push(
                     MaterialPageRoute(
@@ -225,7 +228,7 @@ class _HomePageState extends State<HomePage> {
                 },
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 18),
 
               // ============================================================
               // 今月の生活費
@@ -261,13 +264,7 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 12),
 
               _TappableCard(
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const BudgetSettingsPage(),
-                    ),
-                  );
-                },
+                onTap: widget.onOpenHousehold,
                 child: _MonthlyPlanSnapshotCard(
                   home: home,
                   formatMoney: _formatMoney,
@@ -284,13 +281,7 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 12),
 
               _TappableCard(
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const BudgetSettingsPage(),
-                    ),
-                  );
-                },
+                onTap: widget.onOpenHousehold,
                 child: _AssetFormationSummaryCard(
                   home: home,
                   formatMoney: _formatMoney,
@@ -299,135 +290,7 @@ class _HomePageState extends State<HomePage> {
 
               const SizedBox(height: 24),
 
-              // ============================================================
-              // Goal
-              // ============================================================
-              if (home.goalFundingDetails.isNotEmpty) ...[
-                _TappableCard(
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const GoalManagementPage(),
-                      ),
-                    );
-                  },
-                  child: _GoalSummaryCard(
-                    goals: home.goalFundingDetails,
-                    totalAllocation: home.goalAllocation,
-                    totalRequired: home.goalRequired,
-                    totalShortage: home.goalShortage,
-                    formatMoney: _formatMoney,
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-              ],
-
-              // ============================================================
-              // 生活防衛資金
-              // ============================================================
-              _TappableCard(
-                onTap: widget.onOpenAssets,
-                child: _EmergencyFundCard(
-                  emergencyFund: home.emergencyFund,
-                  protectedCash: home.protectedCash,
-                  rawLiquidCash: home.liquidCash,
-                  formatMoney: _formatMoney,
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // ============================================================
-              // 定期支払い予測
-              // ============================================================
-              if (home.recurringExpectedTotal > 0) ...[
-                _TappableCard(
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const RecurringManagementPage(),
-                      ),
-                    );
-                  },
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        children: [
-                          _AllocationRow(
-                            icon: Icons.autorenew_rounded,
-                            label: '毎月の定期支払い見込',
-                            value: _formatMoney(home.recurringExpectedTotal),
-                            subtitle: home.recurringRemaining > 0
-                                ? '今月これから ${_formatMoney(home.recurringRemaining)}'
-                                : '今月分はすべて発生済み',
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-              ],
-
-              // ============================================================
-              // 副業
-              // ============================================================
-              _SectionLabel(
-                title: '副業',
-                icon: Icons.work_outline,
-              ),
-
-              const SizedBox(height: 12),
-
-              _TappableCard(
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const BusinessReportPage(),
-                    ),
-                  );
-                },
-                child: Card(
-                  child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    children: [
-                      _AllocationRow(
-                        icon: Icons.south_west_rounded,
-                        label: '今月の売上',
-                        value: _formatMoney(home.sideBusinessIncome),
-                      ),
-                      const SizedBox(height: 14),
-                      _AllocationRow(
-                        icon: Icons.north_east_rounded,
-                        label: '今月の経費',
-                        value: _formatMoney(home.sideBusinessExpense),
-                      ),
-                      const SizedBox(height: 14),
-                      _AllocationRow(
-                        icon: Icons.account_balance_wallet_outlined,
-                        label: '今月の利益',
-                        value: _formatMoney(home.sideBusinessProfit),
-                        subtitle: home.sideIncomePlanned > 0
-                            ? '売上予定 ${_formatMoney(home.sideIncomePlanned)}'
-                            : '個人の資金配分には直接含めません',
-                      ),
-                      if (home.sideIncomePlanned > 0) ...[
-                        const SizedBox(height: 14),
-                        const _InfoBox(
-                          icon: Icons.info_outline,
-                          text: '副業のお金は事業Walletとして管理し、個人のNISA・余剰資金には直接含めません。',
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              ),
-
-              const SizedBox(height: 24),
+              const SizedBox(height: 8),
 
               // ============================================================
               // 最近の取引
@@ -444,6 +307,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ],
           ),
+        ),
         );
       },
     );
@@ -459,11 +323,13 @@ class _HomeHeader extends StatelessWidget {
     required this.yearMonth,
     required this.noticeCount,
     required this.onOpenNotifications,
+    this.onOpenSettings,
   });
 
   final String yearMonth;
   final int noticeCount;
   final VoidCallback onOpenNotifications;
+  final VoidCallback? onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -496,6 +362,11 @@ class _HomeHeader extends StatelessWidget {
             label: Text('$noticeCount'),
             child: const Icon(Icons.notifications_outlined),
           ),
+        ),
+        IconButton(
+          tooltip: '設定',
+          onPressed: onOpenSettings,
+          icon: const Icon(Icons.settings_outlined),
         ),
       ],
     );
@@ -804,403 +675,13 @@ class _AssetFormationSummaryCard extends StatelessWidget {
   }
 }
 
-class _AllocationRow extends StatelessWidget {
-  const _AllocationRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.subtitle,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final String? subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(
-          icon,
-          size: 20,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-
-        const SizedBox(width: 12),
-
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-
-              if (subtitle != null && subtitle!.isNotEmpty) ...[
-                const SizedBox(height: 2),
-
-                Text(
-                  subtitle!,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-
-        const SizedBox(width: 12),
-
-        Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
-      ],
-    );
-  }
-}
-
 // ============================================================================
 // Goal summary
 // ============================================================================
 
-class _GoalSummaryCard extends StatelessWidget {
-  const _GoalSummaryCard({
-    required this.goals,
-    required this.totalAllocation,
-    required this.totalRequired,
-    required this.totalShortage,
-    required this.formatMoney,
-  });
-
-  final List<Map<String, dynamic>> goals;
-
-  final int totalAllocation;
-  final int totalRequired;
-  final int totalShortage;
-
-  final String Function(int) formatMoney;
-
-  int _toInt(dynamic value) {
-    if (value is num) {
-      return value.toInt();
-    }
-
-    return int.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.flag_outlined),
-
-                const SizedBox(width: 10),
-
-                Expanded(
-                  child: Text(
-                    '目的資金',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-
-                _StatusChip(
-                  label: totalShortage > 0 ? '不足' : '順調',
-                  positive: totalShortage <= 0,
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 18),
-
-            _MoneyRow(label: '今月必要', value: formatMoney(totalRequired)),
-
-            const SizedBox(height: 8),
-
-            _MoneyRow(label: '今月確保', value: formatMoney(totalAllocation)),
-
-            if (totalShortage > 0) ...[
-              const SizedBox(height: 8),
-
-              _MoneyRow(
-                label: '不足',
-                value: formatMoney(totalShortage),
-                emphasize: true,
-              ),
-            ],
-
-            const Divider(height: 28),
-
-            for (int i = 0; i < goals.length; i++) ...[
-              _GoalCompactRow(
-                goal: goals[i],
-                formatMoney: formatMoney,
-                toInt: _toInt,
-              ),
-
-              if (i < goals.length - 1) const Divider(height: 24),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GoalCompactRow extends StatelessWidget {
-  const _GoalCompactRow({
-    required this.goal,
-    required this.formatMoney,
-    required this.toInt,
-  });
-
-  final Map<String, dynamic> goal;
-
-  final String Function(int) formatMoney;
-
-  final int Function(dynamic) toInt;
-
-  @override
-  Widget build(BuildContext context) {
-    final name = goal['goalName']?.toString() ?? '目的資金';
-
-    final remaining = toInt(goal['remainingAmount']);
-
-    final allocated = toInt(goal['allocatedThisMonth']);
-
-    final shortage = toInt(goal['shortageThisMonth']);
-
-    final remainingMonths = toInt(goal['remainingMonths']);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                name,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ),
-
-            Text(
-              shortage > 0
-                  ? '不足 ${formatMoney(shortage)}'
-                  : formatMoney(allocated),
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: shortage > 0
-                    ? Theme.of(context).colorScheme.error
-                    : null,
-              ),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 5),
-
-        Text(
-          remainingMonths <= 0
-              ? '残り ${formatMoney(remaining)} / 予定時期に到達'
-              : '残り ${formatMoney(remaining)}'
-                    ' / あと約$remainingMonthsか月',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 // ============================================================================
 // Emergency Fund
 // ============================================================================
-
-class _EmergencyFundCard extends StatelessWidget {
-  const _EmergencyFundCard({
-    required this.emergencyFund,
-    required this.protectedCash,
-    required this.rawLiquidCash,
-    required this.formatMoney,
-  });
-
-  final Map<String, dynamic> emergencyFund;
-
-  final int protectedCash;
-  final int rawLiquidCash;
-
-  final String Function(int) formatMoney;
-
-  int _toInt(dynamic value) {
-    if (value is num) {
-      return value.toInt();
-    }
-
-    return int.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
-  double _toDouble(dynamic value) {
-    if (value is num) {
-      return value.toDouble();
-    }
-
-    return double.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
-  String _stageLabel(String stage) {
-    switch (stage) {
-      case 'critical':
-        return '要優先';
-      case 'cash_heavy':
-        return '積立中';
-      case 'balanced':
-        return '順調';
-      case 'secured':
-        return '確保済';
-      default:
-        return '算定中';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final monthlyEssential = _toInt(emergencyFund['monthlyEssentialCost']);
-
-    final targetAmount = _toInt(emergencyFund['targetAmount']);
-
-    final shortage = _toInt(emergencyFund['shortage']);
-
-    final coveredMonths = _toDouble(emergencyFund['coveredMonths']);
-
-    final targetMonths = _toInt(emergencyFund['targetMonths']);
-
-    final stage = emergencyFund['stage']?.toString() ?? '';
-
-    final progress = targetMonths <= 0
-        ? 0.0
-        : (coveredMonths / targetMonths).clamp(0.0, 1.0);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.shield_outlined),
-
-                const SizedBox(width: 10),
-
-                Expanded(
-                  child: Text(
-                    '生活防衛資金',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-
-                _StatusChip(
-                  label: _stageLabel(stage),
-                  positive: stage == 'balanced' || stage == 'secured',
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 18),
-
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: Text(
-                    '${coveredMonths.toStringAsFixed(1)}か月分',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-
-                Text(
-                  '目標 $targetMonthsか月',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            LinearProgressIndicator(value: progress),
-
-            const SizedBox(height: 18),
-
-            _MoneyRow(
-              label: '防衛資金として使える現金',
-              value: formatMoney(protectedCash),
-              emphasize: true,
-            ),
-
-            const SizedBox(height: 8),
-
-            _MoneyRow(label: '現金・預金', value: formatMoney(rawLiquidCash)),
-
-            if (_toInt(emergencyFund['reservedGoalCash']) > 0) ...[
-              const SizedBox(height: 8),
-              _MoneyRow(
-                label: 'うち目的資金として確保',
-                value: '-${formatMoney(_toInt(emergencyFund['reservedGoalCash']))}',
-              ),
-            ],
-
-            if (_toInt(emergencyFund['upcomingCardPayments']) > 0) ...[
-              const SizedBox(height: 8),
-              _MoneyRow(
-                label: 'うちカード支払予定',
-                value: '-${formatMoney(_toInt(emergencyFund['upcomingCardPayments']))}',
-              ),
-            ],
-
-            if (_toInt(emergencyFund['cashNeededUntilPayday']) > 0) ...[
-              const SizedBox(height: 8),
-              _MoneyRow(
-                label: '給料日までの生活費確保',
-                value: '-${formatMoney(_toInt(emergencyFund['cashNeededUntilPayday']))}',
-              ),
-            ],
-
-            const SizedBox(height: 8),
-
-            _MoneyRow(
-              label: '最低生活費',
-              value: '${formatMoney(monthlyEssential)} / 月',
-            ),
-
-            const SizedBox(height: 8),
-
-            _MoneyRow(label: '目標額', value: formatMoney(targetAmount)),
-
-            if (shortage > 0) ...[
-              const SizedBox(height: 8),
-
-              _MoneyRow(label: 'あと必要', value: formatMoney(shortage)),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 // ============================================================================
 // Common
@@ -1232,66 +713,6 @@ class _MoneyRow extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.label, required this.positive});
-
-  final String label;
-  final bool positive;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: positive
-            ? colorScheme.primaryContainer
-            : colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          fontWeight: FontWeight.bold,
-          color: positive
-              ? colorScheme.onPrimaryContainer
-              : colorScheme.onErrorContainer,
-        ),
-      ),
-    );
-  }
-}
-
-class _InfoBox extends StatelessWidget {
-  const _InfoBox({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 20),
-
-          const SizedBox(width: 10),
-
-          Expanded(child: Text(text)),
-        ],
-      ),
     );
   }
 }
