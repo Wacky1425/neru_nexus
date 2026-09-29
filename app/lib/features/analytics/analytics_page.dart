@@ -8,6 +8,7 @@ import 'widgets/expense_pie_chart.dart';
 import 'widgets/monthly_expense_chart.dart';
 import '../../core/refresh/app_refresh_controller.dart';
 import '../../core/widgets/month_picker_dialog.dart';
+import '../transactions/transactions_page.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -99,6 +100,24 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
       _analyticsFuture = _fetchSelectedMonth();
     });
+  }
+
+  Future<void> _openCategoryTransactions(String category) async {
+    final normalized = category.trim();
+    if (normalized.isEmpty) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => TransactionsPage(
+          initialYearMonth: _toYearMonth(_selectedMonth),
+          initialMajorCategory: normalized,
+        ),
+      ),
+    );
+
+    if (mounted) {
+      await _reload();
+    }
   }
 
   Future<void> _reload() {
@@ -255,6 +274,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                   comparisonDay: analytics.comparisonMode == 'same_day'
                       ? analytics.comparisonDay
                       : null,
+                  onCategoryTap: _openCategoryTransactions,
                 ),
 
                 const SizedBox(height: 20),
@@ -318,7 +338,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                 ),
                 const SizedBox(height: 24),
 
-                ExpensePieChart(categories: analytics.categories),
+                ExpensePieChart(
+                  categories: analytics.categories,
+                  onCategoryTap: _openCategoryTransactions,
+                ),
 
                 const SizedBox(height: 24),
 
@@ -356,10 +379,18 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                             sameDayComparison: analytics.comparisonMode == 'same_day',
                           ),
                         ),
-                        trailing: Text(
-                          _formatYen(amount),
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold),
+                        onTap: () => _openCategoryTransactions(name),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _formatYen(amount),
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.chevron_right),
+                          ],
                         ),
                       ),
                     );
@@ -556,10 +587,15 @@ class _DecisionOverviewCard extends StatelessWidget {
 }
 
 class _CategoryChangeCard extends StatelessWidget {
-  const _CategoryChangeCard({required this.changes, this.comparisonDay});
+  const _CategoryChangeCard({
+    required this.changes,
+    required this.onCategoryTap,
+    this.comparisonDay,
+  });
 
   final List<Map<String, dynamic>> changes;
   final int? comparisonDay;
+  final ValueChanged<String> onCategoryTap;
 
   @override
   Widget build(BuildContext context) {
@@ -591,9 +627,12 @@ class _CategoryChangeCard extends StatelessWidget {
               final current = (item['amount'] as num?)?.toInt() ?? 0;
               final increased = difference > 0;
 
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
+              return InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => onCategoryTap(name),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
                   children: [
                     Icon(
                       increased
@@ -616,7 +655,10 @@ class _CategoryChangeCard extends StatelessWidget {
                         ),
                       ],
                     ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right, size: 18),
                   ],
+                  ),
                 ),
               );
             }),

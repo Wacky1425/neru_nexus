@@ -2,9 +2,14 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 class ExpensePieChart extends StatefulWidget {
-  const ExpensePieChart({super.key, required this.categories});
+  const ExpensePieChart({
+    super.key,
+    required this.categories,
+    this.onCategoryTap,
+  });
 
   final List<Map<String, dynamic>> categories;
+  final ValueChanged<String>? onCategoryTap;
 
   @override
   State<ExpensePieChart> createState() => _ExpensePieChartState();
@@ -105,6 +110,10 @@ class _ExpensePieChartState extends State<ExpensePieChart> {
                     setState(() {
                       touchedIndex = touchedIndex == index ? -1 : index;
                     });
+                    final name = category['category']?.toString() ?? '';
+                    if (name.trim().isNotEmpty) {
+                      widget.onCategoryTap?.call(name);
+                    }
                   },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),

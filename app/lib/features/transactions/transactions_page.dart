@@ -12,7 +12,14 @@ import '../review/service/review_service.dart';
 import '../import/import_page.dart';
 
 class TransactionsPage extends StatefulWidget {
-  const TransactionsPage({super.key});
+  const TransactionsPage({
+    super.key,
+    this.initialYearMonth,
+    this.initialMajorCategory,
+  });
+
+  final String? initialYearMonth;
+  final String? initialMajorCategory;
 
   @override
   State<TransactionsPage> createState() => _TransactionsPageState();
@@ -42,6 +49,9 @@ class _TransactionsPageState extends State<TransactionsPage> {
   @override
   void initState() {
     super.initState();
+
+    _selectedYearMonth = widget.initialYearMonth;
+    _selectedMajorCategory = widget.initialMajorCategory;
 
     _transactionsFuture = _fetchTransactions();
 
@@ -365,7 +375,20 @@ class _TransactionsPageState extends State<TransactionsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDrilldown =
+        (widget.initialYearMonth?.trim().isNotEmpty ?? false) ||
+        (widget.initialMajorCategory?.trim().isNotEmpty ?? false);
+
     return Scaffold(
+      appBar: isDrilldown
+          ? AppBar(
+              title: Text(
+                widget.initialMajorCategory?.trim().isNotEmpty == true
+                    ? '${widget.initialMajorCategory}の取引'
+                    : '取引',
+              ),
+            )
+          : null,
       body: SafeArea(
         bottom: false,
         child: FutureBuilder<List<TransactionModel>>(
@@ -402,9 +425,10 @@ class _TransactionsPageState extends State<TransactionsPage> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
               children: [
-                AppPageTitle(
-                  '取引',
-                  actions: [
+                if (!isDrilldown)
+                  AppPageTitle(
+                    '取引',
+                    actions: [
                     IconButton(
                       tooltip: '明細を取り込む',
                       onPressed: () => Navigator.of(context).push(
