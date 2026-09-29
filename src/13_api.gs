@@ -223,6 +223,15 @@ function doGet(e) {
       case "investment_holdings":
         return createJsonResponse_(getInvestmentHoldingsData_(), "ok");
 
+      case "investment_price_history":
+        return createJsonResponse_(
+          getInvestmentPriceHistoryData_({
+            holdingId: parameters.holdingId,
+            range: parameters.range,
+          }),
+          "ok",
+        );
+
       case "investment_plans":
         return createJsonResponse_(
           getInvestmentPlannerData_({ yearMonth: parameters.yearMonth }),

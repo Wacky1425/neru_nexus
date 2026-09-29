@@ -30,6 +30,7 @@ const NERU_API_V2_GET_ROUTES = Object.freeze({
   "classification.suggestions": "merchant_classification_suggestions",
   "gmailEvidence.candidates": "gmail_evidence_candidates",
   "investments.holdings": "investment_holdings",
+  "investments.priceHistory": "investment_price_history",
   "investments.plans": "investment_plans",
   "investments.sbiEvents": "sbi_investment_events",
   "assets.trend": "asset_trend",

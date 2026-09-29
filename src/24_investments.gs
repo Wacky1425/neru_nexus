@@ -736,7 +736,8 @@ function refreshInvestmentPrices_(force) {
 }
 
 function refreshInvestmentPricesFromApp_() {
-  return createJsonResponse_(refreshInvestmentPrices_(false), "ok");
+  // Appからの明示更新はキャッシュを無視して最新値を取りに行く。
+  return createJsonResponse_(refreshInvestmentPrices_(true), "ok");
 }
 
 function getInvestmentAccountValuesMap_() {
@@ -1004,4 +1005,205 @@ function installInvestmentPriceDailyTrigger() {
 
 function refreshInvestmentPricesDaily_() {
   return refreshInvestmentPrices_(true);
+}
+
+// V2.2-5.1: chart data for one holding. Stock/ETF prices use the same Yahoo
+// Finance chart endpoint as the current-price updater. Mutual funds keep their
+// existing NAV updater; chart history is intentionally reported unavailable
+// rather than fabricating a time series.
+function getInvestmentPriceHistoryData_(options) {
+  const settings = options || {};
+  const holdingId = String(settings.holdingId || "").trim();
+  const requestedRange = String(settings.range || "1m").trim().toLowerCase();
+  if (!holdingId) throw new Error("holdingIdは必須です");
+
+  const allowed = {
+    "1d": { range: "1d", interval: "5m" },
+    "1w": { range: "5d", interval: "30m" },
+    "1m": { range: "1mo", interval: "1d" },
+    "3m": { range: "3mo", interval: "1d" },
+    "1y": { range: "1y", interval: "1wk" },
+    "max": { range: "max", interval: "1mo" },
+  };
+  const period = allowed[requestedRange] || allowed["1m"];
+
+  const table = loadInvestmentHoldings_();
+  const row = table.rows.find((item) =>
+    String(item[table.index["holding_id"]] || "").trim() === holdingId &&
+    Number(item[table.index["is_active"]] || 0) !== 0
+  );
+  if (!row) throw new Error("保有銘柄が見つかりません");
+
+  const securityType = normalizeInvestmentSecurityType_(
+    row[table.index["security_type"]],
+  );
+  const symbol = normalizeInvestmentSymbol_(
+    row[table.index["symbol"]],
+    securityType,
+  );
+  const name = String(row[table.index["name"]] || "").trim();
+
+  if (securityType === "cash" || !symbol) {
+    return { holdingId, name, symbol, range: requestedRange, available: false, points: [] };
+  }
+  if (securityType === "fund") {
+    return fetchInvestmentFundPriceHistory_(holdingId, name, symbol, requestedRange);
+  }
+
+  const url =
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
+    `?range=${period.range}&interval=${period.interval}&includePrePost=false`;
+  const response = UrlFetchApp.fetch(url, {
+    muteHttpExceptions: true,
+    headers: { "User-Agent": "Mozilla/5.0" },
+  });
+  if (response.getResponseCode() !== 200) {
+    throw new Error(`Yahoo Finance chart HTTP ${response.getResponseCode()}`);
+  }
+
+  const parsed = JSON.parse(response.getContentText());
+  const result = parsed && parsed.chart && parsed.chart.result && parsed.chart.result[0];
+  if (!result) throw new Error("Yahoo Financeからチャートを取得できませんでした");
+  const timestamps = Array.isArray(result.timestamp) ? result.timestamp : [];
+  const quote = result.indicators && result.indicators.quote && result.indicators.quote[0];
+  const closes = quote && Array.isArray(quote.close) ? quote.close : [];
+  const points = [];
+  for (let i = 0; i < Math.min(timestamps.length, closes.length); i++) {
+    const close = Number(closes[i]);
+    const unix = Number(timestamps[i]);
+    if (!Number.isFinite(close) || close <= 0 || !Number.isFinite(unix)) continue;
+    points.push({ time: new Date(unix * 1000).toISOString(), price: close });
+  }
+
+  return {
+    holdingId,
+    name,
+    symbol,
+    range: requestedRange,
+    available: points.length > 1,
+    currency: String((result.meta || {}).currency || "").trim(),
+    exchangeName: String((result.meta || {}).fullExchangeName || (result.meta || {}).exchangeName || "").trim(),
+    points,
+  };
+}
+
+
+// V2.2-5.1.1: mutual-fund NAV history.
+// Investment trusts do not have intraday market prices like listed stocks/ETFs.
+// For eMAXIS Slim S&P500 we therefore use the fund library's published daily NAV
+// history (基準価額), not a synthetic S&P500 proxy. This keeps the chart aligned
+// with the value actually used to evaluate the holding.
+function fetchInvestmentFundPriceHistory_(holdingId, name, symbol, requestedRange) {
+  const sources = {
+    "03311187": {
+      isin: "JP90C000GKC6",
+      sourceName: "投信総合検索ライブラリー（基準価額）",
+    },
+  };
+  const source = sources[symbol];
+  if (!source) {
+    return {
+      holdingId, name, symbol, range: requestedRange, available: false,
+      unavailableReason: "この投資信託の基準価額履歴ソースはまだ登録されていません。",
+      points: [],
+    };
+  }
+
+  const url =
+    "https://toushin-lib.fwg.ne.jp/FdsWeb/FDST030000/csv-file-download" +
+    `?isinCd=${encodeURIComponent(source.isin)}&associFundCd=${encodeURIComponent(symbol)}`;
+  const response = UrlFetchApp.fetch(url, {
+    muteHttpExceptions: true,
+    followRedirects: true,
+    headers: { "User-Agent": "Mozilla/5.0" },
+  });
+  if (response.getResponseCode() !== 200) {
+    throw new Error(`投信基準価額履歴 HTTP ${response.getResponseCode()}`);
+  }
+
+  const text = response.getBlob().getDataAsString("Shift_JIS");
+  const rows = Utilities.parseCsv(text);
+  const rawPoints = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i] || [];
+    if (row.length < 2) continue;
+    const date = parseJapaneseFundHistoryDate_(row[0]);
+    const price = parseInvestmentFundHistoryPrice_(row[1]);
+    if (!date || !Number.isFinite(price) || price <= 0) continue;
+    rawPoints.push({ time: date.toISOString(), price });
+  }
+
+  rawPoints.sort((a, b) => String(a.time).localeCompare(String(b.time)));
+  const unique = [];
+  const seen = {};
+  rawPoints.forEach((point) => {
+    const key = String(point.time).slice(0, 10);
+    if (seen[key]) return;
+    seen[key] = true;
+    unique.push(point);
+  });
+
+  const filtered = filterInvestmentFundHistoryRange_(unique, requestedRange);
+  const points = downsampleInvestmentHistory_(filtered, 320);
+  return {
+    holdingId,
+    name,
+    symbol,
+    range: requestedRange,
+    available: points.length > 1,
+    currency: "JPY",
+    exchangeName: source.sourceName,
+    unavailableReason: points.length > 1 ? "" : "選択期間に表示できる基準価額履歴がありません。",
+    points,
+  };
+}
+
+function parseJapaneseFundHistoryDate_(value) {
+  const raw = String(value || "").trim();
+  let match = raw.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (!match) match = raw.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!year || !month || !day) return null;
+  return new Date(Date.UTC(year, month - 1, day, 6, 0, 0));
+}
+
+function parseInvestmentFundHistoryPrice_(value) {
+  const normalized = String(value || "")
+    .replace(/,/g, "")
+    .replace(/円/g, "")
+    .trim();
+  const match = normalized.match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : NaN;
+}
+
+function filterInvestmentFundHistoryRange_(points, requestedRange) {
+  if (!points.length || requestedRange === "max") return points.slice();
+  const latest = new Date(points[points.length - 1].time);
+  const cutoff = new Date(latest.getTime());
+  switch (requestedRange) {
+    // A mutual fund has one NAV per business day, so "1d" cannot be intraday.
+    // Keep the latest two published NAVs so the user can still see the daily move.
+    case "1d":
+      return points.slice(Math.max(0, points.length - 2));
+    case "1w": cutoff.setUTCDate(cutoff.getUTCDate() - 7); break;
+    case "3m": cutoff.setUTCMonth(cutoff.getUTCMonth() - 3); break;
+    case "1y": cutoff.setUTCFullYear(cutoff.getUTCFullYear() - 1); break;
+    case "1m":
+    default: cutoff.setUTCMonth(cutoff.getUTCMonth() - 1); break;
+  }
+  return points.filter((point) => new Date(point.time).getTime() >= cutoff.getTime());
+}
+
+function downsampleInvestmentHistory_(points, maxPoints) {
+  const limit = Math.max(2, Number(maxPoints || 320));
+  if (points.length <= limit) return points.slice();
+  const result = [];
+  const step = (points.length - 1) / (limit - 1);
+  for (let i = 0; i < limit; i++) {
+    result.push(points[Math.round(i * step)]);
+  }
+  return result;
 }

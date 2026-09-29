@@ -484,7 +484,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
                         const SizedBox(width: 8),
                         SizedBox(
                           height: 56,
-                          width: constraints.maxWidth < 400 ? 80 : 104,
+                          width: constraints.maxWidth < 420 ? 76 : 96,
                           child: FilledButton(
                             style: FilledButton.styleFrom(
                               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -494,10 +494,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
                               FocusScope.of(context).unfocus();
                               _reload();
                             },
-                            child: const FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text('検索'),
-                            ),
+                            child: const Text('検索', maxLines: 1, overflow: TextOverflow.fade),
                           ),
                         ),
                       ],
@@ -542,7 +539,7 @@ class _TransactionsPageState extends State<TransactionsPage> {
                       ),
                     ),
 
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
 
                     Expanded(
                       child: DropdownButtonFormField<String>(

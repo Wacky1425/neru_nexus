@@ -26,6 +26,7 @@ class ApiRoutes {
     'merchant_classification_suggestions': 'classification.suggestions',
     'gmail_evidence_candidates': 'gmailEvidence.candidates',
     'investment_holdings': 'investments.holdings',
+    'investment_price_history': 'investments.priceHistory',
     'investment_plans': 'investments.plans',
     'sbi_investment_events': 'investments.sbiEvents',
     'asset_trend': 'assets.trend',

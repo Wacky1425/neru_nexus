@@ -9,6 +9,7 @@ import '../accounts/model/asset_snapshot_model.dart';
 import '../accounts/service/account_balance_service.dart';
 import '../accounts/service/asset_snapshot_service.dart';
 import 'investment_holding_edit_page.dart';
+import 'investment_holding_detail_page.dart';
 import 'investment_planner_page.dart';
 import 'model/investment_holding_model.dart';
 import 'service/investment_holding_service.dart';
@@ -84,6 +85,21 @@ class _InvestmentHoldingsPageState extends State<InvestmentHoldingsPage> {
           _refreshingPrices = false;
         });
       }
+    }
+  }
+
+  Future<void> _openDetail(InvestmentHoldingModel holding) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => InvestmentHoldingDetailPage(
+          holding: holding,
+          accounts: _investmentAccounts,
+        ),
+      ),
+    );
+    if (changed == true) {
+      AccountBalanceService.clearCache();
+      await _load(refreshPrices: true);
     }
   }
 
@@ -238,7 +254,7 @@ class _InvestmentHoldingsPageState extends State<InvestmentHoldingsPage> {
         ),
       );
       for (final holding in entry.value) {
-        widgets.add(_HoldingCard(holding: holding, onTap: () => _openEditor(holding)));
+        widgets.add(_HoldingCard(holding: holding, onTap: () => _openDetail(holding)));
         widgets.add(const SizedBox(height: 10));
       }
       widgets.add(const SizedBox(height: 14));

@@ -13,6 +13,17 @@ class InvestmentHoldingService {
     await ApiClient.post(action: 'investment_prices_refresh');
   }
 
+  Future<InvestmentPriceHistoryResult> fetchPriceHistory({
+    required String holdingId,
+    required String range,
+  }) async {
+    final data = await ApiClient.get(
+      action: 'investment_price_history',
+      queryParameters: {'holdingId': holdingId, 'range': range},
+    );
+    return InvestmentPriceHistoryResult.fromJson(data);
+  }
+
   Future<void> createHolding({
     required String accountId,
     required String securityType,

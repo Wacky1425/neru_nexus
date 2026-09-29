@@ -150,3 +150,50 @@ class InvestmentHoldingsResult {
     return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 }
+
+class InvestmentPricePoint {
+  const InvestmentPricePoint({required this.time, required this.price});
+  final DateTime time;
+  final double price;
+
+  factory InvestmentPricePoint.fromJson(Map<String, dynamic> json) {
+    return InvestmentPricePoint(
+      time: DateTime.tryParse(json['time']?.toString() ?? '')?.toLocal() ?? DateTime.fromMillisecondsSinceEpoch(0),
+      price: json['price'] is num
+          ? (json['price'] as num).toDouble()
+          : double.tryParse(json['price']?.toString() ?? '') ?? 0,
+    );
+  }
+}
+
+class InvestmentPriceHistoryResult {
+  const InvestmentPriceHistoryResult({
+    required this.available,
+    required this.range,
+    required this.currency,
+    required this.exchangeName,
+    required this.unavailableReason,
+    required this.points,
+  });
+
+  final bool available;
+  final String range;
+  final String currency;
+  final String exchangeName;
+  final String unavailableReason;
+  final List<InvestmentPricePoint> points;
+
+  factory InvestmentPriceHistoryResult.fromJson(Map<String, dynamic> json) {
+    final raw = json['points'];
+    return InvestmentPriceHistoryResult(
+      available: json['available'] == true,
+      range: json['range']?.toString() ?? '',
+      currency: json['currency']?.toString() ?? '',
+      exchangeName: json['exchangeName']?.toString() ?? '',
+      unavailableReason: json['unavailableReason']?.toString() ?? '',
+      points: raw is List
+          ? raw.whereType<Map>().map((e) => InvestmentPricePoint.fromJson(Map<String, dynamic>.from(e))).toList()
+          : const [],
+    );
+  }
+}
