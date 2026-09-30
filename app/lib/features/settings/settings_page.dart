@@ -14,6 +14,7 @@ import '../transactions/ignored_transactions_page.dart';
 import '../system/system_diagnostics_page.dart';
 import '../auth/device_auth_page.dart';
 import '../notifications/notification_center_page.dart';
+import 'app_update_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -246,10 +247,16 @@ class SettingsPage extends StatelessWidget {
             },
           ),
 
-          const ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('アプリ情報'),
-            subtitle: Text('Neru Nexus'),
+          ListTile(
+            leading: const Icon(Icons.system_update_alt),
+            title: const Text('アプリ情報・アップデート'),
+            subtitle: const Text('最新版を確認してAPKをダウンロード'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AppUpdatePage()),
+              );
+            },
           ),
         ],
       ),
