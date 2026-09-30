@@ -164,7 +164,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
           appBar: AppBar(
             title: const Text('三井住友銀行'),
             actions: [
-              IconButton(tooltip: '再読み込み', onPressed: _controller.reload, icon: const Icon(Icons.refresh)),
+              IconButton(tooltip: '再読み込み', onPressed: () => _controller.reload(), icon: const Icon(Icons.refresh)),
             ],
           ),
           body: Column(
