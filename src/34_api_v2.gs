@@ -8,6 +8,7 @@
 
 const NERU_API_V2_GET_ROUTES = Object.freeze({
   "system.health": "health",
+  "system.appUpdateInfo": "app_update_info",
   "dashboard.home": "home",
   "analytics.monthly": "analytics",
   "transactions.list": "transactions",
