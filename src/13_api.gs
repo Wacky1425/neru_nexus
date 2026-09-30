@@ -108,6 +108,9 @@ function doGet(e) {
           "ok",
         );
 
+      case "app_update_info":
+        return createJsonResponse_(getAppUpdateInfo(), "ok", requestId);
+
       case "health":
         return createJsonResponse_(
           {
