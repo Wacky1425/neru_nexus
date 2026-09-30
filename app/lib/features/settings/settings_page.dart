@@ -15,6 +15,7 @@ import '../system/system_diagnostics_page.dart';
 import '../auth/device_auth_page.dart';
 import '../notifications/notification_center_page.dart';
 import 'app_update_page.dart';
+import 'financial_connections_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -243,6 +244,20 @@ class SettingsPage extends StatelessWidget {
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const NotificationCenterPage()),
+              );
+            },
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.account_balance_outlined),
+            title: const Text('金融機関連携'),
+            subtitle: const Text('銀行サイトのログイン状態・残高取得を検証'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const FinancialConnectionsPage(),
+                ),
               );
             },
           ),
