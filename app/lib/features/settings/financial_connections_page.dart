@@ -92,9 +92,9 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
       );
       final title = _jsString(titleRaw);
       final text = _jsString(textRaw).replaceAll('\r', '');
-      final balance = _extractBalance(text);
-      final accountType = _extractAccountType(text);
-      final safe = _sanitize(text);
+      final balance = _extractBalance(pageText);
+      final accountType = _extractAccountType(pageText);
+      final safe = _sanitize(pageText);
       if (!mounted) return;
       setState(() {
         _pageTitle = title;
