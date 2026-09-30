@@ -1,9 +1,9 @@
 function getAppUpdateInfo() {
   return {
-    version: "2.2.9",
-    buildNumber: 229,
+    version: "2.2.10",
+    buildNumber: 230,
     apkUrl: "https://github.com/Wacky1425/neru_nexus/releases/download/latest/neru-nexus.apk",
-    releaseNotes: "V2.2.9: 金融機関連携PoCを追加。Neru Nexus内から三井住友銀行のログイン状態維持を検証できます。",
+    releaseNotes: "V2.2.10: SMBC認証アプリへの遷移とWebView内の戻る操作に対応。",
     required: false,
     updatedAt: new Date().toISOString(),
   };
