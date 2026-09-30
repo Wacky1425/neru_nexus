@@ -11,6 +11,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: build-android-apk
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,32 +24,55 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
+
+      - name: Restore Android signing key
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/neru-debug.keystore
+          chmod 600 android/neru-debug.keystore
+
       - name: Get dependencies
         run: flutter pub get
+
       - name: Analyze
         run: flutter analyze
+
       - name: Test
         run: flutter test
+
       - name: Build APK
+        env:
+          NERU_KEYSTORE_PATH: ../neru-debug.keystore
+          NERU_KEYSTORE_PASSWORD: android
+          NERU_KEY_ALIAS: androiddebugkey
+          NERU_KEY_PASSWORD: android
         run: flutter build apk --release
+
       - name: Prepare release APK
         run: cp build/app/outputs/flutter-apk/app-release.apk ../neru-nexus.apk
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: neru-nexus-apk
           path: neru-nexus.apk
           if-no-files-found: error
+
       - name: Publish latest APK release
         uses: softprops/action-gh-release@v2
         with:
@@ -53,6 +80,7 @@ jobs:
           name: Neru Nexus Latest
           prerelease: true
           files: neru-nexus.apk
+          overwrite_files: true
           body: |
             Latest automatically built Neru Nexus APK.
             Source commit: ${{ github.sha }}
