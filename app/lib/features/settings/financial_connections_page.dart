@@ -7,17 +7,7 @@ class FinancialConnectionsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        if (await _controller.canGoBack()) {
-          await _controller.goBack();
-          return;
-        }
-        if (context.mounted) Navigator.of(context).pop(result);
-      },
-      child: Scaffold(
+    return Scaffold(
       appBar: AppBar(title: const Text('金融機関連携')),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -40,7 +30,6 @@ class FinancialConnectionsPage extends StatelessWidget {
           ),
         ],
       ),
-    ),
     );
   }
 }
@@ -123,7 +112,17 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (await _controller.canGoBack()) {
+          await _controller.goBack();
+          return;
+        }
+        if (context.mounted) Navigator.of(context).pop(result);
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: const Text('三井住友銀行'),
         actions: [
@@ -165,6 +164,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
           Expanded(child: WebViewWidget(controller: _controller)),
         ],
       ),
+    ),
     );
   }
 }
