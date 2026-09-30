@@ -45,3 +45,21 @@ jobs:
 
       - name: Push GAS source
         run: clasp push --force
+
+      - name: Create Apps Script version
+        id: gas_version
+        shell: bash
+        run: |
+          OUTPUT="$(clasp version "GitHub ${GITHUB_SHA}")"
+          echo "$OUTPUT"
+          VERSION="$(printf '%s\n' "$OUTPUT" | grep -oE '[0-9]+' | tail -1)"
+          test -n "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Update production web app deployment
+        shell: bash
+        env:
+          GAS_DEPLOYMENT_ID: AKfycbwTuIVL4UyAThZdiaBRTM9lxnFxIrNN3LMwHhx1ZNTekGuzzFCUo-QHBtjXsFFSKZ4Igw
+          GAS_VERSION: ${{ steps.gas_version.outputs.version }}
+        run: |
+          clasp deploy --deploymentId "$GAS_DEPLOYMENT_ID" --versionNumber "$GAS_VERSION" --description "GitHub ${GITHUB_SHA}"
