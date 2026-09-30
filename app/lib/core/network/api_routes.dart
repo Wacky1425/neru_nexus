@@ -5,6 +5,7 @@ class ApiRoutes {
   /// identifiers during the migration; only this adapter knows GAS v1 names.
   static const Map<String, String> _legacyActionToV2Route = {
     'health': 'system.health',
+    'app_update_info': 'system.appUpdateInfo',
     'home': 'dashboard.home',
     'analytics': 'analytics.monthly',
     'transactions': 'transactions.list',
