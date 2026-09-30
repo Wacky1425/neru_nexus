@@ -91,7 +91,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
         'document.body ? document.body.innerText : ""',
       );
       final title = _jsString(titleRaw);
-      final text = _jsString(textRaw).replaceAll('\r', '');
+      final pageText = _jsString(textRaw).replaceAll('\r', '');
       final balance = _extractBalance(pageText);
       final accountType = _extractAccountType(pageText);
       final safe = _sanitize(pageText);
@@ -111,14 +111,8 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
   }
 
   String _jsString(Object value) {
-    var s = value.toString();
-    if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
-      s = s.substring(1, s.length - 1)
-          .replaceAll(r'\n', '\n')
-          .replaceAll(r'\"', '"')
-          .replaceAll(r'\\', r'\');
-    }
-    return s;
+    if (value is String) return value;
+    return value.toString();
   }
 
   String? _extractBalance(String text) {
@@ -231,3 +225,4 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
           ),
         ),
       );
+}
