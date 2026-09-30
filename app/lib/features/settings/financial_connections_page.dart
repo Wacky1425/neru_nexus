@@ -1,12 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class FinancialConnectionsPage extends StatelessWidget {
   const FinancialConnectionsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (await _controller.canGoBack()) {
+          await _controller.goBack();
+          return;
+        }
+        if (context.mounted) Navigator.of(context).pop(result);
+      },
+      child: Scaffold(
       appBar: AppBar(title: const Text('金融機関連携')),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -29,6 +40,7 @@ class FinancialConnectionsPage extends StatelessWidget {
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -55,6 +67,31 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
+          onNavigationRequest: (request) async {
+            final uri = Uri.tryParse(request.url);
+            if (uri == null) return NavigationDecision.prevent;
+            if (uri.scheme == 'http' || uri.scheme == 'https') {
+              return NavigationDecision.navigate;
+            }
+            try {
+              final opened = await launchUrl(
+                uri,
+                mode: LaunchMode.externalApplication,
+              );
+              if (!opened && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('認証アプリを開けませんでした')),
+                );
+              }
+            } catch (_) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('認証アプリを開けませんでした')),
+                );
+              }
+            }
+            return NavigationDecision.prevent;
+          },
           onPageStarted: (url) {
             if (!mounted) return;
             setState(() {
