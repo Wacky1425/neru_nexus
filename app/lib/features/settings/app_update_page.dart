@@ -30,8 +30,6 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
       error = null;
     });
 
-    // Local package information must remain visible even when the update
-    // server is temporarily unreachable.
     try {
       final package = await PackageInfo.fromPlatform();
       if (mounted) {
@@ -47,17 +45,18 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
     }
 
     try {
-      final response = await ApiClient.get(action: 'app_update_info');
-      final data = response['data'];
+      // ApiClient already unwraps the server's { data: ... } envelope.
+      final data = await ApiClient.get(action: 'app_update_info');
       if (!mounted) return;
       setState(() {
-        release = data is Map ? Map<String, dynamic>.from(data) : {};
+        release = Map<String, dynamic>.from(data);
         error = null;
       });
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = '最新版の確認に失敗しました。通信状態を確認して再読み込みしてください。\n$e';
+          error =
+              '最新版の確認に失敗しました。通信状態を確認して再読み込みしてください。\n$e';
         });
       }
     } finally {
