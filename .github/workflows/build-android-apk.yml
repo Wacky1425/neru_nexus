@@ -30,8 +30,6 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Flutter version
-        run: flutter --version
       - name: Get dependencies
         run: flutter pub get
       - name: Analyze
