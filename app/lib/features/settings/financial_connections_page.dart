@@ -46,6 +46,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
   String? _balance;
   String? _accountType;
   String? _diagnostic;
+  List<_SmbcTransaction> _transactions = const [];
 
   @override
   void initState() {
@@ -94,12 +95,14 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
       final pageText = _jsString(textRaw).replaceAll('\r', '');
       final balance = _extractBalance(pageText);
       final accountType = _extractAccountType(pageText);
+      final transactions = _extractTransactions(pageText);
       final safe = _sanitize(pageText);
       if (!mounted) return;
       setState(() {
         _pageTitle = title;
         _balance = balance;
         _accountType = accountType;
+        _transactions = transactions;
         _diagnostic = safe.length > 1800 ? safe.substring(0, 1800) : safe;
       });
     } catch (e) {
@@ -133,6 +136,416 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
       if (text.contains(type)) return type;
     }
     return null;
+  }
+
+  List<_SmbcTransaction> _extractTransactions(String text) {
+    final lines = text
+        .replaceAll('\r', '')
+        .split('\n')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    final result = <_SmbcTransaction>[];
+    int? year;
+    int? month;
+    for (var i = 0; i < lines.length; i++) {
+      final ym = RegExp(r'^(20\d{2})年(\d{1,2})月
+    var s = text;
+    s = s.replaceAll(RegExp(r'\b\d{7,8}\b'), '[口座番号]');
+    s = s.replaceAll(RegExp(r'\b\d{10,}\b'), '[番号]');
+    final lines = s.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    return lines.join('\n');
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) async {
+          if (didPop) return;
+          if (await _controller.canGoBack()) {
+            await _controller.goBack();
+          } else if (context.mounted) {
+            Navigator.of(context).pop(result);
+          }
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('三井住友銀行'),
+            actions: [
+              IconButton(tooltip: '再読み込み', onPressed: () => _controller.reload(), icon: const Icon(Icons.refresh)),
+            ],
+          ),
+          body: Column(
+            children: [
+              Material(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(children: [
+                    const Icon(Icons.lock_outline, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_currentUrl.isEmpty ? 'SMBC公式サイトを読み込み中' : _currentUrl,
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall)),
+                  ]),
+                ),
+              ),
+              if (_loading) const LinearProgressIndicator(),
+              if (_error != null) Padding(padding: const EdgeInsets.all(8), child: Text('ページを開けませんでした: $_error')),
+              Expanded(child: WebViewWidget(controller: _controller)),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                  child: FilledButton.icon(
+                    onPressed: _loading || _analyzing ? null : _analyzePage,
+                    icon: _analyzing
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.manage_search),
+                    label: Text(_analyzing ? '解析中…' : 'このページを解析'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          floatingActionButton: _diagnostic == null ? null : FloatingActionButton.extended(
+            onPressed: () => showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              builder: (_) => DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: .65,
+                maxChildSize: .9,
+                builder: (_, controller) => ListView(
+                  controller: controller,
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    const Text('SMBC取得テスト', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 16),
+                    Text('ページ: ${_pageTitle ?? "-"}'),
+                    Text('口座種別: ${_accountType ?? "未検出"}'),
+                    Text('残高: ${_balance == null ? "未検出" : "¥$_balance"}'),
+                    const SizedBox(height: 16),
+                    const Text('診断テキスト（端末内のみ）', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    SelectableText(_diagnostic ?? ''),
+                    const SizedBox(height: 12),
+                    const Text('※ この版ではNeru Nexusの口座残高・取引データにはまだ反映しません。'),
+                  ],
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.fact_check_outlined),
+            label: const Text('解析結果'),
+          ),
+        ),
+      );
+}
+).firstMatch(lines[i]);
+      if (ym != null) {
+        year = int.parse(ym.group(1)!);
+        month = int.parse(ym.group(2)!);
+        continue;
+      }
+      final dm = RegExp(r'^(\d{1,2})月(\d{1,2})日
+    var s = text;
+    s = s.replaceAll(RegExp(r'\b\d{7,8}\b'), '[口座番号]');
+    s = s.replaceAll(RegExp(r'\b\d{10,}\b'), '[番号]');
+    final lines = s.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    return lines.join('\n');
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) async {
+          if (didPop) return;
+          if (await _controller.canGoBack()) {
+            await _controller.goBack();
+          } else if (context.mounted) {
+            Navigator.of(context).pop(result);
+          }
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('三井住友銀行'),
+            actions: [
+              IconButton(tooltip: '再読み込み', onPressed: () => _controller.reload(), icon: const Icon(Icons.refresh)),
+            ],
+          ),
+          body: Column(
+            children: [
+              Material(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(children: [
+                    const Icon(Icons.lock_outline, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_currentUrl.isEmpty ? 'SMBC公式サイトを読み込み中' : _currentUrl,
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall)),
+                  ]),
+                ),
+              ),
+              if (_loading) const LinearProgressIndicator(),
+              if (_error != null) Padding(padding: const EdgeInsets.all(8), child: Text('ページを開けませんでした: $_error')),
+              Expanded(child: WebViewWidget(controller: _controller)),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                  child: FilledButton.icon(
+                    onPressed: _loading || _analyzing ? null : _analyzePage,
+                    icon: _analyzing
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.manage_search),
+                    label: Text(_analyzing ? '解析中…' : 'このページを解析'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          floatingActionButton: _diagnostic == null ? null : FloatingActionButton.extended(
+            onPressed: () => showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              builder: (_) => DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: .65,
+                maxChildSize: .9,
+                builder: (_, controller) => ListView(
+                  controller: controller,
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    const Text('SMBC取得テスト', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 16),
+                    Text('ページ: ${_pageTitle ?? "-"}'),
+                    Text('口座種別: ${_accountType ?? "未検出"}'),
+                    Text('残高: ${_balance == null ? "未検出" : "¥$_balance"}'),
+                    const SizedBox(height: 16),
+                    const Text('診断テキスト（端末内のみ）', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    SelectableText(_diagnostic ?? ''),
+                    const SizedBox(height: 12),
+                    const Text('※ この版ではNeru Nexusの口座残高・取引データにはまだ反映しません。'),
+                  ],
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.fact_check_outlined),
+            label: const Text('解析結果'),
+          ),
+        ),
+      );
+}
+).firstMatch(lines[i]);
+      if (dm == null || year == null) continue;
+      final txMonth = int.parse(dm.group(1)!);
+      final day = int.parse(dm.group(2)!);
+      if (month != null && txMonth != month) month = txMonth;
+      if (i < 1 || i + 2 >= lines.length) continue;
+      final amountMatch = RegExp(r'^([0-9,]+)円
+    var s = text;
+    s = s.replaceAll(RegExp(r'\b\d{7,8}\b'), '[口座番号]');
+    s = s.replaceAll(RegExp(r'\b\d{10,}\b'), '[番号]');
+    final lines = s.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    return lines.join('\n');
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) async {
+          if (didPop) return;
+          if (await _controller.canGoBack()) {
+            await _controller.goBack();
+          } else if (context.mounted) {
+            Navigator.of(context).pop(result);
+          }
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('三井住友銀行'),
+            actions: [
+              IconButton(tooltip: '再読み込み', onPressed: () => _controller.reload(), icon: const Icon(Icons.refresh)),
+            ],
+          ),
+          body: Column(
+            children: [
+              Material(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(children: [
+                    const Icon(Icons.lock_outline, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_currentUrl.isEmpty ? 'SMBC公式サイトを読み込み中' : _currentUrl,
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall)),
+                  ]),
+                ),
+              ),
+              if (_loading) const LinearProgressIndicator(),
+              if (_error != null) Padding(padding: const EdgeInsets.all(8), child: Text('ページを開けませんでした: $_error')),
+              Expanded(child: WebViewWidget(controller: _controller)),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                  child: FilledButton.icon(
+                    onPressed: _loading || _analyzing ? null : _analyzePage,
+                    icon: _analyzing
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.manage_search),
+                    label: Text(_analyzing ? '解析中…' : 'このページを解析'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          floatingActionButton: _diagnostic == null ? null : FloatingActionButton.extended(
+            onPressed: () => showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              builder: (_) => DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: .65,
+                maxChildSize: .9,
+                builder: (_, controller) => ListView(
+                  controller: controller,
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    const Text('SMBC取得テスト', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 16),
+                    Text('ページ: ${_pageTitle ?? "-"}'),
+                    Text('口座種別: ${_accountType ?? "未検出"}'),
+                    Text('残高: ${_balance == null ? "未検出" : "¥$_balance"}'),
+                    const SizedBox(height: 16),
+                    const Text('診断テキスト（端末内のみ）', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    SelectableText(_diagnostic ?? ''),
+                    const SizedBox(height: 12),
+                    const Text('※ この版ではNeru Nexusの口座残高・取引データにはまだ反映しません。'),
+                  ],
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.fact_check_outlined),
+            label: const Text('解析結果'),
+          ),
+        ),
+      );
+}
+).firstMatch(lines[i + 1]);
+      final balanceMatch = RegExp(r'^残高([0-9,]+)円
+    var s = text;
+    s = s.replaceAll(RegExp(r'\b\d{7,8}\b'), '[口座番号]');
+    s = s.replaceAll(RegExp(r'\b\d{10,}\b'), '[番号]');
+    final lines = s.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    return lines.join('\n');
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) async {
+          if (didPop) return;
+          if (await _controller.canGoBack()) {
+            await _controller.goBack();
+          } else if (context.mounted) {
+            Navigator.of(context).pop(result);
+          }
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('三井住友銀行'),
+            actions: [
+              IconButton(tooltip: '再読み込み', onPressed: () => _controller.reload(), icon: const Icon(Icons.refresh)),
+            ],
+          ),
+          body: Column(
+            children: [
+              Material(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(children: [
+                    const Icon(Icons.lock_outline, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_currentUrl.isEmpty ? 'SMBC公式サイトを読み込み中' : _currentUrl,
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall)),
+                  ]),
+                ),
+              ),
+              if (_loading) const LinearProgressIndicator(),
+              if (_error != null) Padding(padding: const EdgeInsets.all(8), child: Text('ページを開けませんでした: $_error')),
+              Expanded(child: WebViewWidget(controller: _controller)),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                  child: FilledButton.icon(
+                    onPressed: _loading || _analyzing ? null : _analyzePage,
+                    icon: _analyzing
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.manage_search),
+                    label: Text(_analyzing ? '解析中…' : 'このページを解析'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          floatingActionButton: _diagnostic == null ? null : FloatingActionButton.extended(
+            onPressed: () => showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              builder: (_) => DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: .65,
+                maxChildSize: .9,
+                builder: (_, controller) => ListView(
+                  controller: controller,
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    const Text('SMBC取得テスト', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 16),
+                    Text('ページ: ${_pageTitle ?? "-"}'),
+                    Text('口座種別: ${_accountType ?? "未検出"}'),
+                    Text('残高: ${_balance == null ? "未検出" : "¥$_balance"}'),
+                    const SizedBox(height: 16),
+                    const Text('診断テキスト（端末内のみ）', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    SelectableText(_diagnostic ?? ''),
+                    const SizedBox(height: 12),
+                    const Text('※ この版ではNeru Nexusの口座残高・取引データにはまだ反映しません。'),
+                  ],
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.fact_check_outlined),
+            label: const Text('解析結果'),
+          ),
+        ),
+      );
+}
+).firstMatch(lines[i + 2]);
+      if (amountMatch == null || balanceMatch == null) continue;
+      final amount = int.parse(amountMatch.group(1)!.replaceAll(',', ''));
+      final runningBalance = int.parse(balanceMatch.group(1)!.replaceAll(',', ''));
+      result.add(_SmbcTransaction(
+        date: DateTime(year, txMonth, day),
+        description: lines[i - 1],
+        amount: amount,
+        runningBalance: runningBalance,
+      ));
+    }
+    // SMBC displays newest first. Infer direction from adjacent running balances:
+    // older balance = newer balance - signed newer transaction.
+    for (var i = 0; i + 1 < result.length; i++) {
+      final newer = result[i];
+      final older = result[i + 1];
+      final delta = newer.runningBalance - older.runningBalance;
+      if (delta.abs() == newer.amount) newer.signedAmount = delta;
+    }
+    return result;
   }
 
   String _sanitize(String text) {
@@ -225,4 +638,20 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
           ),
         ),
       );
+}
+
+
+class _SmbcTransaction {
+  _SmbcTransaction({
+    required this.date,
+    required this.description,
+    required this.amount,
+    required this.runningBalance,
+  });
+
+  final DateTime date;
+  final String description;
+  final int amount;
+  final int runningBalance;
+  int? signedAmount;
 }
