@@ -148,6 +148,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
     final result = <_SmbcTransaction>[];
     int? year;
     int? month;
+
     for (var i = 0; i < lines.length; i++) {
       final ym = RegExp(r'^(20\d{2})年(\d{1,2})月
     var s = text;
@@ -224,6 +225,19 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
                     Text('ページ: ${_pageTitle ?? "-"}'),
                     Text('口座種別: ${_accountType ?? "未検出"}'),
                     Text('残高: ${_balance == null ? "未検出" : "¥$_balance"}'),
+                    Text('明細: ${_transactions.length}件'),
+                    if (_transactions.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Text('構造化した明細', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      ..._transactions.map((tx) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Text(
+                              '${tx.date.year}/${tx.date.month.toString().padLeft(2, "0")}/${tx.date.day.toString().padLeft(2, "0")}  ${tx.description}\n'
+                              '${tx.signedAmount == null ? "" : (tx.signedAmount! >= 0 ? "+" : "-")}¥${tx.amount}  → 残高 ¥${tx.runningBalance}',
+                            ),
+                          )),
+                    ],
                     const SizedBox(height: 16),
                     const Text('診断テキスト（端末内のみ）', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
@@ -246,6 +260,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
         month = int.parse(ym.group(2)!);
         continue;
       }
+
       final dm = RegExp(r'^(\d{1,2})月(\d{1,2})日
     var s = text;
     s = s.replaceAll(RegExp(r'\b\d{7,8}\b'), '[口座番号]');
@@ -338,11 +353,12 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
       );
 }
 ).firstMatch(lines[i]);
-      if (dm == null || year == null) continue;
+      if (dm == null || year == null || i < 1 || i + 2 >= lines.length) {
+        continue;
+      }
       final txMonth = int.parse(dm.group(1)!);
       final day = int.parse(dm.group(2)!);
-      if (month != null && txMonth != month) month = txMonth;
-      if (i < 1 || i + 2 >= lines.length) continue;
+      month = txMonth;
       final amountMatch = RegExp(r'^([0-9,]+)円
     var s = text;
     s = s.replaceAll(RegExp(r'\b\d{7,8}\b'), '[口座番号]');
@@ -528,22 +544,18 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
 }
 ).firstMatch(lines[i + 2]);
       if (amountMatch == null || balanceMatch == null) continue;
-      final amount = int.parse(amountMatch.group(1)!.replaceAll(',', ''));
-      final runningBalance = int.parse(balanceMatch.group(1)!.replaceAll(',', ''));
+
       result.add(_SmbcTransaction(
-        date: DateTime(year, txMonth, day),
+        date: DateTime(year, month, day),
         description: lines[i - 1],
-        amount: amount,
-        runningBalance: runningBalance,
+        amount: int.parse(amountMatch.group(1)!.replaceAll(',', '')),
+        runningBalance: int.parse(balanceMatch.group(1)!.replaceAll(',', '')),
       ));
     }
-    // SMBC displays newest first. Infer direction from adjacent running balances:
-    // older balance = newer balance - signed newer transaction.
+
     for (var i = 0; i + 1 < result.length; i++) {
-      final newer = result[i];
-      final older = result[i + 1];
-      final delta = newer.runningBalance - older.runningBalance;
-      if (delta.abs() == newer.amount) newer.signedAmount = delta;
+      final delta = result[i].runningBalance - result[i + 1].runningBalance;
+      if (delta.abs() == result[i].amount) result[i].signedAmount = delta;
     }
     return result;
   }
