@@ -243,6 +243,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
                     Text('ページ: ${_pageTitle ?? "-"}'),
                     Text('口座種別: ${_accountType ?? "未検出"}'),
                     Text('残高: ${_balance == null ? "未検出" : "¥$_balance"}'),
+                    Text('構造化明細: ${_transactions.length}件'),
                     const SizedBox(height: 16),
                     const Text('診断テキスト（端末内のみ）', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
