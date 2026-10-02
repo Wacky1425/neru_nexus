@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../transactions/model/transaction_model.dart';
+import '../transactions/service/transaction_service.dart';
+
 class FinancialConnectionsPage extends StatelessWidget {
   const FinancialConnectionsPage({super.key});
 
@@ -47,6 +50,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
   String? _accountType;
   String? _diagnostic;
   List<_SmbcTransaction> _transactions = const [];
+  List<_SmbcMatchResult> _matchResults = const [];
 
   @override
   void initState() {
@@ -96,6 +100,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
       final balance = _extractBalance(pageText);
       final accountType = _extractAccountType(pageText);
       final transactions = _extractTransactions(pageText);
+      final matchResults = await _matchTransactions(transactions);
       final safe = _sanitize(pageText);
       if (!mounted) return;
       setState(() {
@@ -103,6 +108,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
         _balance = balance;
         _accountType = accountType;
         _transactions = transactions;
+        _matchResults = matchResults;
         _diagnostic = safe.length > 1800 ? safe.substring(0, 1800) : safe;
       });
     } catch (e) {
@@ -166,6 +172,41 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
       if (delta.abs() == result[i].amount) result[i].signedAmount = delta;
     }
     return result;
+  }
+
+  Future<List<_SmbcMatchResult>> _matchTransactions(List<_SmbcTransaction> bankItems) async {
+    if (bankItems.isEmpty) return const [];
+    final service = const TransactionService();
+    final months = bankItems.map((e) => '${e.date.year}-${e.date.month.toString().padLeft(2, '0')}').toSet();
+    final existing = <TransactionModel>[];
+    for (final month in months) {
+      final page = await service.fetchTransactionPage(limit: 500, yearMonth: month);
+      existing.addAll(page.items);
+    }
+    return bankItems.map((bank) {
+      final exact = existing.where((tx) {
+        final date = DateTime.tryParse(tx.transactionDate.replaceFirst(' ', 'T'));
+        return date != null &&
+            date.year == bank.date.year &&
+            date.month == bank.date.month &&
+            date.day == bank.date.day &&
+            tx.amount.abs() == bank.amount;
+      }).toList();
+      if (exact.isNotEmpty) {
+        return _SmbcMatchResult(bank: bank, status: _SmbcMatchStatus.matched, candidates: exact);
+      }
+      final near = existing.where((tx) {
+        final date = DateTime.tryParse(tx.transactionDate.replaceFirst(' ', 'T'));
+        if (date == null || tx.amount.abs() != bank.amount) return false;
+        final bankDay = DateTime(bank.date.year, bank.date.month, bank.date.day);
+        final txDay = DateTime(date.year, date.month, date.day);
+        return bankDay.difference(txDay).inDays.abs() <= 3;
+      }).toList();
+      if (near.isNotEmpty) {
+        return _SmbcMatchResult(bank: bank, status: _SmbcMatchStatus.review, candidates: near);
+      }
+      return _SmbcMatchResult(bank: bank, status: _SmbcMatchStatus.newCandidate, candidates: const []);
+    }).toList();
   }
 
   String _sanitize(String text) {
@@ -244,6 +285,31 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
                     Text('口座種別: ${_accountType ?? "未検出"}'),
                     Text('残高: ${_balance == null ? "未検出" : "¥$_balance"}'),
                     Text('構造化明細: ${_transactions.length}件'),
+                    Text('一致済み: ${_matchResults.where((e) => e.status == _SmbcMatchStatus.matched).length}件'),
+                    Text('新規候補: ${_matchResults.where((e) => e.status == _SmbcMatchStatus.newCandidate).length}件'),
+                    Text('要確認: ${_matchResults.where((e) => e.status == _SmbcMatchStatus.review).length}件'),
+                    const SizedBox(height: 16),
+                    const Text('照合プレビュー', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    ..._matchResults.map((result) => Card(
+                      child: ListTile(
+                        dense: true,
+                        leading: Icon(switch (result.status) {
+                          _SmbcMatchStatus.matched => Icons.check_circle_outline,
+                          _SmbcMatchStatus.newCandidate => Icons.add_circle_outline,
+                          _SmbcMatchStatus.review => Icons.help_outline,
+                        }),
+                        title: Text(result.bank.description),
+                        subtitle: Text(
+                          '${result.bank.date.year}/${result.bank.date.month.toString().padLeft(2, '0')}/${result.bank.date.day.toString().padLeft(2, '0')}'
+                          '  残高 ¥${result.bank.runningBalance}'
+                          '${result.candidates.isEmpty ? '' : '  候補${result.candidates.length}件'}',
+                        ),
+                        trailing: Text(
+                          '${result.bank.signedAmount != null && result.bank.signedAmount! > 0 ? '+' : result.bank.signedAmount != null ? '-' : ''}¥${result.bank.amount}',
+                        ),
+                      ),
+                    )),
                     const SizedBox(height: 16),
                     const Text('診断テキスト（端末内のみ）', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
@@ -269,4 +335,14 @@ class _SmbcTransaction {
   final int amount;
   final int runningBalance;
   int? signedAmount;
+}
+
+
+enum _SmbcMatchStatus { matched, newCandidate, review }
+
+class _SmbcMatchResult {
+  const _SmbcMatchResult({required this.bank, required this.status, required this.candidates});
+  final _SmbcTransaction bank;
+  final _SmbcMatchStatus status;
+  final List<TransactionModel> candidates;
 }
