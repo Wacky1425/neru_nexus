@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -120,8 +122,18 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
   }
 
   String _jsString(Object value) {
-    if (value is String) return value;
-    return value.toString();
+    final raw = value is String ? value : value.toString();
+    // On Android, runJavaScriptReturningResult may return a JSON-encoded
+    // JavaScript string (quotes + literal \\n). Decode it before parsing DOM text.
+    if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is String) return decoded;
+      } catch (_) {
+        // Fall through: some WebView versions already return the plain string.
+      }
+    }
+    return raw;
   }
 
   String? _extractBalance(String text) {
