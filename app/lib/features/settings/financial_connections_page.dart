@@ -42,6 +42,9 @@ class SmbcConnectionPage extends StatefulWidget {
 
 class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
   static final Uri _smbcUri = Uri.parse('https://www.smbc.co.jp/kojin/direct/');
+  // The authenticated SMBC WebView normally lands under this area. Opening it
+  // first lets persistent WebView cookies/session restore the signed-in state.
+  static final Uri _smbcDirectUri = Uri.parse('https://direct3.smbc.co.jp/sp/web/top/');
   late final WebViewController _controller;
   bool _loading = true;
   bool _analyzing = false;
@@ -81,14 +84,26 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
         onPageFinished: (url) {
           if (!mounted) return;
           setState(() { _loading = false; _currentUrl = url; });
+          // If a persisted session restored directly to the statement page,
+          // parse it automatically. Re-authentication remains an explicit
+          // SMBC/biometric step when the bank requires it.
+          if (!_analyzing && _looksLikeStatementUrl(url)) {
+            _analyzePage();
+          }
         },
         onWebResourceError: (error) {
           if (error.isForMainFrame != true || !mounted) return;
           setState(() { _loading = false; _error = error.description; });
         },
       ))
-      ..loadRequest(_smbcUri);
+      ..loadRequest(_smbcDirectUri);
+
   }
+
+  bool _looksLikeStatementUrl(String url) =>
+      url.contains('direct3.smbc.co.jp') && url.contains('/sp/web/top/');
+
+  Future<void> _openLogin() => _controller.loadRequest(_smbcUri);
 
   Future<void> _analyzePage() async {
     setState(() { _analyzing = true; _diagnostic = null; });
@@ -244,6 +259,11 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
           appBar: AppBar(
             title: const Text('三井住友銀行'),
             actions: [
+              IconButton(
+                tooltip: 'ログイン画面',
+                onPressed: _openLogin,
+                icon: const Icon(Icons.login),
+              ),
               IconButton(tooltip: '再読み込み', onPressed: () => _controller.reload(), icon: const Icon(Icons.refresh)),
             ],
           ),
@@ -262,7 +282,21 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
                 ),
               ),
               if (_loading) const LinearProgressIndicator(),
-              if (_error != null) Padding(padding: const EdgeInsets.all(8), child: Text('ページを開けませんでした: $_error')),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    children: [
+                      Text('ログイン状態を復元できませんでした: $_error'),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: _openLogin,
+                        icon: const Icon(Icons.login),
+                        label: const Text('SMBCにログイン'),
+                      ),
+                    ],
+                  ),
+                ),
               Expanded(child: WebViewWidget(controller: _controller)),
               SafeArea(
                 top: false,
