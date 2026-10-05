@@ -18,7 +18,7 @@ class FinancialConnectionsPage extends StatelessWidget {
           children: [
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: Text('三井住友銀行のログイン状態と、ログイン後ページからの残高取得を検証します。ID・パスワードは保存しません。'),
+              child: Text('三井住友銀行のWebログイン状態を再利用し、ログイン後ページから残高・明細を取得します。'),
             ),
             ListTile(
               leading: const Icon(Icons.account_balance_outlined),
@@ -41,7 +41,7 @@ class SmbcConnectionPage extends StatefulWidget {
 }
 
 class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
-  static final Uri _smbcUri = Uri.parse('https://www.smbc.co.jp/kojin/direct/');
+  static final Uri _smbcWebLoginUri = Uri.parse('https://direct.smbc.co.jp/ib/web/loginlogout/LLDLDILdirecttop.smbc');
   // The authenticated SMBC WebView normally lands under this area. Opening it
   // first lets persistent WebView cookies/session restore the signed-in state.
   static final Uri _smbcDirectUri = Uri.parse('https://direct3.smbc.co.jp/sp/web/top/');
@@ -103,7 +103,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
   bool _looksLikeStatementUrl(String url) =>
       url.contains('direct3.smbc.co.jp') && url.contains('/sp/web/top/');
 
-  Future<void> _openLogin() => _controller.loadRequest(_smbcUri);
+  Future<void> _openLogin() => _controller.loadRequest(_smbcWebLoginUri);
 
   Future<void> _analyzePage() async {
     setState(() { _analyzing = true; _diagnostic = null; });
@@ -260,7 +260,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
             title: const Text('三井住友銀行'),
             actions: [
               IconButton(
-                tooltip: 'ログイン画面',
+                tooltip: 'Webログイン',
                 onPressed: _openLogin,
                 icon: const Icon(Icons.login),
               ),
@@ -292,7 +292,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
                       OutlinedButton.icon(
                         onPressed: _openLogin,
                         icon: const Icon(Icons.login),
-                        label: const Text('SMBCにログイン'),
+                        label: const Text('Webでログイン'),
                       ),
                     ],
                   ),
