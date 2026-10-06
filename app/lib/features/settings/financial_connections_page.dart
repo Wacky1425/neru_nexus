@@ -89,6 +89,8 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
           // SMBC/biometric step when the bank requires it.
           if (!_analyzing && _looksLikeStatementUrl(url)) {
             _analyzePage();
+          } else {
+            _recoverFromExpiredDirectSession();
           }
         },
         onWebResourceError: (error) {
@@ -96,7 +98,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
           setState(() { _loading = false; _error = error.description; });
         },
       ))
-      ..loadRequest(_smbcDirectUri);
+      ..loadRequest(_smbcWebLoginUri);
 
   }
 
@@ -104,6 +106,21 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
       url.contains('direct3.smbc.co.jp') && url.contains('/sp/web/top/');
 
   Future<void> _openLogin() => _controller.loadRequest(_smbcWebLoginUri);
+
+  Future<void> _recoverFromExpiredDirectSession() async {
+    try {
+      final raw = await _controller.runJavaScriptReturningResult(
+        'document.body ? document.body.innerText : ""',
+      );
+      final text = _jsString(raw);
+      if (text.contains('もう一度ログインからお手続きし直してください') ||
+          text.contains('SMBCダイレクトのログインはこちら')) {
+        await _openLogin();
+      }
+    } catch (_) {
+      // A normal login page may block DOM access while navigating. No action needed.
+    }
+  }
 
   Future<void> _analyzePage() async {
     setState(() { _analyzing = true; _diagnostic = null; });
