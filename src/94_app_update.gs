@@ -1,9 +1,9 @@
 function getAppUpdateInfo() {
   return {
-    version: "2.2.18",
-    buildNumber: 238,
+    version: "2.2.19",
+    buildNumber: 239,
     apkUrl: "https://github.com/Wacky1425/neru_nexus/releases/download/latest/neru-nexus.apk",
-    releaseNotes: "V2.2.18: APKをNeru Nexus内で直接ダウンロードし、完了後にAndroidインストーラーを自動起動。更新導線を短縮。",
+    releaseNotes: "V2.2.19: SMBCアプリで本人認証後、Neru Nexusへ戻ったことを検知してWebログインの承認完了処理を自動継続。",
     required: false,
     updatedAt: new Date().toISOString(),
   };
