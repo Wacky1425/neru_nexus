@@ -40,7 +40,7 @@ class SmbcConnectionPage extends StatefulWidget {
   State<SmbcConnectionPage> createState() => _SmbcConnectionPageState();
 }
 
-class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
+class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBindingObserver {
   static final Uri _smbcWebLoginUri = Uri.parse('https://direct.smbc.co.jp/ib/web/loginlogout/LLDLDILdirecttop.smbc');
   // The authenticated SMBC WebView normally lands under this area. Opening it
   // first lets persistent WebView cookies/session restore the signed-in state.
@@ -48,6 +48,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
   late final WebViewController _controller;
   bool _loading = true;
   bool _analyzing = false;
+  bool _waitingForSmbcApproval = false;
   String _currentUrl = '';
   String? _error;
   String? _pageTitle;
@@ -60,6 +61,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
@@ -68,6 +70,9 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
           if (uri == null) return NavigationDecision.prevent;
           if (uri.scheme == 'http' || uri.scheme == 'https') return NavigationDecision.navigate;
           try {
+            if (mounted) {
+              setState(() => _waitingForSmbcApproval = true);
+            }
             final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
             if (!opened && mounted) {
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('認証アプリを開けませんでした')));
@@ -102,10 +107,54 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> {
 
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
   bool _looksLikeStatementUrl(String url) =>
       url.contains('direct3.smbc.co.jp') && url.contains('/sp/web/top/');
 
   Future<void> _openLogin() => _controller.loadRequest(_smbcWebLoginUri);
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _waitingForSmbcApproval) {
+      _waitingForSmbcApproval = false;
+      _continueAfterSmbcApproval();
+    }
+  }
+
+  Future<void> _continueAfterSmbcApproval() async {
+    // SMBC's browser flow requires returning to the original browser after
+    // approval. Detect the confirmation page and press its completion action.
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    try {
+      final raw = await _controller.runJavaScriptReturningResult(
+        'document.body ? document.body.innerText : ""',
+      );
+      final text = _jsString(raw);
+      if (text.contains('承認操作を完了しました') ||
+          text.contains('ログインの確認') ||
+          text.contains('アプリで承認')) {
+        await _controller.runJavaScript(r'''
+          (() => {
+            const labels = ['承認操作を完了しました', '確認', '次へ'];
+            const nodes = [...document.querySelectorAll('button, input[type="button"], input[type="submit"], a')];
+            const target = nodes.find((el) => {
+              const label = (el.innerText || el.value || el.textContent || '').trim();
+              return labels.some((x) => label.includes(x));
+            });
+            if (target) target.click();
+          })();
+        ''');
+      }
+    } catch (_) {
+      // If SMBC changed the confirmation DOM, leave the page visible so the
+      // user can finish manually instead of guessing another action.
+    }
+  }
 
   Future<void> _recoverFromExpiredDirectSession() async {
     try {
