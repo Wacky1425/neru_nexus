@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/network/api_client.dart';
 
@@ -17,6 +20,8 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
   int currentBuild = 0;
   Map<String, dynamic> release = {};
   String? error;
+  bool downloading = false;
+  double? downloadProgress;
 
   @override
   void initState() {
@@ -69,8 +74,51 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
 
   Future<void> download() async {
     final uri = Uri.tryParse('${release['apkUrl'] ?? ''}'.trim());
-    if (uri == null || uri.scheme != 'https') return;
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (uri == null || uri.scheme != 'https' || downloading) return;
+
+    setState(() {
+      downloading = true;
+      downloadProgress = null;
+      error = null;
+    });
+
+    final client = http.Client();
+    try {
+      final request = http.Request('GET', uri);
+      final response = await client.send(request);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException('APK download failed: HTTP ${response.statusCode}');
+      }
+
+      final file = File('${Directory.systemTemp.path}/neru-nexus-update.apk');
+      final sink = file.openWrite();
+      final total = response.contentLength ?? 0;
+      var received = 0;
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (mounted && total > 0) {
+          setState(() => downloadProgress = received / total);
+        }
+      }
+      await sink.flush();
+      await sink.close();
+
+      if (!mounted) return;
+      setState(() => downloadProgress = 1);
+      final result = await OpenFilex.open(
+        file.path,
+        type: 'application/vnd.android.package-archive',
+      );
+      if (result.type != ResultType.done && mounted) {
+        setState(() => error = 'インストーラーを開けませんでした: ${result.message}');
+      }
+    } catch (e) {
+      if (mounted) setState(() => error = '更新APKの取得に失敗しました。\n$e');
+    } finally {
+      client.close();
+      if (mounted) setState(() => downloading = false);
+    }
   }
 
   @override
@@ -106,9 +154,21 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
                 ),
               ] else if (hasUpdate)
                 FilledButton.icon(
-                  onPressed: download,
-                  icon: const Icon(Icons.download_outlined),
-                  label: const Text('最新版APKをダウンロード'),
+                  onPressed: downloading ? null : download,
+                  icon: downloading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.system_update_alt),
+                  label: Text(
+                    downloading
+                        ? downloadProgress == null
+                            ? 'アプリ内でダウンロード中…'
+                            : 'ダウンロード中 ${(downloadProgress! * 100).round()}%'
+                        : 'ダウンロードして更新',
+                  ),
                 )
               else if (hasRemoteInfo)
                 const Text('最新版です'),
