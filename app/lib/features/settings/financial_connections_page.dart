@@ -180,10 +180,20 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
           const buttons = [...document.querySelectorAll(
             'button,input[type="submit"],input[type="button"],a'
           )];
-          const login = buttons.find((e) =>
-            ((e.innerText || e.value || e.textContent || '').trim())
-              .includes('ログイン')
-          );
+          const label = (e) =>
+            (e.innerText || e.value || e.textContent || '').trim();
+          const candidates = buttons.filter((e) => {
+            const s = label(e);
+            if (!s.includes('ログイン')) return false;
+            if (s.includes('規定') || s.includes('ヘルプ') ||
+                s.includes('ログイン暗証とは')) return false;
+            return e.matches('button,input[type="submit"],input[type="button"]') ||
+                   s === 'ログイン' || s.includes('ログインする');
+          });
+          const login =
+            candidates.find((e) => e.matches('input[type="submit"],button[type="submit"]')) ||
+            candidates.find((e) => label(e) === 'ログイン') ||
+            candidates.find((e) => label(e).includes('ログインする'));
           if (login) login.click();
         })();
       ''');
