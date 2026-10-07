@@ -342,25 +342,11 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
         return;
       }
 
-      // After authentication SMBC may ask which account to open. Prefer the
-      // ordinary-deposit/account row leading to balance/transaction details.
-      if ((text.contains('口座') || text.contains('残高')) &&
-          !text.contains('明細照会') &&
-          !text.contains('預金残高')) {
-        await _controller.runJavaScript(r'''
-          (() => {
-            const nodes = [...document.querySelectorAll('button,a')];
-            const target = nodes.find((e) => {
-              const s = (e.innerText || e.textContent || '').trim();
-              return s.includes('残高別普通') ||
-                     s.includes('普通預金') ||
-                     s.includes('残高・入出金明細') ||
-                     s.includes('明細');
-            });
-            if (target) target.click();
-          })();
-        ''');
-      }
+      // Do not guess account-navigation links from page text. The SMBC login
+      // page itself contains "普通預金規定", which previously matched the broad
+      // "普通預金" rule and sent the WebView to the regulations page.
+      // Account selection will be automated only after its actual DOM has been
+      // identified on a confirmed authenticated page.
     } catch (_) {
       // Keep the current official page visible if SMBC changes its DOM.
     } finally {
