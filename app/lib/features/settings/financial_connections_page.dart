@@ -42,9 +42,6 @@ class SmbcConnectionPage extends StatefulWidget {
 
 class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBindingObserver {
   static final Uri _smbcWebLoginUri = Uri.parse('https://direct.smbc.co.jp/ib/web/loginlogout/LLDLDILdirecttop.smbc');
-  // The authenticated SMBC WebView normally lands under this area. Opening it
-  // first lets persistent WebView cookies/session restore the signed-in state.
-  static final Uri _smbcDirectUri = Uri.parse('https://direct3.smbc.co.jp/sp/web/top/');
   late final WebViewController _controller;
   bool _loading = true;
   bool _analyzing = false;
