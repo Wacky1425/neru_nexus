@@ -177,24 +177,20 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
           const pin = byHint(['password','pin','ansho','暗証']) ||
             visible.find((e) => e.type === 'password') || visible[2];
           set(branch, v.branch); set(account, v.account); set(pin, v.pin);
-          const buttons = [...document.querySelectorAll(
-            'button,input[type="submit"],input[type="button"],a'
-          )];
-          const label = (e) =>
-            (e.innerText || e.value || e.textContent || '').trim();
-          const candidates = buttons.filter((e) => {
-            const s = label(e);
-            if (!s.includes('ログイン')) return false;
-            if (s.includes('規定') || s.includes('ヘルプ') ||
-                s.includes('ログイン暗証とは')) return false;
-            return e.matches('button,input[type="submit"],input[type="button"]') ||
-                   s === 'ログイン' || s.includes('ログインする');
-          });
-          const login =
-            candidates.find((e) => e.matches('input[type="submit"],button[type="submit"]')) ||
-            candidates.find((e) => label(e) === 'ログイン') ||
-            candidates.find((e) => label(e).includes('ログインする'));
-          if (login) login.click();
+          // Never search/click anchors here. Submit only the form that owns
+          // the detected login fields so unrelated links (e.g. regulations)
+          // can never be selected.
+          const form = pin?.form || account?.form || branch?.form;
+          if (!form || !branch || !account || !pin) return;
+          if (!branch.value || !account.value || !pin.value) return;
+          const submit = [...form.querySelectorAll(
+            'button[type="submit"],input[type="submit"]'
+          )].find((e) => !e.disabled);
+          if (submit) {
+            submit.click();
+          } else if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+          }
         })();
       ''');
       await Future<void>.delayed(const Duration(milliseconds: 700));
