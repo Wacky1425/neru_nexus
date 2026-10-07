@@ -49,6 +49,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
   bool _loading = true;
   bool _analyzing = false;
   bool _waitingForSmbcApproval = false;
+  bool _automationBusy = false;
   String _currentUrl = '';
   String? _error;
   String? _pageTitle;
@@ -97,6 +98,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
           } else {
             _recoverFromExpiredDirectSession();
             _tryAutoFillLogin();
+            _advanceSmbcFlow();
           }
         },
         onWebResourceError: (error) {
@@ -283,9 +285,58 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
           })();
         ''');
       }
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      await _advanceSmbcFlow();
     } catch (_) {
       // If SMBC changed the confirmation DOM, leave the page visible so the
       // user can finish manually instead of guessing another action.
+    }
+  }
+
+  Future<void> _advanceSmbcFlow() async {
+    if (_automationBusy || _analyzing) return;
+    _automationBusy = true;
+    try {
+      final raw = await _controller.runJavaScriptReturningResult(
+        'document.body ? document.body.innerText : ""',
+      );
+      final text = _jsString(raw);
+      if (text.contains('承認操作を完了しました')) {
+        await _controller.runJavaScript(r'''
+          (() => {
+            const nodes = [...document.querySelectorAll('button,input[type="submit"],input[type="button"],a')];
+            const target = nodes.find((e) =>
+              ((e.innerText || e.value || e.textContent || '').trim())
+                .includes('承認操作を完了しました'));
+            if (target) target.click();
+          })();
+        ''');
+        return;
+      }
+
+      // After authentication SMBC may ask which account to open. Prefer the
+      // ordinary-deposit/account row leading to balance/transaction details.
+      if ((text.contains('口座') || text.contains('残高')) &&
+          !text.contains('明細照会') &&
+          !text.contains('預金残高')) {
+        await _controller.runJavaScript(r'''
+          (() => {
+            const nodes = [...document.querySelectorAll('button,a')];
+            const target = nodes.find((e) => {
+              const s = (e.innerText || e.textContent || '').trim();
+              return s.includes('残高別普通') ||
+                     s.includes('普通預金') ||
+                     s.includes('残高・入出金明細') ||
+                     s.includes('明細');
+            });
+            if (target) target.click();
+          })();
+        ''');
+      }
+    } catch (_) {
+      // Keep the current official page visible if SMBC changes its DOM.
+    } finally {
+      _automationBusy = false;
     }
   }
 
