@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -42,7 +43,9 @@ class SmbcConnectionPage extends StatefulWidget {
 
 class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBindingObserver {
   static final Uri _smbcWebLoginUri = Uri.parse('https://direct.smbc.co.jp/ib/web/loginlogout/LLDLDILdirecttop.smbc');
+  static const _secureStorage = FlutterSecureStorage();
   late final WebViewController _controller;
+  bool _autoLoginAttempted = false;
   bool _loading = true;
   bool _analyzing = false;
   bool _waitingForSmbcApproval = false;
@@ -93,6 +96,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
             _analyzePage();
           } else {
             _recoverFromExpiredDirectSession();
+            _tryAutoFillLogin();
           }
         },
         onWebResourceError: (error) {
@@ -113,7 +117,139 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
   bool _looksLikeStatementUrl(String url) =>
       url.contains('direct3.smbc.co.jp') && url.contains('/sp/web/top/');
 
-  Future<void> _openLogin() => _controller.loadRequest(_smbcWebLoginUri);
+  Future<void> _openLogin() async {
+    _autoLoginAttempted = false;
+    await _controller.loadRequest(_smbcWebLoginUri);
+  }
+
+  Future<void> _tryAutoFillLogin() async {
+    if (_autoLoginAttempted) return;
+    try {
+      final raw = await _controller.runJavaScriptReturningResult(
+        'document.body ? document.body.innerText : ""',
+      );
+      final text = _jsString(raw);
+      if (!text.contains('SMBCダイレクトログイン') ||
+          !text.contains('店番号') ||
+          !text.contains('口座番号') ||
+          !text.contains('ログイン暗証')) {
+        return;
+      }
+
+      final branch = await _secureStorage.read(key: 'smbc_branch');
+      final account = await _secureStorage.read(key: 'smbc_account');
+      final pin = await _secureStorage.read(key: 'smbc_pin');
+      if (branch == null || account == null || pin == null) {
+        if (mounted) await _showCredentialSetup();
+        return;
+      }
+
+      _autoLoginAttempted = true;
+      final payload = jsonEncode({
+        'branch': branch,
+        'account': account,
+        'pin': pin,
+      });
+      await _controller.runJavaScript('''
+        (() => {
+          const v = $payload;
+          const inputs = [...document.querySelectorAll('input')];
+          const visible = inputs.filter((e) => e.type !== 'hidden' && !e.disabled);
+          const set = (el, value) => {
+            if (!el) return;
+            const setter = Object.getOwnPropertyDescriptor(
+              HTMLInputElement.prototype, 'value'
+            )?.set;
+            if (setter) setter.call(el, value); else el.value = value;
+            el.dispatchEvent(new Event('input', {bubbles:true}));
+            el.dispatchEvent(new Event('change', {bubbles:true}));
+          };
+          const byHint = (words) => visible.find((e) => {
+            const s = [e.name,e.id,e.placeholder,e.getAttribute('aria-label')]
+              .filter(Boolean).join(' ').toLowerCase();
+            return words.some((w) => s.includes(w));
+          });
+          const branch = byHint(['branch','tenban','店番']) || visible[0];
+          const account = byHint(['account','kouza','口座']) || visible[1];
+          const pin = byHint(['password','pin','ansho','暗証']) ||
+            visible.find((e) => e.type === 'password') || visible[2];
+          set(branch, v.branch); set(account, v.account); set(pin, v.pin);
+          const buttons = [...document.querySelectorAll(
+            'button,input[type="submit"],input[type="button"],a'
+          )];
+          const login = buttons.find((e) =>
+            ((e.innerText || e.value || e.textContent || '').trim())
+              .includes('ログイン')
+          );
+          if (login) login.click();
+        })();
+      ''');
+    } catch (_) {
+      // Leave the official page usable manually if its DOM changes.
+    }
+  }
+
+  Future<void> _showCredentialSetup() async {
+    if (!mounted) return;
+    final branch = TextEditingController();
+    final account = TextEditingController();
+    final pin = TextEditingController();
+    final save = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('SMBCログイン情報を保存'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '初回だけ入力します。端末のセキュアストレージに保存し、GASやGitHubには送信しません。',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: branch,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: '店番号'),
+              ),
+              TextField(
+                controller: account,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: '口座番号'),
+              ),
+              TextField(
+                controller: pin,
+                keyboardType: TextInputType.number,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'ログイン暗証'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('今回は手入力'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('保存してログイン'),
+          ),
+        ],
+      ),
+    );
+    if (save != true) return;
+    if (branch.text.trim().isEmpty ||
+        account.text.trim().isEmpty ||
+        pin.text.isEmpty) {
+      return;
+    }
+    await _secureStorage.write(key: 'smbc_branch', value: branch.text.trim());
+    await _secureStorage.write(key: 'smbc_account', value: account.text.trim());
+    await _secureStorage.write(key: 'smbc_pin', value: pin.text);
+    _autoLoginAttempted = false;
+    await _tryAutoFillLogin();
+  }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
