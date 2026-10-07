@@ -323,6 +323,11 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
         },
         child: Scaffold(
           appBar: AppBar(
+            leading: IconButton(
+              tooltip: 'Neru Nexusへ戻る',
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close),
+            ),
             title: const Text('三井住友銀行'),
             actions: [
               IconButton(
