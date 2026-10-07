@@ -50,6 +50,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
   bool _analyzing = false;
   bool _waitingForSmbcApproval = false;
   bool _automationBusy = false;
+  bool _launchingSmbcApp = false;
   String _currentUrl = '';
   String? _error;
   String? _pageTitle;
@@ -186,6 +187,8 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
           if (login) login.click();
         })();
       ''');
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      await _advanceSmbcFlow();
     } catch (_) {
       // Leave the official page usable manually if its DOM changes.
     }
@@ -257,6 +260,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && _waitingForSmbcApproval) {
       _waitingForSmbcApproval = false;
+      _launchingSmbcApp = false;
       _continueAfterSmbcApproval();
     }
   }
@@ -301,6 +305,24 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
         'document.body ? document.body.innerText : ""',
       );
       final text = _jsString(raw);
+      if (!_launchingSmbcApp &&
+          (text.contains('三井住友銀行アプリ') || text.contains('アプリで承認')) &&
+          (text.contains('起動') || text.contains('承認'))) {
+        _launchingSmbcApp = true;
+        await _controller.runJavaScript(r'''
+          (() => {
+            const nodes = [...document.querySelectorAll('button,a,input[type="button"],input[type="submit"]')];
+            const target = nodes.find((e) => {
+              const s = (e.innerText || e.value || e.textContent || '').trim();
+              return (s.includes('三井住友銀行アプリ') || s.includes('アプリ')) &&
+                     (s.includes('起動') || s.includes('承認') || s.includes('開く'));
+            });
+            if (target) target.click();
+          })();
+        ''');
+        return;
+      }
+
       if (text.contains('承認操作を完了しました')) {
         await _controller.runJavaScript(r'''
           (() => {
