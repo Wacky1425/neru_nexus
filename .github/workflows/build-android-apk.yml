@@ -64,13 +64,17 @@ jobs:
         run: flutter build apk --release
 
       - name: Prepare release APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk ../neru-nexus.apk
+        run: |
+          VERSION="$(sed -n 's/^version: //p' pubspec.yaml | tr '+' '-')"
+          APK_NAME="neru-nexus-v${VERSION}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "../${APK_NAME}"
+          echo "APK_NAME=${APK_NAME}" >> "$GITHUB_ENV"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: neru-nexus-apk
-          path: neru-nexus.apk
+          path: ${{ env.APK_NAME }}
           if-no-files-found: error
 
       - name: Publish latest APK release
@@ -79,7 +83,7 @@ jobs:
           tag_name: latest
           name: Neru Nexus Latest
           prerelease: true
-          files: neru-nexus.apk
+          files: ${{ env.APK_NAME }}
           overwrite_files: true
           body: |
             Latest automatically built Neru Nexus APK.
