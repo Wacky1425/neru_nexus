@@ -295,15 +295,10 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
 
           // Password must be selected by type first. This avoids the old
           // visible[2] fallback accidentally filling another login mode.
-          const pin = inputs.find((e) => e.type === 'password') ||
-            inputs.find((e) => /login.*(pin|pass)|ansho|暗証|password/.test(meta(e)));
-
-          const textInputs = inputs.filter((e) => e !== pin &&
-            ['text','tel','number'].includes((e.type || 'text').toLowerCase()));
-          const branch = textInputs.find((e) =>
-            /branch|tenban|tenpo|店番|支店/.test(meta(e)));
-          const account = textInputs.find((e) =>
-            /account|kouza|koza|口座/.test(meta(e)));
+          const form = document.forms.namedItem('LLDLDIL');
+          const branch = form?.elements.namedItem('branchNo');
+          const account = form?.elements.namedItem('accountNo');
+          const pin = form?.elements.namedItem('password');
 
           if (!branch || !account || !pin) {
             return JSON.stringify({ok:false, reason:'fields_not_identified'});
@@ -319,30 +314,19 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
             return JSON.stringify({ok:false, reason:'fill_failed'});
           }
 
-          const form = pin.form;
-          if (!form || account.form !== form || branch.form !== form) {
+          if (!form || account.form !== form || branch.form !== form || pin.form !== form) {
             return JSON.stringify({ok:false, reason:'form_mismatch'});
           }
 
           // Click only a submit control inside this exact form. Never inspect
           // anchors, so regulation/help links cannot be selected.
-          const submits = [...form.querySelectorAll(
-            'button[type="submit"],input[type="submit"],button:not([type])'
-          )].filter((e) => !e.disabled);
-          const label = (e) =>
-            (e.innerText || e.value || e.textContent || '').trim();
-          const submit = submits.find((e) => label(e) === 'ログイン') ||
-            submits.find((e) => label(e).includes('ログイン'));
-          if (submit) {
-            submit.click();
-            return JSON.stringify({ok:true, submitted:'button'});
+          const login = [...form.querySelectorAll('input[type="button"]')]
+            .find((e) => String(e.value || '').trim() === 'ログイン');
+          if (!login) {
+            return JSON.stringify({ok:false, reason:'login_button_not_found'});
           }
-
-          if (typeof form.requestSubmit === 'function') {
-            form.requestSubmit();
-            return JSON.stringify({ok:true, submitted:'form'});
-          }
-          return JSON.stringify({ok:false, reason:'submit_not_found'});
+          login.click();
+          return JSON.stringify({ok:true, submitted:'button'});
         })();
       ''');
       final resultText = _jsString(result);
