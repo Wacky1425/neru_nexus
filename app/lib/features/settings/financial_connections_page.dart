@@ -125,6 +125,60 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
     await _controller.loadRequest(_smbcWebLoginUri);
   }
 
+  Future<void> _showLoginDomDiagnostic() async {
+    try {
+      final raw = await _controller.runJavaScriptReturningResult(r"""
+        (() => {
+          const clean = (v) => (v == null ? '' : String(v)).replace(/\\s+/g, ' ').trim().slice(0, 120);
+          const inputs = [...document.querySelectorAll('input')]
+            .filter((e) => e.type !== 'hidden' && !e.disabled)
+            .map((e, i) => ({
+              index: i, type: clean(e.type), name: clean(e.name), id: clean(e.id),
+              placeholder: clean(e.placeholder), ariaLabel: clean(e.getAttribute('aria-label')),
+              autocomplete: clean(e.getAttribute('autocomplete')), maxLength: e.maxLength,
+              valueLength: (e.value || '').length,
+              formId: clean(e.form?.id), formName: clean(e.form?.name)
+            }));
+          const controls = [...document.querySelectorAll('button,input[type="submit"],input[type="button"]')]
+            .filter((e) => !e.disabled)
+            .map((e, i) => ({
+              index: i, tag: clean(e.tagName), type: clean(e.type), name: clean(e.name),
+              id: clean(e.id), label: clean(e.innerText || e.value || e.textContent),
+              formId: clean(e.form?.id), formName: clean(e.form?.name)
+            }));
+          const forms = [...document.forms].map((e, i) => ({
+            index: i, id: clean(e.id), name: clean(e.name), method: clean(e.method),
+            action: clean(e.action)
+          }));
+          return JSON.stringify({title: clean(document.title), inputs, controls, forms});
+        })();
+      """);
+      final diagnostic = _jsString(raw);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('ログインDOM診断'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(child: SelectableText(diagnostic)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('閉じる'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('DOM診断に失敗しました: $e')),
+      );
+    }
+  }
+
   Future<void> _tryAutoFillLogin() async {
     if (_autoLoginAttempted) return;
     try {
@@ -573,6 +627,11 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
                 tooltip: 'Webログイン',
                 onPressed: _openLogin,
                 icon: const Icon(Icons.login),
+              ),
+              IconButton(
+                tooltip: 'ログインDOM診断',
+                onPressed: _loading ? null : _showLoginDomDiagnostic,
+                icon: const Icon(Icons.code),
               ),
               IconButton(tooltip: '再読み込み', onPressed: () => _controller.reload(), icon: const Icon(Icons.refresh)),
             ],
