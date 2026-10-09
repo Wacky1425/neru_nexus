@@ -179,6 +179,68 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
     }
   }
 
+  Future<void> _showLoginDomDiagnostic() async {
+    try {
+      final raw = await _controller.runJavaScriptReturningResult(r'''
+        (() => {
+          const clean = (v) => (v == null ? '' : String(v));
+          const inputs = [...document.querySelectorAll('input')]
+            .filter((e) => e.type !== 'hidden' && !e.disabled)
+            .map((e, i) => ({
+              i,
+              type: clean(e.type),
+              name: clean(e.name),
+              id: clean(e.id),
+              placeholder: clean(e.placeholder),
+              autocomplete: clean(e.autocomplete),
+              maxLength: e.maxLength,
+              valueLength: clean(e.value).length,
+              formId: clean(e.form?.id),
+              formName: clean(e.form?.name)
+            }));
+          const forms = [...document.forms].map((e, i) => ({
+            i, id: clean(e.id), name: clean(e.name),
+            method: clean(e.method), action: clean(e.action)
+          }));
+          const submits = [...document.querySelectorAll(
+            'button,input[type="submit"],input[type="button"]'
+          )].map((e, i) => ({
+            i, tag: e.tagName, type: clean(e.type), id: clean(e.id),
+            name: clean(e.name),
+            label: clean(e.innerText || e.value || e.textContent).trim(),
+            formId: clean(e.form?.id), formName: clean(e.form?.name)
+          }));
+          return JSON.stringify({inputs, forms, submits});
+        })();
+      ''');
+      final diagnostic = _jsString(raw);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('ログインDOM診断'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: SelectableText(diagnostic),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('閉じる'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('DOM診断に失敗しました: $e')),
+      );
+    }
+  }
+
   Future<void> _tryAutoFillLogin() async {
     if (_autoLoginAttempted) return;
     try {
@@ -690,6 +752,11 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
             ),
             title: const Text('三井住友銀行'),
             actions: [
+              IconButton(
+                tooltip: 'ログインDOM診断',
+                onPressed: _loading ? null : _showLoginDomDiagnostic,
+                icon: const Icon(Icons.code),
+              ),
               IconButton(
                 tooltip: 'Webログイン',
                 onPressed: _openLogin,
