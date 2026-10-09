@@ -1,9 +1,9 @@
 function getAppUpdateInfo() {
   return {
-    version: "2.2.25",
-    buildNumber: 245,
-    apkUrl: "https://github.com/Wacky1425/neru_nexus/releases/download/latest/neru-nexus-v2.2.25-245.apk",
-    releaseNotes: "V2.2.25: SMBCログイン画面の「普通預金規定」を口座選択と誤認していた自動クリックを削除。認証後の口座選択は画面を特定してから再実装。",
+    version: "2.2.26",
+    buildNumber: 246,
+    apkUrl: "https://github.com/Wacky1425/neru_nexus/releases/download/latest/neru-nexus-v2.2.26-246.apk",
+    releaseNotes: "V2.2.26: SMBCログイン暗証の自動入力判定を強化し、3項目の入力確認後に同一ログインフォーム内のログイン送信だけを実行。",
     required: false,
     updatedAt: new Date().toISOString(),
   };
