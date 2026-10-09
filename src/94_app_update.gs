@@ -1,9 +1,9 @@
 function getAppUpdateInfo() {
   return {
-    version: "2.2.27",
-    buildNumber: 247,
-    apkUrl: "https://github.com/Wacky1425/neru_nexus/releases/download/latest/neru-nexus-v2.2.27-247.apk",
-    releaseNotes: "V2.2.27: SMBCログイン画面の入力欄・フォーム・ログイン操作要素を安全に確認できるDOM診断を追加。入力値は表示しません。",
+    version: "2.2.28",
+    buildNumber: 248,
+    apkUrl: "https://github.com/Wacky1425/neru_nexus/releases/download/latest/neru-nexus-v2.2.28-248.apk",
+    releaseNotes: "V2.2.28: SMBC診断結果に基づき店番号branchNo・口座番号accountNo・ログイン暗証passwordを直接指定し、LLDLDIL内のログインボタンだけを自動押下。",
     required: false,
     updatedAt: new Date().toISOString(),
   };
