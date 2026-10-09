@@ -153,49 +153,90 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
         'account': account,
         'pin': pin,
       });
-      await _controller.runJavaScript('''
+      final result = await _controller.runJavaScriptReturningResult('''
         (() => {
           const v = $payload;
-          const inputs = [...document.querySelectorAll('input')];
-          const visible = inputs.filter((e) => e.type !== 'hidden' && !e.disabled);
-          const set = (el, value) => {
-            if (!el) return;
+          const inputs = [...document.querySelectorAll('input')]
+            .filter((e) => e.type !== 'hidden' && !e.disabled);
+
+          const meta = (e) => [
+            e.type, e.name, e.id, e.placeholder,
+            e.getAttribute('aria-label'), e.getAttribute('autocomplete')
+          ].filter(Boolean).join(' ').toLowerCase();
+
+          const setValue = (el, value) => {
+            if (!el) return false;
             const setter = Object.getOwnPropertyDescriptor(
               HTMLInputElement.prototype, 'value'
             )?.set;
             if (setter) setter.call(el, value); else el.value = value;
+            el.focus();
             el.dispatchEvent(new Event('input', {bubbles:true}));
             el.dispatchEvent(new Event('change', {bubbles:true}));
+            el.blur();
+            return el.value === value;
           };
-          const byHint = (words) => visible.find((e) => {
-            const s = [e.name,e.id,e.placeholder,e.getAttribute('aria-label')]
-              .filter(Boolean).join(' ').toLowerCase();
-            return words.some((w) => s.includes(w));
-          });
-          const branch = byHint(['branch','tenban','店番']) || visible[0];
-          const account = byHint(['account','kouza','口座']) || visible[1];
-          const pin = byHint(['password','pin','ansho','暗証']) ||
-            visible.find((e) => e.type === 'password') || visible[2];
-          set(branch, v.branch); set(account, v.account); set(pin, v.pin);
-          // Never search/click anchors here. Submit only the form that owns
-          // the detected login fields so unrelated links (e.g. regulations)
-          // can never be selected.
-          const form = pin?.form || account?.form || branch?.form;
-          if (!form || !branch || !account || !pin) return;
-          if (!branch.value || !account.value || !pin.value) return;
-          const submit = [...form.querySelectorAll(
-            'button[type="submit"],input[type="submit"]'
-          )].find((e) => !e.disabled);
+
+          // Password must be selected by type first. This avoids the old
+          // visible[2] fallback accidentally filling another login mode.
+          const pin = inputs.find((e) => e.type === 'password') ||
+            inputs.find((e) => /login.*(pin|pass)|ansho|暗証|password/.test(meta(e)));
+
+          const textInputs = inputs.filter((e) => e !== pin &&
+            ['text','tel','number'].includes((e.type || 'text').toLowerCase()));
+          const branch = textInputs.find((e) =>
+            /branch|tenban|tenpo|店番|支店/.test(meta(e)));
+          const account = textInputs.find((e) =>
+            /account|kouza|koza|口座/.test(meta(e)));
+
+          if (!branch || !account || !pin) {
+            return JSON.stringify({ok:false, reason:'fields_not_identified'});
+          }
+
+          const filled = setValue(branch, v.branch) &&
+            setValue(account, v.account) &&
+            setValue(pin, v.pin);
+          if (!filled ||
+              branch.value.length !== String(v.branch).length ||
+              account.value.length !== String(v.account).length ||
+              pin.value.length !== String(v.pin).length) {
+            return JSON.stringify({ok:false, reason:'fill_failed'});
+          }
+
+          const form = pin.form;
+          if (!form || account.form !== form || branch.form !== form) {
+            return JSON.stringify({ok:false, reason:'form_mismatch'});
+          }
+
+          // Click only a submit control inside this exact form. Never inspect
+          // anchors, so regulation/help links cannot be selected.
+          const submits = [...form.querySelectorAll(
+            'button[type="submit"],input[type="submit"],button:not([type])'
+          )].filter((e) => !e.disabled);
+          const label = (e) =>
+            (e.innerText || e.value || e.textContent || '').trim();
+          const submit = submits.find((e) => label(e) === 'ログイン') ||
+            submits.find((e) => label(e).includes('ログイン'));
           if (submit) {
             submit.click();
-          } else if (typeof form.requestSubmit === 'function') {
-            form.requestSubmit();
+            return JSON.stringify({ok:true, submitted:'button'});
           }
+
+          if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+            return JSON.stringify({ok:true, submitted:'form'});
+          }
+          return JSON.stringify({ok:false, reason:'submit_not_found'});
         })();
       ''');
+      final resultText = _jsString(result);
+      if (!resultText.contains('"ok":true')) {
+        _autoLoginAttempted = false;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 700));
       await _advanceSmbcFlow();
     } catch (_) {
+      _autoLoginAttempted = false;
       // Leave the official page usable manually if its DOM changes.
     }
   }
