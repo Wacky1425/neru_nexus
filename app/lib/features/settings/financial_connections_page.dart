@@ -263,7 +263,13 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
           if (!login) {
             return JSON.stringify({ok:false, reason:'login_button_not_found'});
           }
+          login.focus();
           login.click();
+          // SMBC's login control is type=button and may use a page handler
+          // that listens for a real click event rather than form submission.
+          login.dispatchEvent(new MouseEvent('click', {
+            bubbles: true, cancelable: true, view: window
+          }));
           return JSON.stringify({ok:true, submitted:'button'});
         })();
       ''');
@@ -419,6 +425,27 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
           })();
         ''');
         return;
+      }
+
+      // Authenticated SMBC top page: open the deposit account card.
+      // This is intentionally restricted to the confirmed top page markers so
+      // it cannot match "普通預金規定" on the login page.
+      if (text.contains('全口座の残高を更新') &&
+          text.contains('預金残高') &&
+          text.contains('残高別普通')) {
+        final opened = await _controller.runJavaScriptReturningResult(r'''
+          (() => {
+            const candidates = [...document.querySelectorAll('a,button,[role="button"]')];
+            const target = candidates.find((e) => {
+              const s = (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim();
+              return s.includes('残高別普通') && s.includes('預金残高');
+            });
+            if (!target) return false;
+            target.click();
+            return true;
+          })();
+        ''');
+        if (_jsString(opened).contains('true')) return;
       }
 
       // Do not guess account-navigation links from page text. The SMBC login
