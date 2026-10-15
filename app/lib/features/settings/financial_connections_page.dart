@@ -91,16 +91,7 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
         onPageFinished: (url) {
           if (!mounted) return;
           setState(() { _loading = false; _currentUrl = url; });
-          // If a persisted session restored directly to the statement page,
-          // parse it automatically. Re-authentication remains an explicit
-          // SMBC/biometric step when the bank requires it.
-          if (!_analyzing && _looksLikeStatementUrl(url)) {
-            _analyzePage();
-          } else {
-            _recoverFromExpiredDirectSession();
-            _tryAutoFillLogin();
-            _advanceSmbcFlow();
-          }
+          _handleSmbcPageFinished(url);
         },
         onWebResourceError: (error) {
           if (error.isForMainFrame != true || !mounted) return;
@@ -119,6 +110,23 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
 
   bool _looksLikeStatementUrl(String url) =>
       url.contains('direct3.smbc.co.jp') && url.contains('/sp/web/top/');
+
+  Future<void> _handleSmbcPageFinished(String url) async {
+    // SMBC often fires page-finished before its UI/data has fully settled.
+    // Give login controls and authenticated pages time to become interactive.
+    if (_looksLikeStatementUrl(url)) {
+      await Future<void>.delayed(const Duration(seconds: 3));
+      if (!mounted || _analyzing) return;
+      await _analyzePage();
+      return;
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    if (!mounted) return;
+    await _recoverFromExpiredDirectSession();
+    await _tryAutoFillLogin();
+    await _advanceSmbcFlow();
+  }
 
   Future<void> _openLogin() async {
     _autoLoginAttempted = false;
@@ -263,14 +271,19 @@ class _SmbcConnectionPageState extends State<SmbcConnectionPage> with WidgetsBin
           if (!login) {
             return JSON.stringify({ok:false, reason:'login_button_not_found'});
           }
-          login.focus();
-          login.click();
-          // SMBC's login control is type=button and may use a page handler
-          // that listens for a real click event rather than form submission.
-          login.dispatchEvent(new MouseEvent('click', {
-            bubbles: true, cancelable: true, view: window
-          }));
-          return JSON.stringify({ok:true, submitted:'button'});
+          // Let SMBC finish its own input validation/state updates before
+          // pressing login. Dart also waits after the values are injected.
+          const expected = {
+            branch: String(v.branch), account: String(v.account), pin: String(v.pin)
+          };
+          setTimeout(() => {
+            if (branch.value !== expected.branch ||
+                account.value !== expected.account ||
+                pin.value !== expected.pin) return;
+            login.focus();
+            login.click();
+          }, 1500);
+          return JSON.stringify({ok:true, submitted:'button_delayed'});
         })();
       ''');
       final resultText = _jsString(result);
